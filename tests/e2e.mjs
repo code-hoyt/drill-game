@@ -106,10 +106,12 @@ await tapRoom('tools'); await waitFor('g.crew.station === "tools"', 3000);
 check('crew walks to Tools station', await G('g.crew.station === "tools"'));
 const p0 = await G('s.hull'); await hold(...ACTION_LEFT, 1000); const p1 = await G('s.hull');
 check('holding PATCH at Tools restores hull', p1 > p0 + 6, `hull ${p0.toFixed(1)} -> ${p1.toFixed(1)}`);
-await G('(g.obstacles.spawn(s.depth), g.obstacles.list[g.obstacles.list.length-1].sprite.y = 120, true)');
+// park every boulder far ahead except a marked test boulder, which is the closest -> BLAST target
+await G('(g.obstacles.list.forEach(o => o.sprite.y = Math.min(o.sprite.y, 40)), g.obstacles.spawn(s.depth), window.__testRock = g.obstacles.list[g.obstacles.list.length-1], __testRock.sprite.y = 120, true)');
 await wait(100);
-const n0 = await G('g.obstacles.list.length'); await hold(...ACTION_RIGHT, 1500); const n1 = await G('g.obstacles.list.length');
-check('holding BLAST at Tools clears a boulder', n1 < n0, `boulders ${n0} -> ${n1}`);
+const n0 = await G('g.obstacles.list.length'); await hold(...ACTION_RIGHT, 1600);
+const gone = await G('!g.obstacles.list.includes(window.__testRock)');
+check('holding BLAST at Tools clears the nearest boulder', gone, `boulders ${n0} -> ${await G('g.obstacles.list.length')}`);
 await G('(s.heat = 95, true)'); await wait(200);
 check('world alert bubble shows over Engine', await G('g.ship.bubbles.engine.visible'));
 await G('(s.heat = 0, s.wear = 0, true)');
