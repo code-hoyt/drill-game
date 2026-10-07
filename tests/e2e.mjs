@@ -32,10 +32,10 @@ const hold = async (gx, gy, ms) => {
   await wait(ms);
   await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
 };
-// world coords in the INSIDE view (camera center 90,256 zoom 1.5) -> base coords
-const insideW = (wx, wy) => [(wx - 90) * 1.5 + 90, (wy - 256) * 1.5 + 160];
-const ROOM = { engine: 49.5, helm: 76.5, drill: 103.5, tools: 130.5 };
-const tapRoom = (id) => tap(...insideW(ROOM[id], 275));
+// world coords in the INSIDE view -> base coords (uses the game's own camera config)
+let CAM = null, ROOMS = null;
+const insideW = (wx, wy) => [(wx - CAM.x) * CAM.zoom + 90, (wy - CAM.y) * CAM.zoom + 160];
+const tapRoom = (id) => { const r = ROOMS[id]; return tap(...insideW(r.cx, (r.ceil + r.floorY) / 2)); };
 const TOGGLE = [24, 312], PILOT_BTN = [91, 312];
 const O_PLUS = [167, 122], O_MINUS = [167, 284], O_TRACK = (v) => [167, 134 + 138 * (1 - v)];
 const H_MINUS = [18, 268], H_PLUS = [162, 268], H_TRACK = (v) => [34 + 112 * v, 266];
@@ -48,6 +48,8 @@ check('build has HELM room', await page.evaluate(() => !!__drill.scene.getScene(
 await tap(90, 160); await wait(800);
 check('game + UI scenes running after tap-to-start', await page.evaluate(() => __drill.scene.isActive('Game') && __drill.scene.isActive('UI')));
 check('run starts with crew at the HELM (piloted)', await G('g.crew.station === "helm" && g.piloted'));
+CAM = await page.evaluate(async () => (await import(new URL('src/config.js', location.href).href)).LAYOUT.INSIDE_CAM);
+ROOMS = await G('Object.fromEntries(g.ship.rooms.map(r => [r.id, { cx: r.cx, ceil: r.ceil, floorY: r.floorY }]))');
 
 // ---- outside throttle while piloted --------------------------------------------
 for (let i = 0; i < 3; i++) { await tap(...O_PLUS); await wait(120); }
@@ -71,7 +73,9 @@ check('ramming a boulder at speed drops hull', (await G('s.hull')) < hullBefore,
 // ---- inside view: helm action area -------------------------------------------------
 await tap(...TOGGLE); await wait(900);
 const cam = await G('({ mode: g.view.mode, zoom: g.cameras.main.zoom })');
-check('view toggle -> inside (camera zoomed on ship)', cam.mode === 'inside' && near(cam.zoom, 1.5), JSON.stringify(cam));
+check('view toggle -> inside (integer 2x zoom on ship)', cam.mode === 'inside' && cam.zoom === 2 && CAM.zoom === 2, JSON.stringify(cam));
+check('whole ship fits on screen in inside view (below HUD, above station panel)', await G(`(() => { const v = g.cameras.main.worldView, z = g.cameras.main.zoom;
+  return v.x <= 47 && v.right >= 133 && 218 >= v.y + 24 / z && 302 <= v.y + 232 / z; })()`), await G('JSON.stringify(g.cameras.main.worldView)'));
 check('inside at helm shows throttle controls', await G('ui.hGfx.visible && ui.hPlus.visible && ui.hMinus.visible'));
 await tap(...H_PLUS); await wait(100);
 check('inside helm + raises throttle', near(await thr(), 0.9), 'throttle=' + await thr());
@@ -79,8 +83,49 @@ await tap(...H_MINUS); await wait(100);
 check('inside helm - lowers throttle', near(await thr(), 0.8), 'throttle=' + await thr());
 await tap(...H_TRACK(0.5)); await wait(100);
 check('inside helm slider sets throttle', near(await thr(), 0.5), 'throttle=' + await thr());
-await G('(g.obstacles.list.forEach(o => o.sprite.y = Math.min(o.sprite.y, 150)), true)');
-await wait(500);
+
+// ---- 2x2 layout: all 12 station-to-station trips are equal ------------------------------
+// Euler circuit over every ordered pair of rooms, starting and ending at the helm.
+const ids = ['helm', 'drill', 'engine', 'tools'];
+const edges = Object.fromEntries(ids.map((a) => [a, ids.filter((b) => b !== a)]));
+const circuit = []; const stack = ['helm'];
+while (stack.length) { const v = stack[stack.length - 1]; if (edges[v].length) stack.push(edges[v].shift()); else circuit.push(stack.pop()); }
+circuit.reverse();
+const planned = await G(`(() => { const C = g.crew.constructor, out = {}; for (const a of g.ship.rooms) for (const b of g.ship.rooms) if (a !== b)
+  out[a.id + '>' + b.id] = C.pathLength(a.standX, a.floorY, C.plan(g.ship, a.standX, a.floorY, b.id)); return out; })()`);
+const lens = Object.values(planned);
+check('12 planned trips, all equal path length', lens.length === 12 && lens.every((l) => l === lens[0]), `length=${lens[0]}px  ${JSON.stringify(planned)}`);
+await G('(s.throttle = 0, true)');
+const trips = [];
+for (let i = 1; i < circuit.length; i++) {
+  await tapRoom(circuit[i]);
+  await waitFor(`g.crew.station === "${circuit[i]}"`, 3000);
+  const t = await G('g.crew.lastTrip');
+  trips.push({ ...t, ok: t && t.from === circuit[i - 1] && t.to === circuit[i] });
+  await wait(60);
+}
+const pairs = new Set(trips.map((t) => t.from + '>' + t.to));
+const ms = trips.map((t) => t.ms), lensWalked = trips.map((t) => t.length);
+check('walked all 12 ordered trips by tapping rooms', trips.length === 12 && pairs.size === 12 && trips.every((t) => t.ok), [...pairs].join(' '));
+check('every walked trip had the same path length', lensWalked.every((l) => l === lensWalked[0]), 'length=' + lensWalked[0]);
+const mn = Math.min(...ms), mx = Math.max(...ms);
+check('every trip takes ~0.6-1.0 s and times are roughly equal', mn >= 600 && mx <= 1000 && mx - mn <= 120, `min=${Math.round(mn)}ms max=${Math.round(mx)}ms`);
+check('crew back at helm after the circuit', await G('g.crew.station === "helm" && g.piloted'));
+
+// retargeting mid-walk
+await tapRoom('engine'); await wait(150);
+await tapRoom('tools'); await wait(30);
+const re = await G('({ path: g.crew.path.map(p => [Math.round(p.x), Math.round(p.y)]), target: g.crew.target, x: g.crew.sprite.x, y: g.crew.sprite.y })');
+const viaJunction = re.path.some(([x, y]) => x === 90 && y === 282);
+check('retarget mid-walk re-plans via the hub junction', re.target === 'tools' && viaJunction && re.path.at(-1)[0] === 106, JSON.stringify(re));
+await waitFor('g.crew.station === "tools"', 3000);
+check('retargeted crew arrives at the new room', await G('g.crew.station === "tools"'));
+await tapRoom('engine'); await wait(80);  // leaving tools walkway...
+await tapRoom('tools'); await wait(30);   // ...change of mind: walk straight back
+check('retarget back to the room just left walks straight back', await G('g.crew.path.length === 1 && g.crew.target === "tools"'));
+await waitFor('g.crew.station === "tools"', 2000);
+await tapRoom('helm'); await waitFor('g.crew.station === "helm"', 3000);
+await G('(g.setThrottle(0.5), true)');
 await page.screenshot({ path: `${OUT}/03-inside-helm.png` });
 
 // ---- leave the helm: speed holds, throttle locks -------------------------------------
@@ -112,8 +157,10 @@ await wait(100);
 const n0 = await G('g.obstacles.list.length'); await hold(...ACTION_RIGHT, 1600);
 const gone = await G('!g.obstacles.list.includes(window.__testRock)');
 check('holding BLAST at Tools clears the nearest boulder', gone, `boulders ${n0} -> ${await G('g.obstacles.list.length')}`);
-await G('(s.heat = 95, true)'); await wait(200);
-check('world alert bubble shows over Engine', await G('g.ship.bubbles.engine.visible'));
+await G('(s.heat = 95, s.wear = 95, s.hull = 20, g.obstacles.spawn(s.depth), g.obstacles.list.at(-1).sprite.y = 60, true)'); await wait(200);
+const bub = await G(`g.ship.rooms.map(r => { const b = g.ship.bubbles[r.id]; return { id: r.id, vis: b.visible, inRoom: b.x > r.x && b.x < r.x + r.w && b.y > r.ceil && b.y < r.floorY }; })`);
+check("'!' bubbles show over the correct room for all 4 stations", bub.every((b) => b.vis && b.inRoom), JSON.stringify(bub));
+await G('(s.hull = 60, true)');
 await G('(s.heat = 0, s.wear = 0, true)');
 
 // ---- outside with no pilot: locked throttle ------------------------------------------

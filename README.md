@@ -1,4 +1,4 @@
-# Drill (working title): prototype v0.2
+# Drill (working title): prototype v0.3
 
 An endless, portrait, pixel-art drilling game for phone browsers. You pilot a drill ship that bores **upward** through an alien planet and keep it alive by running your one crew member between stations. Your score is depth.
 
@@ -18,10 +18,10 @@ ES modules don't load over `file://`, so you need a server.
 | View | Controls |
 |---|---|
 | **Outside** (drill face) | Throttle slider on the right (drag/tap), or the `+` / `-` buttons. **This only works while someone is at the HELM.** The green part of the track is "safe to hit a boulder" speed. Tap the ship or **INSIDE** to go in. |
-| **Inside** (cutaway) | Tap a room (ENG / HELM / DRL / TLS) to walk there. At the HELM the action area is a horizontal throttle (drag, or `-` / `+`). At other stations you **hold** the action button. **OUTSIDE** goes back. |
+| **Inside** (cutaway) | Tap a room (HELM / DRL on the top deck, ENG / TLS on the bottom deck) to walk there. At the HELM the action area is a horizontal throttle (drag, or `-` / `+`). At other stations you **hold** the action button. **OUTSIDE** goes back. |
 | **Bottom bar** (both views) | View toggle, pilot status (`PILOT AT HELM` / `PILOT EN ROUTE...` / a **`NO PILOT: GO TO HELM`** button), and the current speed setting (with a lock icon when nobody is piloting). |
 
-Optional desktop keys: `W/S` or arrow keys for throttle (only when piloted), `Space` to toggle the view, `1/2/3/4` to pick a room (ENG/HELM/DRL/TLS), `E` (hold) for the primary action, `Q` (hold) to blast, `R`/`Enter` to restart.
+Optional desktop keys: `W/S` or arrow keys for throttle (only when piloted), `Space` to toggle the view, `1/2/3/4` to pick a room (HELM/DRL/ENG/TLS), `E` (hold) for the primary action, `Q` (hold) to blast, `R`/`Enter` to restart.
 
 ## Mechanics
 
@@ -30,7 +30,19 @@ Optional desktop keys: `W/S` or arrow keys for throttle (only when piloted), `Sp
   * Outside, the slider turns grey and shows a lock with `NO PILOT`. Inside, the helm controls disappear with the crew. In both views the bottom bar shows a red **NO PILOT: GO TO HELM** button and a lock next to the speed.
   * Tapping a locked throttle (slider or +/-) shakes it, shows `NO PILOT! TAP GO TO HELM`, and flashes the GO TO HELM button. That button is a one-tap shortcut that walks the crew back to the helm (you can stay outside and watch the throttle unlock when they arrive).
   * The HELM's room gets a `!` bubble when a boulder is ahead and the throttle is above the safe ramming speed.
-  * Layout: four rooms in one row, ENG | HELM | DRL | TLS. The helm sits next to the two most-visited stations, so most trips are one room (about 0.65 s) and the longest trip (ENG to TLS) is about 2 s. Set `PILOT_REQUIRED: false` to go back to the old "throttle anywhere" behaviour.
+  * Set `PILOT_REQUIRED: false` to go back to the old "throttle anywhere" behaviour.
+* **Ship layout (2 decks, 2x2 rooms around a hub)**:
+  ```
+          /\        drill nose
+   +------+--+------+
+   | HELM |  | DRL  |   top deck (nearest the drill)
+   |------|##|------|   ## = hub ladder; yellow marks = junction at mid-height
+   | ENG  |  | TLS  |   bottom deck
+   +------+--+------+
+  ```
+  * Every move follows one network: walk from the stand spot to the hub door on that deck, take the ladder to the **junction** halfway between the decks, take the ladder to the target deck, then walk out to the station. Trips between two rooms on the same deck also dip through the junction.
+  * Every stand spot is the same distance from the hub (`STAND_OFFSET` = 16 px) and both floors are the same distance from the junction (14 px). So **all 12 station-to-station trips are exactly 60 px**: 32 px walking at `CREW_WALK_SPEED` 72 plus 28 px climbing at `CREW_CLIMB_SPEED` 64, about **0.88 s**.
+  * Tapping a new room mid-walk re-plans from where the crew is, still via the junction. If you tap the room the crew is just walking out of, they turn around and walk straight back.
 * **Speed / depth**: real speed eases toward the throttle (quick to brake, slower to accelerate). The rock scrolls down past the ship, and depth = px scrolled / `PX_PER_METER`.
 * **Engine heat (ENG, hold VENT)**: builds with `speed² × difficulty`, has passive cooling, and is doubled in hard rock. Random **coolant leaks** add a heat spike on a timer, so crawling isn't free. At 100% the engine is capped at 40% speed and the hull takes damage every second.
 * **Drill bit wear (DRL, hold FIX DRILL BIT)**: builds per metre drilled, tripled in hard rock, and goes up with grinding and ramming. At 100% speed is capped at 50% and the hull takes damage while moving.
@@ -63,8 +75,8 @@ src/
     ShipSystems.js         pure numbers: speed, depth, heat, wear, hull, leaks (no rendering)
     Terrain.js             scrolling rock/tunnel tiles, depth tint, hard-rock bands
     Obstacles.js           boulder spawn/scroll, ram / grind / blast
-    Ship.js                ship visuals: 4-room interior cutaway, stations, exterior, drill, room tap zones
-    Crew.js                crew member walk/work state machine
+    Ship.js                ship visuals: 2-deck 2x2 cutaway + hub ladder, stations, exterior, drill, room tap zones
+    Crew.js                crew member: hub-routed path planning, walk/climb/work animation
     ViewController.js      camera pan/zoom between outside and inside
     PixelFont.js           runtime-generated 3x5 bitmap font ('pixel')
     Textures.js            all procedural placeholder art
@@ -95,17 +107,18 @@ screenshots/               outside piloted / outside no pilot / inside at helm /
 | `OBSTACLE_GAP_START` → `MIN` over `GAP_DEPTH` | 90 → 22 m over 1500 m | boulder spacing |
 | `HARD_*` | start 120 m, 35% per 60 m, heat×2, wear×3, cap 0.7 | hard rock bands |
 | `HEAT/WEAR_ALERT`, `HULL_ALERT` | 70 / 70 / 35 | alert thresholds |
-| `CREW_SPEED` | 40 | crew walk speed (world px/s); one room is about 0.65 s |
+| `CREW_WALK_SPEED` | 72 | crew speed on deck floors (world px/s) |
+| `CREW_CLIMB_SPEED` | 64 | crew speed on the hub ladder; together these give about 0.88 s per trip |
 | `START_ROOM` | `'helm'` | where the crew starts each run |
 | `PILOT_REQUIRED` | true | throttle only works with the crew at the helm |
 | `LOCK_TOAST_COOLDOWN` | 900 | ms between "NO PILOT" toasts when you tap a locked throttle |
 | `VIEW_PAN_MS` | 650 | camera transition |
 
-`LAYOUT` holds the ship and room geometry (the ship is now 112 px wide with four 25 px rooms) plus the two camera targets (`OUTSIDE_CAM`, zoom 1; `INSIDE_CAM`, zoom 1.5 so the wider ship fits on screen).
+`LAYOUT` holds the ship geometry: an 86×62 px hull with a 24 px drill nose (tip at y 218), deck ceilings and floors (`DECKS`), `ROOM_W` 33, the hub column and junction (`HUB`), and `STAND_OFFSET`. It also holds the two camera targets: `OUTSIDE_CAM` at zoom 1, and `INSIDE_CAM` at **integer zoom 2**, which fits the whole ship between the HUD and the station panel so every pixel is the same size. `ROOM_GEOM` (derived) gives each room's x, floor, station and stand spot, and is shared by the ship, the crew, and the exterior art.
 
 ## Testing
 
-`tests/e2e.mjs` drives the game in headless Chromium at a 390×844 phone viewport with touch emulation. It uses real taps and touch-holds for both throttles, the view toggle, room taps, station actions, the locked throttle, and the GO TO HELM shortcut. Debug pokes (via `window.__drill`) are used only to set up states quickly.
+`tests/e2e.mjs` drives the game in headless Chromium at a 390×844 phone viewport with touch emulation. It uses real taps and touch-holds for both throttles, the view toggle, room taps, station actions, the locked throttle, and the GO TO HELM shortcut. It also checks that all 12 planned trips have equal length, walks every ordered trip by tapping rooms (equal length, timed at 0.6–1.0 s), tests mid-walk retargeting, confirms the ship fits the 2x inside view, and checks that `!` bubbles sit over the correct rooms. Debug pokes (via `window.__drill`) are used only to set up states quickly.
 
 ```bash
 npm i playwright && npx playwright install chromium   # in any folder with node_modules

@@ -1,5 +1,5 @@
 // All placeholder art is generated here at boot: no external assets.
-import { LAYOUT as L } from '../config.js';
+import { LAYOUT as L, ROOM_GEOM } from '../config.js';
 
 function rng(seed) { // mulberry32
   return () => {
@@ -44,6 +44,9 @@ const CREW = {
   crew_walk:  [...HEAD, '..sss..', '.sssss.', 's.sss.s', '..sss.s', '.d...d.', '.d...d.', 'bb...bb'],
   crew_work1: [...HEAD, '..sss.s', '.sssss.', 's.sss..', 's.sss..', '..d.d..', '..d.d..', '.bb.bb.'],
   crew_work2: [...HEAD, '..ssss.', '.ssssss', 's.sss..', 's.sss..', '..d.d..', '..d.d..', '.bb.bb.'],
+  // seen from behind, on the ladder
+  crew_climb1: ['..hhh..', '.hhhhh.', '.hhhhh.', 's.hhh.s', 's.sss.s', '.sssss.', '..sss..', '..sss..', '..d.d..', '..d.d..', '.b...b.'],
+  crew_climb2: ['..hhh..', '.hhhhh.', '.hhhhh.', 's.hhh..', 's.sss.s', '.sssss.', '..sss.s', '..sss..', '..d.d..', '.d...d.', '.b...b.'],
 };
 
 const ICON_SYMBOLS = {
@@ -107,24 +110,32 @@ export function createTextures(scene) {
     });
   }
 
-  // Ship exterior plating (covers the interior in the outside view)
+  // Ship exterior plating (covers the interior in the outside view). 2 decks tall.
   canvas(scene, 'ship_ext', L.SHIP_W, L.SHIP_BOTTOM - L.SHIP_TOP, (ctx, px) => {
     const w = L.SHIP_W, h = L.SHIP_BOTTOM - L.SHIP_TOP;
+    const rel = (r) => ({ x: r.x - L.SHIP_X, cx: Math.round(r.cx - L.SHIP_X), ceil: r.ceil - L.SHIP_TOP, floor: r.floorY - L.SHIP_TOP });
+    const room = (id) => rel(ROOM_GEOM.find((r) => r.id === id));
+    const deckSeam = L.DECKS.top.floor - L.SHIP_TOP + 1;
     px(0, 0, '#2b1712', w, h);
     px(1, 1, '#b5532f', w - 2, h - 2);
     for (let x = 1; x < w - 1; x += 14) px(x, 1, '#7a3320', 1, h - 2);
-    for (let y = 1; y < h - 1; y += 13) px(1, y, '#7a3320', w - 2, 1);
-    for (let x = 4; x < w - 3; x += 7) { px(x, 3, '#e3936a'); px(x, h - 4, '#e3936a'); }
+    px(1, deckSeam, '#7a3320', w - 2, 2);                 // deck seam
+    px(1, deckSeam + 2, '#d77a4f', w - 2, 1);
+    for (let x = 4; x < w - 3; x += 7) { px(x, 3, '#e3936a'); px(x, deckSeam - 2, '#e3936a'); px(x, h - 4, '#e3936a'); }
     px(1, 1, '#d77a4f', w - 2, 1);
     px(1, h - 3, '#5a2416', w - 2, 2);
-    // porthole over the helm (cockpit) room
-    const helm = L.ROOMS.find((r) => r.id === 'helm') || { x: L.SHIP_X + w / 2 - 12, w: 24 };
-    const pc = Math.round(helm.x - L.SHIP_X + helm.w / 2);
-    px(pc - 5, 18, '#2b1712', 10, 10); px(pc - 4, 19, '#ffd27a', 8, 8); px(pc - 3, 20, '#fff2c4', 3, 2);
-    // vents
-    for (let i = 0; i < 3; i++) px(8, 22 + i * 4, '#3d1e15', 12, 2);
-    // hatch
-    px(w - 22, 20, '#7a3320', 14, 22); px(w - 21, 21, '#c96a42', 12, 20); px(w - 12, 31, '#3d1e15', 2, 2);
+    // central spine over the hub
+    px(L.HUB.x - L.SHIP_X, 1, '#8f3f24', L.HUB.w, h - 4);
+    // cockpit porthole over the HELM, small one over the DRILL room
+    const helm = room('helm'), drill = room('drill');
+    px(helm.cx - 5, helm.ceil + 6, '#2b1712', 10, 10); px(helm.cx - 4, helm.ceil + 7, '#ffd27a', 8, 8); px(helm.cx - 3, helm.ceil + 8, '#fff2c4', 3, 2);
+    px(drill.cx - 3, drill.ceil + 8, '#2b1712', 6, 6); px(drill.cx - 2, drill.ceil + 9, '#9ad0ff', 4, 4);
+    // engine vents (bottom-left)
+    const eng = room('engine');
+    for (let i = 0; i < 3; i++) px(eng.x + 4, eng.ceil + 8 + i * 4, '#3d1e15', 14, 2);
+    // hatch over TOOLS (bottom-right)
+    const tls = room('tools');
+    px(tls.x + 12, tls.ceil + 3, '#7a3320', 14, 20); px(tls.x + 13, tls.ceil + 4, '#c96a42', 12, 18); px(tls.x + 22, tls.ceil + 12, '#3d1e15', 2, 2);
   });
 
   // Stations (12x14)

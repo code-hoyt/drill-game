@@ -1,46 +1,67 @@
-// Ship visuals: interior cutaway (rooms + stations), exterior plating that
-// fades out in the inside view, animated drill head, alert bubbles, room tap zones.
-import { LAYOUT as L, TUNING as T } from '../config.js';
+// Ship visuals: 2-deck interior cutaway (2x2 rooms around a hub ladder), exterior
+// plating that fades out in the inside view, animated drill head, alert bubbles,
+// room tap zones.
+import { LAYOUT as L, ROOM_GEOM } from '../config.js';
 import { FONT_KEY } from './PixelFont.js';
+
+const C = (hex) => Phaser.Display.Color.HexStringToColor(hex).color;
 
 export class Ship {
   constructor(scene, onRoomTap, onShipTap) {
     this.scene = scene;
     const top = L.SHIP_TOP, bot = L.SHIP_BOTTOM, x0 = L.SHIP_X, w = L.SHIP_W;
+    const H = L.HUB, D = L.DECKS;
+    const ix = x0 + 2, iw = w - 4; // interior span
 
     // --- interior ---------------------------------------------------------
     const g = scene.add.graphics().setDepth(10);
     g.fillStyle(0x1b1c25, 1).fillRect(x0, top, w, bot - top);
     g.fillStyle(0x4b4f63, 1).fillRect(x0 + 1, top + 1, w - 2, bot - top - 2);
-    this.rooms = L.ROOMS.map((r) => {
-      g.fillStyle(Phaser.Display.Color.HexStringToColor(r.bg).color, 1).fillRect(r.x, L.CEIL_Y, r.w, L.FLOOR_Y - L.CEIL_Y);
-      g.fillStyle(0x000000, 0.25).fillRect(r.x, L.CEIL_Y, r.w, 2);           // ceiling shadow
-      g.fillStyle(0xfff2a8, 1).fillRect(r.x + r.w / 2 - 2, L.CEIL_Y, 4, 1);   // lamp
-      g.fillStyle(0x6b6f84, 1).fillRect(r.x + 1, L.CEIL_Y + 8, r.w - 2, 1);   // pipe
-      return { ...r, cx: r.x + r.w / 2, stationX: r.x + 8, standX: r.x + 19 };
-    });
-    // walls between rooms, with a doorway at floor level
-    for (let i = 0; i < this.rooms.length - 1; i++) {
-      const wx = this.rooms[i].x + this.rooms[i].w;
-      g.fillStyle(0x4b4f63, 1).fillRect(wx, L.CEIL_Y, 2, L.FLOOR_Y - L.CEIL_Y - 14);
-      g.fillStyle(0x2b2e3b, 1).fillRect(wx, L.FLOOR_Y - 15, 2, 1);
+    this.rooms = ROOM_GEOM.map((r) => ({ ...r }));
+    for (const r of this.rooms) {
+      g.fillStyle(C(r.bg), 1).fillRect(r.x, r.ceil, r.w, r.floorY - r.ceil);
+      g.fillStyle(0x000000, 0.25).fillRect(r.x, r.ceil, r.w, 2);            // ceiling shadow
+      g.fillStyle(0xfff2a8, 1).fillRect(Math.round(r.cx) - 2, r.ceil, 4, 1); // lamp
     }
-    g.fillStyle(0x8d91a6, 1).fillRect(x0 + 3, L.FLOOR_Y, w - 6, 2);
-    g.fillStyle(0x34374a, 1).fillRect(x0 + 3, L.FLOOR_Y + 2, w - 6, 2);
+    // hub column with ladder
+    g.fillStyle(0x16171f, 1).fillRect(H.x, D.top.ceil, H.w, D.bottom.floor - D.top.ceil);
+    g.fillStyle(0x6b6f84, 1).fillRect(H.cx - 4, D.top.ceil, 1, D.bottom.floor - D.top.ceil)
+      .fillRect(H.cx + 3, D.top.ceil, 1, D.bottom.floor - D.top.ceil);
+    for (let y = D.top.ceil + 2; y < D.bottom.floor; y += 3) g.fillStyle(0x8d91a6, 1).fillRect(H.cx - 3, y, 6, 1);
+    // junction landing (the shared midpoint every trip passes through)
+    g.fillStyle(0xffd23f, 1).fillRect(H.x, H.junctionY, 3, 1).fillRect(H.x + H.w - 3, H.junctionY, 3, 1);
+    g.fillStyle(0xffd23f, 0.35).fillRect(H.x, H.junctionY - 1, H.w, 1);
+    // walls between rooms and hub, with a doorway at each floor
+    for (const d of [D.top, D.bottom]) {
+      for (const wx of [H.x - 2, H.x + H.w]) {
+        g.fillStyle(0x4b4f63, 1).fillRect(wx, d.ceil, 2, d.floor - d.ceil - 14);
+        g.fillStyle(0x2b2e3b, 1).fillRect(wx, d.floor - 15, 2, 1);
+      }
+    }
+    // deck floors (the top-deck floor has a hatch where the ladder passes)
+    const slab = (x, y, ww) => { g.fillStyle(0x8d91a6, 1).fillRect(x, y, ww, 1); g.fillStyle(0x34374a, 1).fillRect(x, y + 1, ww, 2); };
+    slab(ix, D.top.floor, H.x - ix);
+    slab(H.x + H.w, D.top.floor, ix + iw - H.x - H.w);
+    g.fillStyle(0xffd23f, 1).fillRect(H.x, D.top.floor, 2, 1).fillRect(H.x + H.w - 2, D.top.floor, 2, 1); // hatch lips
+    slab(ix, D.bottom.floor, iw);
     this.interior = g;
 
-    this.labels = this.rooms.map((r) => scene.add.bitmapText(r.cx, L.CEIL_Y + 2, FONT_KEY, r.label, 6).setOrigin(0.5, 0).setDepth(11).setTint(0x9aa0b8));
+    this.labels = this.rooms.map((r) => {
+      const left = r.side === 'left';
+      return scene.add.bitmapText(left ? r.x + 2 : r.x + r.w - 2, r.ceil + 3, FONT_KEY, r.label, 6)
+        .setOrigin(left ? 0 : 1, 0).setDepth(11).setTint(0x9aa0b8);
+    });
     this.stations = {};
     for (const r of this.rooms) {
-      this.stations[r.id] = scene.add.image(r.stationX, L.FLOOR_Y, 'st_' + r.id).setOrigin(0.5, 1).setDepth(11);
+      this.stations[r.id] = scene.add.image(r.stationX, r.floorY, 'st_' + r.id).setOrigin(0.5, 1).setDepth(11).setFlipX(r.side === 'right');
     }
     this.bubbles = {};
     for (const r of this.rooms) {
-      const b = scene.add.image(r.cx, L.CEIL_Y + 18, 'bubble').setDepth(14).setVisible(false);
+      const bx = r.side === 'left' ? r.x + r.w - 6 : r.x + 6;
+      const b = scene.add.image(bx, r.ceil + 8, 'bubble').setDepth(14).setVisible(false);
       scene.tweens.add({ targets: b, y: b.y - 2, duration: 350, yoyo: true, repeat: -1 });
       this.bubbles[r.id] = b;
     }
-    // working sparks
     this.sparks = scene.add.particles(0, 0, 'px', {
       speed: { min: 10, max: 40 }, angle: { min: 200, max: 340 }, lifespan: 300, gravityY: 120,
       tint: [0xffe27a, 0xff9a3d, 0xffffff], frequency: 60, emitting: false,
@@ -48,8 +69,9 @@ export class Ship {
 
     // --- exterior ---------------------------------------------------------
     this.exterior = scene.add.image(x0, top, 'ship_ext').setOrigin(0).setDepth(16);
-    this.warnLight = scene.add.rectangle(x0 + w / 2, top + 6, 4, 2, 0xff3030).setDepth(17).setVisible(false);
-    this.exhaust = scene.add.particles(x0 + 6, top + 20, 'px2', {
+    this.warnLight = scene.add.rectangle(x0 + w / 2, top + 4, 4, 2, 0xff3030).setDepth(17).setVisible(false);
+    const eng = this.room('engine');
+    this.exhaust = scene.add.particles(x0 + 2, eng.floorY - 10, 'px2', {
       speed: { min: 8, max: 25 }, angle: { min: 160, max: 200 }, lifespan: 700, alpha: { start: 0.7, end: 0 },
       scale: { start: 1, end: 2.5 }, tint: [0xcfcfdf, 0x9a9aaa], frequency: 50, emitting: false,
     }).setDepth(18);
@@ -64,7 +86,7 @@ export class Ship {
 
     // --- input zones ------------------------------------------------------
     this.roomZones = this.rooms.map((r) => {
-      const z = scene.add.zone(r.x, L.CEIL_Y, r.w, L.FLOOR_Y - L.CEIL_Y + 4).setOrigin(0).setDepth(30);
+      const z = scene.add.zone(r.x, r.ceil, r.w, r.floorY - r.ceil + 3).setOrigin(0).setDepth(30);
       z.on('pointerdown', () => onRoomTap(r.id));
       return z;
     });
@@ -74,23 +96,29 @@ export class Ship {
 
   room(id) { return this.rooms.find((r) => r.id === id); }
 
+  /** Room whose horizontal walkway contains (x, y), or null if on the hub ladder. */
+  roomAt(x, y) {
+    if (Math.abs(x - L.HUB.cx) < 0.01) return null;
+    const side = x < L.HUB.cx ? 'left' : 'right';
+    return this.rooms.find((r) => r.side === side && Math.abs(r.floorY - y) < 0.01) || null;
+  }
+
   setInside(inside, ms) {
     this.scene.tweens.add({ targets: [this.exterior], alpha: inside ? 0 : 1, duration: ms, ease: 'Sine.easeInOut' });
     for (const z of this.roomZones) inside ? z.setInteractive() : z.disableInteractive();
     inside ? this.shipZone.disableInteractive() : this.shipZone.setInteractive();
   }
 
-  /** alerts: { engine, drill, tools } booleans */
+  /** alerts: booleans keyed by room id */
   update(dt, speed, blocked, alerts, venting, time) {
-    // drill animation speed follows actual speed (spins even while grinding)
     this.drillAcc += dt * (speed * 18);
     if (this.drillAcc >= 1) { this.drillAcc %= 1; this.drillFrame = (this.drillFrame + 1) % 3; this.drill.setTexture('drill' + this.drillFrame); }
-    this.drill.x = 90 + (speed > 0.05 ? (Math.random() < 0.5 ? 0 : (blocked ? 1 : 0)) : 0);
+    this.drill.x = 90 + (speed > 0.05 && blocked && Math.random() < 0.5 ? 1 : 0);
     this.chips.emitting = speed > 0.05;
     this.chips.frequency = Math.max(15, 80 - speed * 70);
 
     for (const id of Object.keys(this.bubbles)) this.bubbles[id].setVisible(!!alerts[id]);
-    const anyAlert = alerts.engine || alerts.drill || alerts.tools || alerts.helm;
+    const anyAlert = this.rooms.some((r) => alerts[r.id]);
     this.warnLight.setVisible(anyAlert && Math.floor(time / 250) % 2 === 0 && this.exterior.alpha > 0.5);
     this.exhaust.emitting = venting;
   }

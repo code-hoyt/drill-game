@@ -65,7 +65,10 @@ export const TUNING = {
   HARD_SPEED_CAP: 0.7,
 
   // --- Crew / views -------------------------------------------------------
-  CREW_SPEED: 40,          // world px / s walking speed (one room over ~0.65 s)
+  // Every trip is room -> hub -> room: 2 x STAND_OFFSET px of walking + 2 x HUB_DROP px of
+  // ladder = 32 px walk + 28 px climb => 32/72 + 28/64 = ~0.88 s per station-to-station trip.
+  CREW_WALK_SPEED: 72,     // world px / s on deck floors
+  CREW_CLIMB_SPEED: 64,    // world px / s on the hub ladder
   START_ROOM: 'helm',      // where the crew member stands when a run starts
   PILOT_REQUIRED: true,    // throttle only responds while the crew is at the HELM
   LOCK_TOAST_COOLDOWN: 900,// ms between "NO PILOT" toasts when tapping a locked throttle
@@ -73,24 +76,53 @@ export const TUNING = {
 };
 
 // World layout (world units = base pixels; the world is one screen wide).
+//
+// The ship is a 2-deck, 2x2 grid of rooms around a central hub column with a
+// ladder. The hub JUNCTION sits halfway between the two deck floors, and every
+// trip goes  stand spot -> hub door (same deck) -> junction -> hub door -> stand spot,
+// so all 12 station-to-station trips have exactly the same length.
+//
+//          /\  drill nose
+//   +------+--+------+
+//   | HELM |  | DRL  |   top deck   (nearest the drill)
+//   |------|##|------|   ## = ladder, junction at mid-height
+//   | ENG  |  | TLS  |   bottom deck
+//   +------+--+------+
 export const LAYOUT = {
-  SHIP_X: 34, SHIP_W: 112, SHIP_TOP: 248, SHIP_BOTTOM: 302,
-  DRILL_TIP_Y: 226,        // obstacles touching this y collide with the drill
-  DRILL_W: 80,
-  FLOOR_Y: 296,
-  CEIL_Y: 252,
-  PATH_MIN_X: 56, PATH_MAX_X: 124, // boulder spawn column (in front of drill)
-  // Four rooms, left to right. HELM sits between ENGINE and DRILL so the most
-  // common trips (helm <-> engine, helm <-> drill) are a single room apart.
+  SHIP_X: 47, SHIP_W: 86, SHIP_TOP: 240, SHIP_BOTTOM: 302,
+  DRILL_TIP_Y: 218,        // obstacles touching this y collide with the drill
+  DRILL_W: 70,
+  DECKS: {
+    top:    { ceil: 242, floor: 268 },
+    bottom: { ceil: 271, floor: 296 },
+  },
+  ROOM_W: 33,              // each room; rooms are separated from the hub by 2px walls
+  HUB: { x: 84, w: 12, cx: 90, junctionY: 282 }, // junctionY = midpoint of the two floors
+  STAND_OFFSET: 16,        // horizontal distance hub centre -> every crew stand spot
+  PATH_MIN_X: 62, PATH_MAX_X: 118, // boulder spawn column (in front of drill)
   ROOMS: [
-    { id: 'engine', label: 'ENG',  name: 'ENGINE', x: 37,  w: 25, bg: '#3a2629' },
-    { id: 'helm',   label: 'HELM', name: 'HELM',   x: 64,  w: 25, bg: '#2a2a40' },
-    { id: 'drill',  label: 'DRL',  name: 'DRILL',  x: 91,  w: 25, bg: '#24303d' },
-    { id: 'tools',  label: 'TLS',  name: 'TOOLS',  x: 118, w: 25, bg: '#283a29' },
+    { id: 'helm',   label: 'HELM', name: 'HELM',   deck: 'top',    side: 'left',  bg: '#2a2a40' },
+    { id: 'drill',  label: 'DRL',  name: 'DRILL',  deck: 'top',    side: 'right', bg: '#24303d' },
+    { id: 'engine', label: 'ENG',  name: 'ENGINE', deck: 'bottom', side: 'left',  bg: '#3a2629' },
+    { id: 'tools',  label: 'TLS',  name: 'TOOLS',  deck: 'bottom', side: 'right', bg: '#283a29' },
   ],
   OUTSIDE_CAM: { x: 90, y: 160, zoom: 1 },
-  INSIDE_CAM:  { x: 90, y: 256, zoom: 1.5 }, // 1.5x fits the 112px-wide ship on screen
+  INSIDE_CAM:  { x: 90, y: 267, zoom: 2 },  // integer zoom: the 86px-wide ship fills 172 of 180px
 };
+
+/** Derived room geometry (shared by Ship, Crew and Textures). */
+export const ROOM_GEOM = LAYOUT.ROOMS.map((r) => {
+  const d = LAYOUT.DECKS[r.deck];
+  const left = r.side === 'left';
+  const x = left ? LAYOUT.HUB.x - 2 - LAYOUT.ROOM_W : LAYOUT.HUB.x + LAYOUT.HUB.w + 2;
+  const w = LAYOUT.ROOM_W;
+  return {
+    ...r, x, w, ceil: d.ceil, floorY: d.floor, cx: x + w / 2,
+    stationX: left ? x + 14 : x + w - 14,
+    standX: LAYOUT.HUB.cx + (left ? -1 : 1) * LAYOUT.STAND_OFFSET,
+    faceLeft: left, // the station is on the outer side of the room
+  };
+});
 
 export const STORAGE_KEY = 'drill.bestDepth';
 

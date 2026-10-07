@@ -117,7 +117,7 @@ export class GameScene extends Phaser.Scene {
       }
     }
     const st = this.ship.room(this.crew.station || 'drill');
-    this.ship.sparks.setPosition(st.stationX, L.FLOOR_Y - 9);
+    this.ship.sparks.setPosition(st.stationX, st.floorY - 9);
     this.ship.sparks.emitting = this.crew.working;
     this.crew.update(dt);
 
