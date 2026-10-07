@@ -8,6 +8,8 @@ export class Button {
     this.color = opts.color ?? 0x3a4058;
     this.pressColor = opts.pressColor ?? 0x5a6488;
     this.enabled = true;
+    this.visible = true;
+    this.dimmed = false; // looks disabled but still receives taps (e.g. locked throttle)
     this.pressed = false;
     this.progress = 0; // 0..1 optional fill bar
     this.pointerId = null;
@@ -43,8 +45,11 @@ export class Button {
     this.draw();
     return this;
   }
+  setDimmed(v) { if (this.dimmed !== v) { this.dimmed = v; this.draw(); } return this; }
   setProgress(p) { if (Math.abs(p - this.progress) > 0.01) { this.progress = p; this.draw(); } return this; }
   setVisible(v) {
+    if (this.visible === v) return this;
+    this.visible = v;
     this.gfx.setVisible(v); this.text.setVisible(v);
     v ? this.zone.setInteractive() : this.zone.disableInteractive();
     if (!v && this.pressed) { this.pressed = false; this.pointerId = null; this.opts.onUp?.(); }
@@ -55,11 +60,12 @@ export class Button {
     const g = this.gfx, { x, y, w, h } = this;
     g.clear();
     g.fillStyle(0x0b0b10, 1).fillRect(x, y, w, h);
-    g.fillStyle(!this.enabled ? 0x2a2c36 : this.pressed ? this.pressColor : this.color, 1).fillRect(x + 1, y + 1, w - 2, h - 2);
+    const off = !this.enabled || this.dimmed;
+    g.fillStyle(off ? 0x2a2c36 : this.pressed ? this.pressColor : this.color, 1).fillRect(x + 1, y + 1, w - 2, h - 2);
     if (this.progress > 0) g.fillStyle(0xffd23f, 0.55).fillRect(x + 1, y + 1, Math.round((w - 2) * this.progress), h - 2);
     if (!this.pressed) g.fillStyle(0xffffff, this.enabled ? 0.18 : 0.05).fillRect(x + 1, y + 1, w - 2, 1);
     else g.fillStyle(0x000000, 0.25).fillRect(x + 1, y + 1, w - 2, 1);
-    this.text.setTint(this.enabled ? 0xffffff : 0x6a6c78);
+    this.text.setTint(off ? 0x6a6c78 : 0xffffff);
     this.text.y = Math.round(y + h / 2 + (this.pressed ? 1 : 0));
   }
 }

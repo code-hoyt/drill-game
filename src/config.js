@@ -65,26 +65,31 @@ export const TUNING = {
   HARD_SPEED_CAP: 0.7,
 
   // --- Crew / views -------------------------------------------------------
-  CREW_SPEED: 32,          // world px / s walking speed
+  CREW_SPEED: 40,          // world px / s walking speed (one room over ~0.65 s)
+  START_ROOM: 'helm',      // where the crew member stands when a run starts
+  PILOT_REQUIRED: true,    // throttle only responds while the crew is at the HELM
+  LOCK_TOAST_COOLDOWN: 900,// ms between "NO PILOT" toasts when tapping a locked throttle
   VIEW_PAN_MS: 650,        // camera transition time
-  INSIDE_ZOOM: 2,
 };
 
 // World layout (world units = base pixels; the world is one screen wide).
 export const LAYOUT = {
-  SHIP_X: 46, SHIP_W: 88, SHIP_TOP: 258, SHIP_BOTTOM: 312,
-  DRILL_TIP_Y: 236,        // obstacles touching this y collide with the drill
-  DRILL_W: 70,
-  FLOOR_Y: 306,
-  CEIL_Y: 262,
-  PATH_MIN_X: 62, PATH_MAX_X: 118, // boulder spawn column (in front of drill)
+  SHIP_X: 34, SHIP_W: 112, SHIP_TOP: 248, SHIP_BOTTOM: 302,
+  DRILL_TIP_Y: 226,        // obstacles touching this y collide with the drill
+  DRILL_W: 80,
+  FLOOR_Y: 296,
+  CEIL_Y: 252,
+  PATH_MIN_X: 56, PATH_MAX_X: 124, // boulder spawn column (in front of drill)
+  // Four rooms, left to right. HELM sits between ENGINE and DRILL so the most
+  // common trips (helm <-> engine, helm <-> drill) are a single room apart.
   ROOMS: [
-    { id: 'engine', label: 'ENG', name: 'ENGINE', x: 49,  w: 26, bg: '#3a2629' },
-    { id: 'drill',  label: 'DRL', name: 'DRILL',  x: 77,  w: 26, bg: '#24303d' },
-    { id: 'tools',  label: 'TLS', name: 'TOOLS',  x: 105, w: 26, bg: '#283a29' },
+    { id: 'engine', label: 'ENG',  name: 'ENGINE', x: 37,  w: 25, bg: '#3a2629' },
+    { id: 'helm',   label: 'HELM', name: 'HELM',   x: 64,  w: 25, bg: '#2a2a40' },
+    { id: 'drill',  label: 'DRL',  name: 'DRILL',  x: 91,  w: 25, bg: '#24303d' },
+    { id: 'tools',  label: 'TLS',  name: 'TOOLS',  x: 118, w: 25, bg: '#283a29' },
   ],
   OUTSIDE_CAM: { x: 90, y: 160, zoom: 1 },
-  INSIDE_CAM:  { x: 90, y: 276, zoom: 2 },
+  INSIDE_CAM:  { x: 90, y: 256, zoom: 1.5 }, // 1.5x fits the 112px-wide ship on screen
 };
 
 export const STORAGE_KEY = 'drill.bestDepth';

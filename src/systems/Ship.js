@@ -90,7 +90,7 @@ export class Ship {
     this.chips.frequency = Math.max(15, 80 - speed * 70);
 
     for (const id of Object.keys(this.bubbles)) this.bubbles[id].setVisible(!!alerts[id]);
-    const anyAlert = alerts.engine || alerts.drill || alerts.tools;
+    const anyAlert = alerts.engine || alerts.drill || alerts.tools || alerts.helm;
     this.warnLight.setVisible(anyAlert && Math.floor(time / 250) % 2 === 0 && this.exterior.alpha > 0.5);
     this.exhaust.emitting = venting;
   }

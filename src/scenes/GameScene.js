@@ -8,7 +8,8 @@ import { Crew } from '../systems/Crew.js';
 import { ViewController } from '../systems/ViewController.js';
 import { FONT_KEY } from '../systems/PixelFont.js';
 
-export const STATION_ACTIONS = { engine: ['vent'], drill: ['repair'], tools: ['patch', 'blast'] };
+// Hold-actions per station. The HELM has none: its action area is the throttle itself.
+export const STATION_ACTIONS = { engine: ['vent'], helm: [], drill: ['repair'], tools: ['patch', 'blast'] };
 
 export class GameScene extends Phaser.Scene {
   constructor() { super('Game'); }
@@ -18,7 +19,7 @@ export class GameScene extends Phaser.Scene {
     this.state = new ShipSystems();
     this.terrain = new Terrain(this);
     this.ship = new Ship(this, (id) => this.onRoomTap(id), () => this.view.set('inside'));
-    this.crew = new Crew(this, this.ship, 'drill');
+    this.crew = new Crew(this, this.ship, T.START_ROOM);
     this.obstacles = new Obstacles(this, this.state);
     this.view = new ViewController(this, this.ship);
     this.hold = null;        // action currently held by the player
@@ -27,6 +28,8 @@ export class GameScene extends Phaser.Scene {
     this.flags = {};         // previous alert states (for one-shot toasts)
     this.nextHardCheck = T.HARD_START_DEPTH;
     this.over = false;
+    this.lockedPing = -99999; // time of the last tap on a locked throttle (UI flashes)
+    this.wasPiloted = this.piloted;
     this.boom = this.add.particles(0, 0, 'px2', {
       speed: { min: 30, max: 120 }, angle: { min: 0, max: 360 }, lifespan: 900, gravityY: 60,
       tint: [0xff6b3d, 0xffd23f, 0xb5532f, 0x555555], emitting: false,
@@ -37,8 +40,24 @@ export class GameScene extends Phaser.Scene {
   }
 
   // ---- commands (called by the UI scene) ----------------------------------
-  setThrottle(v) { this.state.setThrottle(v); }
-  nudgeThrottle(d) { this.state.setThrottle(this.state.throttle + d); }
+  /** True while the crew member is standing at the helm (not walking). */
+  get piloted() { return !T.PILOT_REQUIRED || (this.crew && this.crew.station === 'helm'); }
+  /** Crew is on the way to the helm. */
+  get pilotEnRoute() { return !this.piloted && this.crew.walking && this.crew.target === 'helm'; }
+
+  // Throttle commands are ignored (with feedback) unless someone is at the helm.
+  setThrottle(v) { if (!this.piloted) return this.lockedFeedback(); this.state.setThrottle(v); return true; }
+  nudgeThrottle(d) { return this.setThrottle(this.state.throttle + d); }
+  setThrottleFromUI(v) { return this.setThrottle(Math.max(0, Math.min(1, v))); }
+  lockedFeedback() {
+    const now = this.time.now;
+    if (now - this.lockedPing > T.LOCK_TOAST_COOLDOWN) {
+      this.toast(this.pilotEnRoute ? 'PILOT ON THE WAY...' : 'NO PILOT! TAP GO TO HELM', 0xff5a5a);
+    }
+    this.lockedPing = now;
+    return false;
+  }
+  sendPilot() { this.onRoomTap('helm'); }
   toggleView() { this.setHold(null); this.view.toggle(); }
   setHold(action) { this.hold = action; if (action !== 'blast') this.blastCharge = 0; }
   onRoomTap(id) { this.setHold(null); this.crew.goTo(id); }
@@ -53,9 +72,7 @@ export class GameScene extends Phaser.Scene {
     kb.on('keydown-DOWN', () => this.nudgeThrottle(-T.THROTTLE_STEP));
     kb.on('keydown-S', () => this.nudgeThrottle(-T.THROTTLE_STEP));
     kb.on('keydown-SPACE', () => this.toggleView());
-    kb.on('keydown-ONE', () => this.onRoomTap('engine'));
-    kb.on('keydown-TWO', () => this.onRoomTap('drill'));
-    kb.on('keydown-THREE', () => this.onRoomTap('tools'));
+    ['ONE', 'TWO', 'THREE', 'FOUR'].forEach((k, i) => kb.on('keydown-' + k, () => L.ROOMS[i] && this.onRoomTap(L.ROOMS[i].id)));
     kb.on('keydown-E', () => { const a = STATION_ACTIONS[this.crew.station]; if (a) this.setHold(a[0]); });
     kb.on('keydown-Q', () => { if (this.crew.station === 'tools') this.setHold('blast'); });
     kb.on('keyup-E', () => this.setHold(null));
@@ -113,6 +130,11 @@ export class GameScene extends Phaser.Scene {
     this.edgeToast('worn', s.worn, 'BIT DESTROYED! HULL DAMAGE', 0xff4a4a);
     this.edgeToast('hull', s.hull <= T.HULL_ALERT, 'HULL CRITICAL', 0xff4a7a);
     this.edgeToast('hard', s.inHard, 'HARD ROCK: SLOW + HOT', 0x9ad0ff);
+    const piloted = this.piloted;
+    if (piloted !== this.wasPiloted) {
+      this.toast(piloted ? 'PILOT AT HELM: THROTTLE ON' : `NO PILOT: SPEED LOCKED ${Math.round(s.throttle * 100)}%`, piloted ? 0x8affa0 : 0xffc35c);
+      this.wasPiloted = piloted;
+    }
 
     if (s.dead) this.gameOver();
   }
@@ -121,6 +143,8 @@ export class GameScene extends Phaser.Scene {
     const s = this.state;
     return {
       engine: s.heat >= T.HEAT_ALERT,
+      helm: this.obstacles.anyAhead() && s.throttle > T.RAM_SAFE_SPEED, // boulder ahead, going too fast
+      pilot: !this.piloted,
       drill: s.wear >= T.WEAR_ALERT,
       tools: s.hull <= T.HULL_ALERT || this.obstacles.anyAhead(),
       hull: s.hull <= T.HULL_ALERT,

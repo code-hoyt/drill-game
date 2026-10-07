@@ -1,10 +1,14 @@
 // HUD overlay (unaffected by the game camera's pan/zoom): depth, gauges,
-// alert icons, toasts, throttle (outside view), station actions (inside view).
+// alert icons, toasts, throttle (outside view + HELM station inside),
+// station actions (inside view), pilot status bar (both views).
 import { GAME_W, GAME_H, TUNING as T, LAYOUT as L, loadBest } from '../config.js';
 import { FONT_KEY } from '../systems/PixelFont.js';
 import { Button } from '../ui/Button.js';
 
-const TRACK = { x: 160, y: 134, w: 14, h: 138 }; // throttle slider track
+const VTRACK = { x: 160, y: 134, w: 14, h: 138 }; // outside view: vertical slider
+const HTRACK = { x: 34, y: 260, w: 112, h: 12 };  // inside view at HELM: horizontal slider
+const PANEL_Y = 232;                               // inside station panel top
+const BAR_Y = 303;                                 // bottom status bar (both views)
 const ROOM_NAMES = Object.fromEntries(L.ROOMS.map((r) => [r.id, r.name]));
 
 export class UIScene extends Phaser.Scene {
@@ -13,6 +17,7 @@ export class UIScene extends Phaser.Scene {
   create() {
     this.g = this.scene.get('Game');
     const txt = (x, y, s, size = 6, tint = 0xffffff) => this.add.bitmapText(x, y, FONT_KEY, s, size).setTint(tint);
+    this.txt = txt;
 
     // --- top bar --------------------------------------------------------------
     this.add.rectangle(0, 0, GAME_W, 24, 0x0d0b12, 0.88).setOrigin(0);
@@ -31,47 +36,78 @@ export class UIScene extends Phaser.Scene {
     this.toastText = txt(GAME_W / 2, 50, '', 6).setOrigin(0.5).setVisible(false);
     this.toastTimer = 0;
 
-    // --- view toggle ------------------------------------------------------------
-    this.toggleBtn = new Button(this, 4, 300, 46, 16, 'INSIDE', { onTap: () => this.g.toggleView(), color: 0x7a3320, pressColor: 0xb5532f });
+    // --- bottom status bar (both views) -------------------------------------------
+    this.add.rectangle(0, BAR_Y, GAME_W, GAME_H - BAR_Y, 0x0d0b12, 0.92).setOrigin(0);
+    this.add.rectangle(0, BAR_Y, GAME_W, 1, 0x3a3348).setOrigin(0);
+    this.toggleBtn = new Button(this, 2, BAR_Y + 2, 44, 14, 'INSIDE', { onTap: () => this.g.toggleView(), color: 0x7a3320, pressColor: 0xb5532f });
+    this.pilotBtn = new Button(this, 49, BAR_Y + 2, 84, 14, 'NO PILOT: GO TO HELM', { onTap: () => this.g.sendPilot(), color: 0x8a2f24, pressColor: 0xc4503a });
+    this.pilotText = txt(91, BAR_Y + 6, '', 6).setOrigin(0.5, 0);
+    this.speedText = txt(177, BAR_Y + 6, '', 6).setOrigin(1, 0);
+    this.speedLock = this.add.image(0, BAR_Y + 5, 'lock').setOrigin(1, 0);
 
-    // --- outside: throttle --------------------------------------------------------
-    this.outside = [];
+    // --- outside: vertical throttle ------------------------------------------------
     this.plus = new Button(this, 156, 114, 22, 16, '+', { size: 12, onTap: () => this.g.nudgeThrottle(T.THROTTLE_STEP) });
     this.minus = new Button(this, 156, 276, 22, 16, '-', { size: 12, onTap: () => this.g.nudgeThrottle(-T.THROTTLE_STEP) });
-    this.trackGfx = this.add.graphics();
-    this.speedLabel = txt(167, 298, 'SPD', 6, 0x9aa0b8).setOrigin(0.5, 0);
-    this.speedText = txt(167, 306, '0%', 6).setOrigin(0.5, 0);
-    this.trackZone = this.add.zone(TRACK.x - 6, TRACK.y - 2, TRACK.w + 10, TRACK.h + 4).setOrigin(0).setInteractive();
+    this.vGfx = this.add.graphics();
+    this.vLock = this.add.image(VTRACK.x + VTRACK.w / 2, 186, 'lock').setScale(2);
+    this.vLockText1 = txt(167, 198, 'NO', 6, 0xff5a5a).setOrigin(0.5, 0);
+    this.vLockText2 = txt(167, 205, 'PILOT', 6, 0xff5a5a).setOrigin(0.5, 0);
+    this.vZone = this.add.zone(VTRACK.x - 6, VTRACK.y - 2, VTRACK.w + 10, VTRACK.h + 4).setOrigin(0).setInteractive();
     this.dragId = null;
-    const setFromPointer = (p) => this.g.setThrottle(1 - (p.y - TRACK.y) / TRACK.h);
-    this.trackZone.on('pointerdown', (p) => { this.dragId = p.id; setFromPointer(p); });
-    this.input.on('pointermove', (p) => { if (this.dragId === p.id && p.isDown) setFromPointer(p); });
+    this.dragAxis = null;
+    this.vZone.on('pointerdown', (p) => this.startDrag(p, 'v'));
+
+    // --- inside: station panel -------------------------------------------------------
+    this.panel = this.add.rectangle(0, PANEL_Y, GAME_W, BAR_Y - PANEL_Y, 0x0d0b12, 0.88).setOrigin(0);
+    this.panelLine = this.add.rectangle(0, PANEL_Y, GAME_W, 1, 0x3a3348).setOrigin(0);
+    this.stationText = txt(6, PANEL_Y + 4, '', 6);
+    this.hintText = txt(6, PANEL_Y + 13, '', 6, 0x7a7f96);
+    const hold = (action) => ({ onDown: () => this.g.setHold(action), onUp: () => { if (this.g.hold === action) this.g.setHold(null); } });
+    const AY = PANEL_Y + 25;
+    this.actionBtns = {
+      vent:   new Button(this, 8, AY, 164, 22, 'HOLD: VENT HEAT', { ...hold('vent'), color: 0x8a2f24, pressColor: 0xc4503a }),
+      repair: new Button(this, 8, AY, 164, 22, 'HOLD: FIX DRILL BIT', { ...hold('repair'), color: 0x2f5a8a, pressColor: 0x4a84c4 }),
+      patch:  new Button(this, 8, AY, 80, 22, 'HOLD: PATCH', { ...hold('patch'), color: 0x2f7a3a, pressColor: 0x4ab05a }),
+      blast:  new Button(this, 92, AY, 80, 22, 'HOLD: BLAST', { ...hold('blast'), color: 0x6a3a8a, pressColor: 0x9a5ac4 }),
+    };
+    // HELM action area: horizontal throttle with -/+ buttons
+    this.hMinus = new Button(this, 6, AY, 24, 22, '-', { size: 12, onTap: () => this.g.nudgeThrottle(-T.THROTTLE_STEP) });
+    this.hPlus = new Button(this, 150, AY, 24, 22, '+', { size: 12, onTap: () => this.g.nudgeThrottle(T.THROTTLE_STEP) });
+    this.hGfx = this.add.graphics();
+    this.hZone = this.add.zone(HTRACK.x, AY, HTRACK.w, 22).setOrigin(0);
+    this.hZone.on('pointerdown', (p) => this.startDrag(p, 'h'));
+
+    this.input.on('pointermove', (p) => { if (this.dragId === p.id && p.isDown) this.dragTo(p); });
     this.input.on('pointerup', (p) => { if (this.dragId === p.id) this.dragId = null; });
 
-    // --- inside: station panel ------------------------------------------------------
-    this.panel = this.add.rectangle(0, 237, GAME_W, 60, 0x0d0b12, 0.88).setOrigin(0);
-    this.panelLine = this.add.rectangle(0, 237, GAME_W, 1, 0x3a3348).setOrigin(0);
-    this.stationText = txt(6, 242, '', 6);
-    this.hintText = txt(6, 251, 'TAP A ROOM TO WALK THERE', 6, 0x7a7f96);
-    const hold = (action) => ({ onDown: () => this.g.setHold(action), onUp: () => { if (this.g.hold === action) this.g.setHold(null); } });
-    this.actionBtns = {
-      vent:   new Button(this, 8, 262, 164, 22, 'HOLD: VENT HEAT', { ...hold('vent'), color: 0x8a2f24, pressColor: 0xc4503a }),
-      repair: new Button(this, 8, 262, 164, 22, 'HOLD: FIX DRILL BIT', { ...hold('repair'), color: 0x2f5a8a, pressColor: 0x4a84c4 }),
-      patch:  new Button(this, 8, 262, 80, 22, 'HOLD: PATCH', { ...hold('patch'), color: 0x2f7a3a, pressColor: 0x4ab05a }),
-      blast:  new Button(this, 92, 262, 80, 22, 'HOLD: BLAST', { ...hold('blast'), color: 0x6a3a8a, pressColor: 0x9a5ac4 }),
-    };
-    this.insideSpeed = txt(176, 306, '', 6, 0x9aa0b8).setOrigin(1, 0);
-
+    this.shakeUntil = 0;
+    this.lastPing = this.g.lockedPing;
     this.lastMode = null;
+  }
+
+  startDrag(p, axis) {
+    if (!this.g.setThrottleFromUI(this.valueFor(p, axis))) return; // locked: feedback handled by Game
+    this.dragId = p.id; this.dragAxis = axis;
+  }
+  dragTo(p) { this.g.setThrottleFromUI(this.valueFor(p, this.dragAxis)); }
+  valueFor(p, axis) {
+    return axis === 'v' ? 1 - (p.y - VTRACK.y) / VTRACK.h : (p.x - HTRACK.x) / HTRACK.w;
   }
 
   setMode(inside) {
     this.toggleBtn.setLabel(inside ? 'OUTSIDE' : 'INSIDE');
     [this.plus, this.minus].forEach((b) => b.setVisible(!inside));
-    [this.trackGfx, this.speedLabel, this.speedText].forEach((o) => o.setVisible(!inside));
-    inside ? this.trackZone.disableInteractive() : this.trackZone.setInteractive();
-    [this.panel, this.panelLine, this.stationText, this.hintText, this.insideSpeed].forEach((o) => o.setVisible(inside));
-    if (!inside) Object.values(this.actionBtns).forEach((b) => b.setVisible(false));
+    this.vGfx.setVisible(!inside);
+    inside ? this.vZone.disableInteractive() : this.vZone.setInteractive();
+    [this.panel, this.panelLine, this.stationText, this.hintText].forEach((o) => o.setVisible(inside));
+    if (!inside) { Object.values(this.actionBtns).forEach((b) => b.setVisible(false)); this.showHelmControls(false); }
+  }
+
+  showHelmControls(v) {
+    if (this.hMinus.gfx.visible !== v || this.hGfx.visible !== v) {
+      this.hMinus.setVisible(v); this.hPlus.setVisible(v); this.hGfx.setVisible(v);
+      v ? this.hZone.setInteractive() : this.hZone.disableInteractive();
+    }
   }
 
   update(time, delta) {
@@ -79,6 +115,8 @@ export class UIScene extends Phaser.Scene {
     if (!s) return;
     const inside = g.view.inside;
     if (inside !== this.lastMode) { this.setMode(inside); this.lastMode = inside; }
+    if (g.lockedPing !== this.lastPing) { this.lastPing = g.lockedPing; this.shakeUntil = time + 350; }
+    const piloted = g.piloted;
 
     // top bar
     this.depthText.setText(`${Math.floor(s.depth)}M`);
@@ -103,8 +141,9 @@ export class UIScene extends Phaser.Scene {
       if (on) { ic.img.x = x; x += 13; ic.img.setAlpha(blink ? 1 : 0.55); }
     }
 
-    // toasts
-    if (g.toasts.length) {
+    // toasts (each stays readable for at least 0.6 s; queue capped at 3)
+    if (g.toasts.length > 3) g.toasts.splice(0, g.toasts.length - 3);
+    if (g.toasts.length && this.toastTimer < 1200) {
       const t = g.toasts.shift();
       this.toastText.setText(t.text).setTint(t.color).setVisible(true);
       const w = this.toastText.width + 8;
@@ -116,37 +155,81 @@ export class UIScene extends Phaser.Scene {
       if (this.toastTimer <= 0) { this.toastText.setVisible(false); this.toastBg.setVisible(false); }
     }
 
-    if (inside) this.updateInside(g, s); else this.drawThrottle(s);
+    // bottom bar: pilot status + speed
+    this.pilotBtn.setVisible(!piloted && !g.pilotEnRoute);
+    this.pilotBtn.setProgress(!piloted && time - g.lockedPing < 1200 && Math.floor(time / 150) % 2 === 0 ? 1 : 0);
+    this.pilotText.setVisible(piloted || g.pilotEnRoute);
+    if (piloted) this.pilotText.setText('PILOT AT HELM').setTint(0x8affa0);
+    else if (g.pilotEnRoute) this.pilotText.setText('PILOT EN ROUTE...').setTint(0xffc35c);
+    const spd = `SPD ${Math.round(s.throttle * 100)}%`;
+    this.speedText.setText(spd).setTint(piloted ? 0xffffff : 0x9aa0b8);
+    this.speedLock.setVisible(!piloted).setX(177 - this.speedText.width - 2);
+
+    if (inside) this.updateInside(g, s, time); else this.drawVThrottle(s, piloted, time);
   }
 
-  drawThrottle(s) {
-    const t = this.trackGfx.clear(), { x, y, w, h } = TRACK;
-    t.fillStyle(0x0b0b10, 1).fillRect(x - 1, y - 1, w + 2, h + 2);
+  shakeX(time) { return time < this.shakeUntil ? Math.round(Math.sin(time * 0.09) * 2) : 0; }
+
+  drawVThrottle(s, piloted, time) {
+    const t = this.vGfx.clear(), { y, w, h } = VTRACK;
+    const x = VTRACK.x + this.shakeX(time);
     const safeH = Math.round(h * T.RAM_SAFE_SPEED);
-    t.fillStyle(0x1f3a26, 1).fillRect(x, y + h - safeH, w, safeH);       // safe-to-ram zone
-    t.fillStyle(0x3a1f22, 1).fillRect(x, y, w, h - safeH);               // danger zone
     const fillH = Math.round(h * s.throttle);
-    t.fillStyle(s.throttle <= T.RAM_SAFE_SPEED ? 0x4ad66d : 0xff8a3d, 0.75).fillRect(x + 3, y + h - fillH, w - 6, fillH);
+    t.fillStyle(0x0b0b10, 1).fillRect(x - 1, y - 1, w + 2, h + 2);
+    t.fillStyle(piloted ? 0x1f3a26 : 0x1c1f22, 1).fillRect(x, y + h - safeH, w, safeH);   // safe-to-ram zone
+    t.fillStyle(piloted ? 0x3a1f22 : 0x221c1e, 1).fillRect(x, y, w, h - safeH);           // danger zone
+    const fillCol = !piloted ? 0x6a6c78 : s.throttle <= T.RAM_SAFE_SPEED ? 0x4ad66d : 0xff8a3d;
+    t.fillStyle(fillCol, piloted ? 0.75 : 0.5).fillRect(x + 3, y + h - fillH, w - 6, fillH);
     for (let i = 1; i < 10; i++) t.fillStyle(0x000000, 0.5).fillRect(x, y + Math.round(h * i / 10), 3, 1);
-    // actual speed marker (white tick) vs requested throttle (handle)
-    const sy = y + h - Math.round(h * s.speed);
-    t.fillStyle(0xffffff, 1).fillRect(x - 3, sy, 3, 1);
-    const hy = y + h - fillH;
+    const sy = y + h - Math.round(h * s.speed);                 // actual speed tick
+    t.fillStyle(0xffffff, piloted ? 1 : 0.5).fillRect(x - 3, sy, 3, 1);
+    const hy = y + h - fillH;                                   // handle = requested throttle
     t.fillStyle(0x0b0b10, 1).fillRect(x - 3, hy - 3, w + 6, 7);
-    t.fillStyle(0xd8dbe8, 1).fillRect(x - 2, hy - 2, w + 4, 5);
-    t.fillStyle(0x80839a, 1).fillRect(x - 2, hy + 1, w + 4, 2);
-    this.speedText.setText(`${Math.round(s.throttle * 100)}%`);
-    this.plus.setEnabled(s.throttle < 1);
-    this.minus.setEnabled(s.throttle > 0);
+    t.fillStyle(piloted ? 0xd8dbe8 : 0x6a6c78, 1).fillRect(x - 2, hy - 2, w + 4, 5);
+    t.fillStyle(piloted ? 0x80839a : 0x44464f, 1).fillRect(x - 2, hy + 1, w + 4, 2);
+    // lock overlay
+    [this.vLock, this.vLockText1, this.vLockText2].forEach((o) => o.setVisible(!piloted));
+    if (!piloted) {
+      t.fillStyle(0x0b0b10, 0.85).fillRect(x - 3, 180, w + 6, 32);
+      this.vLock.x = x + w / 2; this.vLockText1.x = x + w / 2; this.vLockText2.x = x + w / 2;
+    }
+    this.plus.setDimmed(!piloted || s.throttle >= 1);
+    this.minus.setDimmed(!piloted || s.throttle <= 0);
   }
 
-  updateInside(g, s) {
+  drawHThrottle(s, time) {
+    const t = this.hGfx.clear(), { y, w, h } = HTRACK;
+    const x = HTRACK.x + this.shakeX(time);
+    const safeW = Math.round(w * T.RAM_SAFE_SPEED);
+    const fillW = Math.round(w * s.throttle);
+    t.fillStyle(0x0b0b10, 1).fillRect(x - 1, y - 1, w + 2, h + 2);
+    t.fillStyle(0x1f3a26, 1).fillRect(x, y, safeW, h);
+    t.fillStyle(0x3a1f22, 1).fillRect(x + safeW, y, w - safeW, h);
+    t.fillStyle(s.throttle <= T.RAM_SAFE_SPEED ? 0x4ad66d : 0xff8a3d, 0.75).fillRect(x, y + 3, fillW, h - 6);
+    for (let i = 1; i < 10; i++) t.fillStyle(0x000000, 0.5).fillRect(x + Math.round(w * i / 10), y + h - 3, 1, 3);
+    t.fillStyle(0xffffff, 1).fillRect(x + Math.round(w * s.speed), y + h, 1, 3); // actual speed tick
+    const hx = x + fillW;
+    t.fillStyle(0x0b0b10, 1).fillRect(hx - 3, y - 3, 7, h + 6);
+    t.fillStyle(0xd8dbe8, 1).fillRect(hx - 2, y - 2, 5, h + 4);
+    t.fillStyle(0x80839a, 1).fillRect(hx + 1, y - 2, 2, h + 4);
+    this.hPlus.setDimmed(s.throttle >= 1);
+    this.hMinus.setDimmed(s.throttle <= 0);
+  }
+
+  updateInside(g, s, time) {
     const c = g.crew;
     const station = c.station;
     const show = (ids) => Object.entries(this.actionBtns).forEach(([k, btn]) => btn.setVisible(ids.includes(k)));
+    this.showHelmControls(station === 'helm');
+    this.hintText.setText('TAP A ROOM TO WALK THERE');
     if (!station) {
       this.stationText.setText(`WALKING TO ${ROOM_NAMES[c.target]}...`).setTint(0xc8c8d8);
       show([]);
+    } else if (station === 'helm') {
+      this.stationText.setText(`HELM   SPEED ${Math.round(s.throttle * 100)}%`).setTint(s.throttle > T.RAM_SAFE_SPEED ? 0xffc35c : 0x8affa0);
+      this.hintText.setText('DRAG TO SET SPEED. GREEN = SAFE');
+      show([]);
+      this.drawHThrottle(s, time);
     } else if (station === 'engine') {
       this.stationText.setText(`ENGINE   HEAT ${Math.round(s.heat)}%`).setTint(s.heat >= T.HEAT_ALERT ? 0xff8a5c : 0xffffff);
       show(['vent']);
@@ -163,8 +246,7 @@ export class UIScene extends Phaser.Scene {
       this.actionBtns.blast.setEnabled(!!g.obstacles.target());
       this.actionBtns.blast.setProgress(g.blastCharge / T.BLAST_TIME);
     }
-    // release a hold whose button just got disabled
+    // release a hold whose button just got disabled/hidden
     if (g.hold && !Object.entries(this.actionBtns).some(([k, b]) => k === g.hold && b.enabled && b.gfx.visible)) g.setHold(null);
-    this.insideSpeed.setText(`SPD ${Math.round(s.speed * 100)}%`);
   }
 }

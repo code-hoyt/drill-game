@@ -117,8 +117,10 @@ export function createTextures(scene) {
     for (let x = 4; x < w - 3; x += 7) { px(x, 3, '#e3936a'); px(x, h - 4, '#e3936a'); }
     px(1, 1, '#d77a4f', w - 2, 1);
     px(1, h - 3, '#5a2416', w - 2, 2);
-    // porthole
-    px(w / 2 - 5, 18, '#2b1712', 10, 10); px(w / 2 - 4, 19, '#ffd27a', 8, 8); px(w / 2 - 3, 20, '#fff2c4', 3, 2);
+    // porthole over the helm (cockpit) room
+    const helm = L.ROOMS.find((r) => r.id === 'helm') || { x: L.SHIP_X + w / 2 - 12, w: 24 };
+    const pc = Math.round(helm.x - L.SHIP_X + helm.w / 2);
+    px(pc - 5, 18, '#2b1712', 10, 10); px(pc - 4, 19, '#ffd27a', 8, 8); px(pc - 3, 20, '#fff2c4', 3, 2);
     // vents
     for (let i = 0; i < 3; i++) px(8, 22 + i * 4, '#3d1e15', 12, 2);
     // hatch
@@ -139,6 +141,15 @@ export function createTextures(scene) {
     px(0, 6, '#6b4a2b', 12, 2); px(1, 8, '#4a3220', 2, 6); px(9, 8, '#4a3220', 2, 6);
     px(2, 2, '#c0c4d0', 2, 4); px(1, 1, '#c0c4d0', 4, 2); px(7, 3, '#e0c040', 4, 3); px(8, 2, '#a08020', 2, 1);
   });
+
+  canvas(scene, 'st_helm', 12, 14, (ctx, px) => {
+    // console with viewscreen + throttle lever, pilot seat in front
+    px(0, 0, '#2a2a33', 10, 8); px(1, 1, '#2d4a7a', 8, 5); px(2, 2, '#9ad0ff', 2, 1); px(2, 4, '#4f86c0', 5, 1);
+    px(10, 2, '#555a6e', 1, 6); px(9, 1, '#ff6b3d', 3, 2);         // lever
+    px(1, 8, '#555a6e', 9, 2);                                      // desk
+    px(3, 10, '#7a3320', 5, 2); px(4, 12, '#3b3b4a', 1, 2); px(6, 12, '#3b3b4a', 1, 2); // seat
+  });
+  pixelMap(scene, 'lock', ['.###.', '#...#', '#...#', '#####', '##.##', '##.##', '#####'], { '#': '#ff5a5a' });
 
   // Crew frames
   Object.entries(CREW).forEach(([k, rows]) => pixelMap(scene, k, rows, CREW_PAL));
