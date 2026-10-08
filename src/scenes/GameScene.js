@@ -99,7 +99,6 @@ export class GameScene extends Phaser.Scene {
     this.relayWarned = false;
     this.scene.stop('Relay');
     this.toast(`SEGMENT ${s.relays + 1}: PAY X${s.payMult.toFixed(1)}`, 0x7fe0ff);
-    if (!this.piloted) this.toast('THROTTLE AT 0. GET HOLT TO THE HELM', 0xffc35c);
   }
 
   cashOut() {

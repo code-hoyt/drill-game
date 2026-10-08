@@ -115,8 +115,11 @@ export class ShipSystems {
     this.hull = clamp(this.hull + n, 0, this.maxHull);
     return { points: n, cost };
   }
-  anchor() { this.anchored = true; this.speed = 0; this.throttle = 0; this.heat = 0; this.wear = 0; this.blocked = false; }
-  pushOn() { this.relays += 1; this.anchored = false; }
+  // Clamp in: remember the throttle setting, stop dead, free heat + bit service.
+  anchor() { this.relayThrottle = this.throttle; this.anchored = true; this.speed = 0; this.throttle = 0; this.heat = 0; this.wear = 0; this.blocked = false; }
+  // Undock: the throttle goes back to its pre-relay setting (wherever the crew is);
+  // actual speed ramps up from 0 with the normal ACCEL in update().
+  pushOn() { this.relays += 1; this.anchored = false; this.throttle = this.relayThrottle ?? 0; this.speed = 0; }
 
   _nextSpike() {
     const [a, b] = T.SPIKE_INTERVAL;

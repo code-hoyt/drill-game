@@ -63,9 +63,9 @@ Optional desktop keys: `W/S` or arrow keys for throttle (only when piloted), `Sp
 * **Relays (every `RELAY_INTERVAL` = 1000 m)**:
   * At 50 m out, Ines pings `INES: RELAY WINDOW IN 50M.`, and a dashed cyan `RELAY N` line scrolls toward the drill.
   * The approach is boulder-free: no boulder or hard band is spawned that would reach the drill between 50 m before and 30 m after a relay.
-  * The rig stops **exactly** on the relay and clamps in. Speed and throttle go to 0, the simulation pauses, and **heat and bit wear are reset for free**.
+  * The rig stops **exactly** on the relay and clamps in. Speed and throttle go to 0 (the throttle setting is remembered), the simulation pauses, and **heat and bit wear are reset for free**.
   * **Break screen**: Ines's dispatch message types in over radio static (tap the box to skip). You pick **1 of 3 random relay supplies**, which last the whole run and stack. Then you can buy hull from the haul (+10 or MAX). It costs `REPAIR_COST_BASE` × `REPAIR_COST_GROWTH`^(relay−1) per point: **4, 6, 9, 13.5, 20.3… CR/pt**. The screen shows the next segment's pay and a cash-out preview.
-  * **PUSH ON**: pay goes up, and the next relay is 1000 m further. Throttle is at 0, so the helm has to start you moving again.
+  * **PUSH ON**: pay goes up, and the next relay is 1000 m further. The throttle goes back to the setting it had when you arrived, wherever Holt is standing, and the rig ramps back up from the stop at the normal acceleration.
   * **CASH OUT**: you're winched up and bank `floor(haul × 1.10)`.
 * **Relay supplies** (`src/data/boosts.js`, 3 distinct offered per relay; repeats are possible across relays): COOLANT CANISTER (vent +30%), SPARE BIT (auto-swaps when the bit hits 100%), CHARGE PACK (blast 2× faster), PLATE KIT (+15 max hull and +15 now), SCANNER TUNE-UP (boulder warnings 50% earlier), GOOD BOOTS (walk/climb +15%), HEAT SINK (heat −15%), HARDENED TEETH (wear −15%), PATCH COMPOUND (patch +40%), SHOCK STRUTS (ram damage −20%).
 * **Hull loss**: the rig is lost. The crew cab ejects as an escape pod and rides the bore back, and you bank `floor(haul / 3)`.
@@ -151,7 +151,7 @@ docs/DESIGN.md             game design doc
 * The rig stops at exactly 1000 m, with heat and wear reset and the sim paused.
 * The dispatch types out in full, and there are 3 distinct offers. Tapping PLATE KIT applies +15 max hull, and only 1 pick is allowed.
 * Repair costs 4 CR/pt at relay 1 (+10 hull costs 40) and 6 CR/pt at relay 2.
-* PUSH ON resumes the run, and the helm throttle works.
+* PUSH ON resumes the run: the throttle equals the pre-relay setting, speed ramps up from 0, and the helm throttle works.
 * CASH OUT banks `floor(haul × 1.1)` into `drill.save` and sets the new best (2000 m).
 * Hull loss banks `floor(haul / 3)` and launches the escape pod.
 * After a reload, the title shows your credits.

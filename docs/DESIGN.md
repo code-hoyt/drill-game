@@ -85,7 +85,7 @@ Every 1000 m the contract calls for a **relay anchor**: a beacon bolted into the
      - Boots: +15% walk and climb speed.
    - **Dispatch message:** one story beat plus the contract update, e.g. "Next segment pays ×1.5."
    - **The choice: PUSH ON or CASH OUT.**
-4. **Undock.** If you push on, the throttle unlocks at the helm and the next segment starts. Difficulty keeps ramping by depth.
+4. **Undock.** If you push on, the throttle returns to the setting it had when you clamped in, the rig ramps back up from the stop, and the next segment starts. Difficulty keeps ramping by depth.
 
 ### Ending a run, and what you keep
 

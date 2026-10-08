@@ -266,6 +266,7 @@ check('Ines relay warning ~50 m before the relay', await G('g.relayWarned && s.d
 const warnSeen = await G('ui.toastText.text.includes("RELAY") || g.toasts.some(t => t.text.includes("RELAY"))');
 check('warning shown as a toast', warnSeen, await G('ui.toastText.text'));
 const heatBefore = await G('s.heat');
+const preRelayThrottle = await thr();
 await page.waitForFunction(() => __drill.scene.isActive('Relay'), null, { timeout: 20000 }).catch(() => {});
 const arr = await G('({ depth: s.depth, anchored: s.anchored, heat: s.heat, wear: s.wear, speed: s.speed, throttle: s.throttle, log: g.obstacles.spawnLog.slice(), ahead: g.obstacles.list.filter(o => o.sprite.y > 100).length, bands: g.terrain.bands.length })');
 check('arrives exactly at relay 1 (1000 m) and clamps in', arr.depth === 1000 && arr.anchored && arr.speed === 0 && arr.throttle === 0, JSON.stringify(arr));
@@ -292,13 +293,22 @@ await tap(48, 166); await wait(250);
 const rp1 = await G('({ haul: s.haul, hull: s.hull })');
 check('relay 1 hull costs 4 cr/pt; +10 hull costs 40 from the haul', rp0.per === 4 && Math.abs(rp1.hull - rp0.hull - 10) < 0.01 && Math.abs(rp0.haul - rp1.haul - 40) < 0.01, `${JSON.stringify(rp0)} -> ${JSON.stringify(rp1)}`);
 await page.screenshot({ path: `${OUT}/06-relay-break.png` });
-// PUSH ON
+// PUSH ON (with Holt away from the helm: the restored setting doesn't depend on where he stands)
+await G('(g.onRoomTap("engine"), true)');
+await waitFor('g.crew.station === "engine"', 3000);
+check('Holt walked to ENG while clamped in (unpiloted)', await G('g.crew.station === "engine" && !g.piloted'));
 await tap(48, 277); await wait(400);
-const po = await G('({ relays: s.relays, mult: s.payMult, anchored: s.anchored, next: s.nextRelayAt, relay: __drill.scene.isActive("Relay"), throttle: s.throttle })');
-check('PUSH ON: break closes, pay rises to x1.5, next relay 2000 m', po.relays === 1 && po.mult === 1.5 && !po.anchored && po.next === 2000 && !po.relay && po.throttle === 0, JSON.stringify(po));
+const po = await G('({ relays: s.relays, mult: s.payMult, anchored: s.anchored, next: s.nextRelayAt, relay: __drill.scene.isActive("Relay"), throttle: s.throttle, speed: s.speed })');
+check('PUSH ON: break closes, pay rises to x1.5, next relay 2000 m', po.relays === 1 && po.mult === 1.5 && !po.anchored && po.next === 2000 && !po.relay, JSON.stringify(po));
+check('PUSH ON restores the pre-relay throttle setting', near(po.throttle, preRelayThrottle), `pre=${preRelayThrottle} now=${po.throttle}`);
+const sp = [];
+for (let i = 0; i < 4; i++) { sp.push(await G('s.speed')); await wait(250); }
+check('speed ramps up from the stop (no jump)', po.speed < 0.35 && sp.every((v, i) => i === 0 || v > sp[i - 1]) && sp[0] < po.throttle - 0.1,
+  `at push ${po.speed.toFixed(3)}; then ${sp.map((v) => v.toFixed(3)).join(' > ')}`);
 check('HUD pay rate updated', (await G('ui.payText.text')) === 'PAY X1.5');
-await tap(...O_PLUS); await tap(...O_PLUS); await tap(...O_PLUS); await wait(200);
-check('helm throttle works again after push on', near(await thr(), 0.3), 'throttle=' + await thr());
+await tap(...PILOT_BTN); await waitFor('g.piloted', 4000);
+await tap(...O_MINUS); await tap(...O_MINUS); await wait(200);
+check('helm throttle works again after push on', near(await thr(), preRelayThrottle - 0.2), 'throttle=' + await thr());
 await wait(800);
 const q0 = await G('({ h: s.haul, d: s.distance })'); await wait(1000); const q1 = await G('({ h: s.haul, d: s.distance })');
 const m1 = (q1.d - q0.d) / T.PX_PER_METER;
