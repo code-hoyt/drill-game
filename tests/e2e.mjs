@@ -18,7 +18,7 @@ const wait = (ms) => page.waitForTimeout(ms);
 const G = (fn) => page.evaluate(`(() => { const g = __drill.scene.getScene('Game'); const s = g.state; const ui = __drill.scene.getScene('UI'); return (${fn}); })()`);
 const waitFor = async (fn, ms) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { if (await G(fn)) return true; await wait(100); } return false; };
 
-await page.goto(BASE + '?anim=0'); // main flow skips cutscenes; they get their own section below
+await page.goto(BASE + '?anim=0&noevents=1'); // main flow (no random veins/events: those get their own section) skips cutscenes; they get their own section below
 await page.evaluate(() => localStorage.clear());
 await page.reload();
 await wait(1500);
@@ -468,7 +468,7 @@ check('LOCKED < back -> stock, Quartermaster X -> bay view', backToStock && (awa
 
 // ---- shortcuts: ?credits=5000 + forced stock, then reroll / buy / equip ------------------
 const STOCK = 'widecut,diamond,overdrive,coldloop,plating,ablative,heavycharge,patchfoam,scanner,governor,lightboots,harness';
-await page.goto(BASE + '?anim=0&unlock=all&credits=5000&stock=' + STOCK); await wait(1500);
+await page.goto(BASE + '?anim=0&noevents=1&unlock=all&credits=5000&stock=' + STOCK); await wait(1500);
 await tap(90, 160); await wait(800);
 check('?credits=5000 shortcut', (await D('JSON.parse(localStorage.getItem("drill.save")).credits')) === 5000 && (await D('u.creditText.text')) === '5000 CR');
 await navTo('qm', 'vendor');
@@ -558,7 +558,7 @@ check('3 lifetime relays unlock the tool belt (without depth)', th.r3.join() ===
 // grandfathering: a v2 save that owns parts which are now milestone-locked keeps them
 await page.evaluate(() => { localStorage.clear(); localStorage.setItem('drill.save', JSON.stringify({ v: 2, credits: 50, totalEarned: 9000, runs: 5, cashouts: 3, rigsLost: 2, relaysReached: 1, deepestRelay: 1, best: { kessa4: 600 },
   owned: ['stockbit', 'stockengine', 'stockhull', 'stocktools', 'stockhelm', 'stockkit', 'widecut', 'heavycharge'], loadout: { drill: 'widecut', tools: 'heavycharge' }, vendor: { stock: ['linkage', 'diamond', 'bypass'], rerolls: 0, refreshes: 5 }, radio: [] })); });
-await page.goto(BASE + '?anim=0'); await wait(1500);
+await page.goto(BASE + '?anim=0&noevents=1'); await wait(1500);
 const gf = await page.evaluate(() => JSON.parse(localStorage.getItem('drill.save')));
 check('grandfathering: owned locked parts stay owned + equipped (v2 -> v3)', gf.v === 3 && gf.owned.includes('widecut') && gf.owned.includes('heavycharge') && gf.loadout.drill === 'widecut' && gf.loadout.tools === 'heavycharge' && gf.credits === 50, JSON.stringify({ l: gf.loadout, v: gf.v }));
 check('grandfathering: an old stock with now-locked parts is re-drawn from unlocked parts only', gf.vendor.stock.length >= 6 && !gf.vendor.stock.includes('linkage') && !gf.vendor.stock.includes('bypass')
@@ -579,7 +579,7 @@ const freezeWhen = async (cond, file, key = 'Cutscene') => {
 };
 // cutscenes run 4.6 s x ANIM_SCALE (config: 2 -> 9.2 s); tolerance for slow CI
 const ANIM_OK = (ms, exp) => ms >= exp * 0.95 && ms <= exp * 1.1 + 300;
-await page.goto(BASE + '?wipe=1'); await wait(1500);
+await page.goto(BASE + '?wipe=1&noevents=1'); await wait(1500);
 const CFG = await page.evaluate(() => window.__drillAnimCfg);
 const CONF_SCALE = await page.evaluate(async () => (await import(new URL('src/config.js', location.href).href)).ANIM_SCALE);
 check('animation speed is one config multiplier: ANIM_SCALE 2 -> 9.2 s cutscenes, ~0.5 s grace, ~0.78 s lift', CONF_SCALE === 2 && CFG.scale === 2 && CFG.cutsceneMs === 9200 && CFG.graceMs >= 450 && CFG.graceMs <= 550 && CFG.liftMs >= 700 && CFG.liftMs <= 850, JSON.stringify(CFG));
@@ -673,13 +673,161 @@ await page.waitForFunction(() => __drill.scene.isActive('GameOver'), null, { tim
 check('screenshot runs also end docked with the summary', await page.evaluate(() => __drill.scene.isActive('Dock') && __drill.scene.isActive('GameOver')));
 
 // ---- the multiplier works: ?animscale=1 brings back the 4.6 s cutscenes (0.4 s grace, 0.55 s lift) ----
-await page.goto(BASE + '?animscale=1'); await wait(1500);
+await page.goto(BASE + '?animscale=1&noevents=1'); await wait(1500);
 const CFG1 = await page.evaluate(() => window.__drillAnimCfg);
 await tap(90, 160); await wait(800);
 await startContract();
 await page.waitForFunction(() => __drill.scene.isActive('Game'), null, { timeout: 12000 }).catch(() => {});
 al = (await animLog()).at(-1);
 check('ANIM_SCALE override 1 -> descent ~4.6 s, grace 400 ms, lift 550 ms', CFG1.scale === 1 && CFG1.graceMs === 400 && CFG1.liftMs === 550 && al.expectMs === 4600 && !al.skipped && ANIM_OK(al.ms, 4600), JSON.stringify({ CFG1, al }));
+
+// ---- ore veins ([C]) + decision events ([P]) ----------------------------------------------------
+const CONF = await page.evaluate(async () => { const c = await import(new URL('src/config.js', location.href).href); return { ORE: c.ORE, EV: c.EVENTS }; });
+const { ORE, EV } = CONF;
+const touchDown = async (gx, gy) => { const p = P(gx, gy); await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: p.x, y: p.y, id: 1 }] }); };
+const touchUp = () => cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+const runFrom = async (q) => { await page.goto(BASE + '?anim=0' + q); await wait(1500); await tap(90, 160); await wait(800); await startContract(); await waitFor('g.crew && g.crew.station === "helm" && !!g.veins', 3000); };
+const toastSeen = (prefix) => G(`g.toastLog.some(t => t.startsWith(${JSON.stringify(prefix)}))`);
+const goRoom = async (id) => { await tapRoom(id); await waitFor(`g.crew.station === "${id}" && !g.crew.walking`, 3000); await wait(150); };
+const V = 'g.veins.current';
+await runFrom('&noevents=1&vein=rich');
+check('?vein=rich: a RICH vein spawns ahead with an early alert (toast + top-right chip + ore icon)', (await G(`(() => { const v = ${V}; return !!v && v.type === 'rich' && v.state === 'ahead' && g.veins.dist(v) > 20; })()`))
+  && (await G('ui.chipText.visible && ui.chipText.text.startsWith("RICH VEIN") && ui.icons.find(i => i.k === "ore").img.visible')) && (await toastSeen('RICH VEIN AHEAD')), await G('ui.chipText.text'));
+check('no extraction while the vein is still ahead / the rig is moving', await G('!g.availableActions("drill").includes("extract")'));
+await freezeWhen(() => { const g = __drill.scene.getScene('Game'); const v = g.veins.current; return v && g.veins.dist(v) < 22; }, '26-vein-approach.png', 'Game');
+check('stop-window brackets + distance label shown as the vein closes in', await G(`ui.chipText.text.match(/RICH VEIN \\d+M/) && g.veins.label.visible && g.veins.zone.commandBuffer.length > 0`), await G('ui.chipText.text + " / " + g.veins.label.text'));
+// brake at the helm (outside slider to 0) with the vein just ahead of the drill tip
+await page.waitForFunction(() => { const g = __drill.scene.getScene('Game'); const v = g.veins.current; return v && g.veins.dist(v) < 3; }, null, { timeout: 20000, polling: 'raf' });
+await tap(...O_TRACK(0));
+await waitFor('s.speed === 0', 2000); await wait(200);
+const st = await G(`({ state: ${V}.state, d: +g.veins.dist(${V}).toFixed(2), speed: s.speed, chip: ui.chipText.text })`);
+check('full stop with the drill face in the stop window -> STOPPED AT VEIN (chip + toast)', st.state === 'stopped' && st.chip === 'STOPPED AT VEIN' && st.d <= ORE.WINDOW_AHEAD && st.d >= -ORE.WINDOW_PAST && (await toastSeen('STOPPED AT VEIN')), JSON.stringify(st));
+check('stopped at the vein: EXTRACT is available at the drill station', await G('g.availableActions("drill").includes("extract") && !g.availableActions("helm").includes("extract")'));
+await tap(...TOGGLE); await wait(700);
+await goRoom('drill');
+check('drill panel: STOPPED AT RICH VEIN, EXTRACT + FIX BIT buttons, ORE/RISK bars', await G('ui.stationText.text === "DRILL   STOPPED AT RICH VEIN" && ui.actionBtns.extract.visible && ui.actionBtns.extract.enabled && ui.actionBtns.repair2.visible && ui.barLabels[0].visible'), await G('ui.stationText.text'));
+const ex0 = await G(`({ ore: s.ore, haul: s.haul, inst: ${V}.inst })`);
+await touchDown(...ACTION_LEFT); await wait(1500);
+await page.screenshot({ path: `${OUT}/27-vein-extracting.png` });
+const chipX = await G('ui.chipText.text');
+await wait(300); await touchUp(); await wait(100);
+const ex1 = await G(`({ ore: s.ore, haul: s.haul, inst: ${V}.inst, taken: ${V}.taken, credits: ${V}.credits, value: ${V}.value, hold: g.hold, state: ${V}.state })`);
+check('holding EXTRACT pays ore credits into the haul (value x taken)', ex1.ore - ex0.ore > 30 && Math.abs((ex1.haul - ex0.haul) - (ex1.ore - ex0.ore)) < 0.01 && Math.abs(ex1.credits - ex1.taken * ex1.value) < 0.01 && ex1.value === ORE.TYPES.rich.value && ex1.state === 'stopped',
+  `+${(ex1.ore - ex0.ore).toFixed(1)} cr, taken ${(ex1.taken * 100).toFixed(0)}%`);
+check('extraction raises instability; chip reads EXTRACTING n%; releasing stops it', ex1.inst > ex0.inst + 20 && chipX.startsWith('EXTRACTING') && ex1.hold === null, `inst ${ex1.inst.toFixed(1)} chip=${chipX}`);
+await wait(600);
+check('instability bleeds off while nobody extracts (push-your-luck breather)', (await G(`${V}.inst`)) < ex1.inst - 5);
+// greed: push instability to the edge and keep extracting -> collapse
+const c0 = await G(`(${V}.inst = ORE_MAX, { ore: s.ore, hull: s.hull, credits: ${V}.credits })`.replace('ORE_MAX', ORE.COLLAPSE_AT - 1));
+await touchDown(...ACTION_LEFT); await wait(500); await touchUp(); await wait(100);
+const c1 = await G('({ ore: s.ore, hull: s.hull, collapsed: s.veinsCollapsed, v: g.veins.list.find(v => v.type === "rich"), hold: g.hold })');
+check('instability 100 -> VEIN COLLAPSED: hull chipped, half that vein\'s ore lost, hold released', c1.collapsed === 1 && c1.v.state === 'collapsed' && Math.abs((c0.hull - c1.hull) - ORE.TYPES.rich.dmg) < 0.6 && c1.ore < c0.ore - 20 && Math.abs(c1.v.credits - c0.credits / 2) < 2 && c1.hold === null && (await toastSeen('VEIN COLLAPSED')),
+  `hull ${c0.hull.toFixed(1)} -> ${c1.hull.toFixed(1)}, ore ${c0.ore.toFixed(1)} -> ${c1.ore.toFixed(1)}`);
+// a small vein, worked to the end (low instability: safe to empty)
+await G('(g.veins.spawn("small", 218 - 4), s.heat = 0, true)'); await wait(300);
+check('a vein inside the window while stopped is immediately STOPPED AT VEIN', await G(`${V}.type === "small" && ${V}.state === "stopped"`));
+const sm0 = await G('s.ore');
+await touchDown(...ACTION_LEFT); await wait(ORE.TYPES.small.secs * 1000 + 500); await touchUp(); await wait(100);
+const sm1 = await G('({ ore: s.ore, worked: s.veinsWorked, v: g.veins.list.find(v => v.type === "small"), cur: !!g.veins.current })');
+check('small vein worked to the end -> VEIN EMPTIED, full value paid, no collapse', sm1.v.state === 'emptied' && Math.abs(sm1.ore - sm0 - ORE.TYPES.small.value) < 0.01 && sm1.worked === 1 && !sm1.cur && (await toastSeen('VEIN EMPTIED')), `+${(sm1.ore - sm0).toFixed(1)}`);
+// overshoot: full speed through a vein -> VEIN LOST, scrap only
+await goRoom('helm');
+await G('(g.veins.spawn("small", 218 - 30 * 4), g.setThrottle(1), true)');
+await waitFor(`${V} && ${V}.state === "window"`, 8000);
+const winMoving = await G('({ ex: g.availableActions("drill").includes("extract"), speed: s.speed })');
+await waitFor('s.veinsLost === 1', 6000);
+const lost = await G('({ lost: s.veinsLost, scrap: s.scrap, v: g.veins.list.filter(v => v.type === "small").at(-1) })');
+check('drilling through at speed: no extraction in the window, then VEIN LOST + small scrap payout', !winMoving.ex && winMoving.speed > 0.3 && lost.lost === 1 && Math.abs(lost.scrap - ORE.TYPES.small.value * ORE.SCRAP_FRAC) < 0.01 && lost.v.state === 'lost' && (await toastSeen('VEIN LOST')), JSON.stringify({ winMoving, scrap: lost.scrap }));
+// relay + end screen: ore shown separately
+await G('(g.debugJump(985), s.hull = 100, g.setThrottle(1), true)');
+await page.waitForFunction(() => __drill.scene.isActive('Relay'), null, { timeout: 15000 }).catch(() => {});
+await R('r.skipTyping()'); await wait(200); await tap(90, 137); await wait(700);
+const rOre = await R('({ t: r.oreText && r.oreText.text, ore: Math.floor(s.ore + s.scrap), drill: Math.floor(s.drillPay) })');
+check('relay break shows the haul split: DRILL n  ORE n', rOre.t === `DRILL ${rOre.drill}  ORE ${rOre.ore}` && rOre.ore > 50, rOre.t);
+await page.screenshot({ path: `${OUT}/31-relay-ore-breakdown.png` });
+await tap(132, 277); await wait(1500);
+const endOre = await page.evaluate(() => { const go = __drill.scene.getScene('GameOver'); return { active: __drill.scene.isActive('GameOver'), texts: go.children.list.map(c => c.text).filter(Boolean), run: __drill.scene.getScene('Game').lastRun }; });
+check('end screen: ORE row (2 veins: emptied + collapsed) inside the run haul', endOre.active && endOre.texts.includes(' INCL. ORE (2 VEINS)') && endOre.texts.includes(`${Math.floor(endOre.run.ore + endOre.run.scrap)} CR`) && endOre.run.veins === 2 && endOre.run.veinsLost === 1, JSON.stringify({ ore: endOre.run.ore, scrap: endOre.run.scrap }));
+await page.screenshot({ path: `${OUT}/32-end-ore-breakdown.png` });
+
+// ---- events: FIRE ----------------------------------------------------------------------------
+await runFrom('&noevents=1&event=fire:engine');
+await waitFor('!!g.director.fires.engine', 4000);
+check('?event=fire:engine: ENG catches fire (toast, fire icon), its station only offers EXTINGUISH', (await G('!!g.director.fires.engine && ui.icons.find(i => i.k === "fire").img.visible && g.availableActions("engine").join() === "extinguish" && g.director.smoke.emitting')) && (await toastSeen('FIRE IN ENG')));
+const fh0 = await G('s.hull'); await wait(1000);
+check('a fire chips the hull while it burns', (await G('s.hull')) < fh0 - 0.3, `${fh0} -> ${await G('s.hull')}`);
+await tap(...TOGGLE); await wait(700);
+await goRoom('engine');
+check('ENG panel: FIRE IN ENGINE!, one big EXTINGUISH button (VENT disabled)', await G('ui.stationText.text === "FIRE IN ENGINE!" && ui.actionBtns.extinguish.visible && !ui.actionBtns.vent.visible'), await G('ui.stationText.text'));
+await page.screenshot({ path: `${OUT}/28-event-fire.png` });
+const putT = await G('g.director.putOutTime("engine")');
+await hold(...ACTION_FULL, putT * 1000 + 500);
+check('hold EXTINGUISH -> FIRE OUT, ENG station back (VENT)', (await G('!g.director.fires.engine && g.availableActions("engine").join() === "vent" && !g.director.smoke.emitting')) && (await toastSeen('FIRE OUT IN ENG')), `putOut ${putT.toFixed(2)} s`);
+await G('(g.director.trigger("fire", "tools"), g.director.fires.tools.spreadT = 0.05, true)'); await wait(400);
+const spread = await G('g.director.burning');
+check('left alone, a fire spreads to a neighbouring room', spread.length === 2 && spread.includes('tools') && (spread.includes('drill') || spread.includes('engine')) && (await toastSeen('FIRE SPREAD TO')), spread.join());
+await G('(g.director.clearAll(), g.director.trigger("fire", "helm"), true)');
+await goRoom('helm');
+const th0 = await thr();
+check('fire at the HELM: throttle dead until it is out (no slider, EXTINGUISH instead)', (await G('g.setThrottle(0.9) === false')) && near(await thr(), th0) && (await G('!ui.hGfx.visible && ui.actionBtns.extinguish.visible')));
+await hold(...ACTION_FULL, (await G('g.director.putOutTime("helm")')) * 1000 + 500);
+check('helm fire out -> throttle works again', (await G('!g.director.fires.helm && g.setThrottle(0.5) === true')) && near(await thr(), 0.5));
+
+// ---- events: JAM ----------------------------------------------------------------------------
+await G('(s.heat = 10, s.hull = 100, g.director.trigger("jam"), true)'); await wait(900);
+const jm = await G('({ jammed: s.jammed, speed: s.speed, icon: ui.icons.find(i => i.k === "jam").img.visible, hint: ui.hintText.text })');
+check('DRILL JAMMED: the rig stalls, jam icon + helm hint', jm.jammed && jm.speed < 0.05 && jm.icon && jm.hint.startsWith('JAMMED: ROCK') && (await toastSeen('DRILL JAMMED')), JSON.stringify(jm));
+await page.screenshot({ path: `${OUT}/29-event-jam.png` });
+const j0 = await G('({ heat: s.heat, hull: s.hull })');
+for (let i = 0; i < EV.JAM_ROCKS; i++) { await tap(...H_TRACK(0)); await wait(150); await tap(...H_TRACK(0.8)); await wait(250); }
+const j1 = await G('({ jammed: s.jammed, heat: s.heat, hull: s.hull })');
+check(`fast fix at the HELM: rock the throttle 0% -> 60%+ x${EV.JAM_ROCKS} frees the bit, but costs heat + hull`, !j1.jammed && j1.heat >= j0.heat + EV.JAM_ROCKS * EV.JAM_ROCK_HEAT - 0.5 && Math.abs((j0.hull - j1.hull) - EV.JAM_ROCKS * EV.JAM_ROCK_HULL) < 0.01 && (await toastSeen('BIT ROCKED FREE')), JSON.stringify({ j0, j1 }));
+await G('(s.heat = 0, g.director.trigger("jam"), g.setThrottle(0), true)');
+await goRoom('drill');
+const j2 = await G('({ hull: s.hull, panel: ui.stationText.text, btn: ui.actionBtns.freebit.visible })');
+await hold(...ACTION_LEFT, EV.JAM_FIX_S * 1000 + 500);
+const j3 = await G('({ jammed: s.jammed, hull: s.hull })');
+check('slow free fix at DRL: hold FREE BIT frees it with no hull cost', j2.btn && j2.panel === 'DRILL   BIT JAMMED!' && !j3.jammed && j3.hull === j2.hull && (await toastSeen('BIT FREED AT DRL')), JSON.stringify({ j2, j3 }));
+
+// ---- events: POWER SURGE -----------------------------------------------------------------------
+await goRoom('helm'); await G('(g.setThrottle(0.6), s.heat = 10, true)'); await wait(1500);
+await G('(g.director.trigger("surge"), true)'); await wait(300);
+check('POWER SURGE: decision card with countdown + OVERCLOCK / SHUT DOWN', await G('ui.surgeShown && ui.surgeTitle.text.startsWith("POWER SURGE!") && ui.surgeBtns.every(b => b.visible) && ui.icons.find(i => i.k === "surge").img.visible'), await G('ui.surgeTitle.text'));
+await page.screenshot({ path: `${OUT}/30-event-surge.png` });
+const sg0 = await G('s.heat');
+await tap(48, 90); await wait(200);
+const sg1 = await G('({ oc: s.overclockT, heat: s.heat, boost: s.boostMul, card: ui.surgeShown })');
+check('OVERCLOCK: x1.4 speed for 10 s, heat spike', sg1.oc > EV.OVERCLOCK_S - 0.5 && sg1.boost === EV.OVERCLOCK_SPEED && sg1.heat >= sg0 + EV.OVERCLOCK_HEAT - 0.5 && !sg1.card, JSON.stringify(sg1));
+const oc0 = await G('({ h: s.haul, d: s.distance })'); await wait(1000); const oc1 = await G('({ h: s.haul, d: s.distance })');
+const ocm = (oc1.d - oc0.d) / T.PX_PER_METER;
+check('OVERCLOCK pays x1.5 per metre', ocm > 1 && Math.abs((oc1.h - oc0.h) - ocm * EV.OVERCLOCK_PAY) < 0.01, `+${ocm.toFixed(2)}m -> +${(oc1.h - oc0.h).toFixed(2)}`);
+await G('(s.overclockT = 0, s.heat = 60, g.director.trigger("surge"), true)'); await wait(200);
+await tap(132, 90); await wait(200);
+const sd = await G('({ sd: s.shutdownT, heat: s.heat })');
+await wait(1500);
+check('SHUT DOWN: engine off (rig stops), vents heat', sd.sd > EV.SHUTDOWN_S - 0.5 && sd.heat <= 60 - EV.SHUTDOWN_COOL + 1 && (await G('s.speed')) < 0.05, JSON.stringify(sd));
+await waitFor('s.shutdownT === 0', 4000); await wait(600);
+check('engine restarts after the shutdown', (await G('s.speed')) > 0.05 && (await toastSeen('ENGINE BACK ONLINE')));
+const to0 = await G('(g.setThrottle(0), g.obstacles.list.slice().forEach(o => g.obstacles.destroy(o, false)), s.hull = 80, s.heat = 10, g.director.trigger("surge"), { hull: s.hull })');
+await wait(EV.SURGE_DECIDE_S * 1000 + 600);
+const to1 = await G('({ hull: s.hull, heat: s.heat, card: ui.surgeShown })');
+check('ignore the surge -> blowout: hull + heat hit', !to1.card && Math.abs(to0.hull - to1.hull - EV.BLOWOUT_HULL) < 1 && to1.heat >= EV.BLOWOUT_HEAT - 1 && (await toastSeen('SURGE BLOWOUT')), JSON.stringify(to1));
+
+// ---- random veins + the event scheduler by leg -------------------------------------------------
+await runFrom('');
+await G('(g.setThrottle(1), true)');
+check('normal run: veins appear on their own', await waitFor('g.veins.log.length > 0', 12000), JSON.stringify(await G('g.veins.log')));
+const legs = await G(`(() => { const d = g.director, out = { leg1: [], leg2first: null };
+  g.debugJump(300); s.hull = 999;
+  for (let i = 0; i < 40; i++) { d.clearAll(); d.timer = 0; d.update(0.01); const e = d.log.at(-1); if (e) out.leg1.push(e.type); d.log.length = 0; }
+  d.clearAll(); g.debugJump(1300); d.timer = 0; d.update(0.01); out.leg2first = d.log.at(-1) && d.log.at(-1).type;
+  out.leg2 = []; for (let i = 0; i < 40; i++) { d.clearAll(); d.timer = 0; d.update(0.01); out.leg2.push(d.log.at(-1).type); }
+  d.clearAll(); s.hull = 100;
+  const gaps = [0, 1].map((r) => { s.relays = r; return Array.from({ length: 50 }, () => d.gap()); });
+  const avg = (a) => a.reduce((x, y) => x + y, 0) / a.length; out.gap1 = +avg(gaps[0]).toFixed(1); out.gap2 = +avg(gaps[1]).toFixed(1); return out; })()`);
+check('leg 1 events: fire + jam only (no surge)', legs.leg1.length === 40 && legs.leg1.includes('fire') && legs.leg1.includes('jam') && !legs.leg1.includes('surge'), legs.leg1.join(','));
+check('leg 2: the first event is the new POWER SURGE; then all three mix', legs.leg2first === 'surge' && ['fire', 'jam', 'surge'].every((t) => legs.leg2.includes(t)), legs.leg2first + ' / ' + [...new Set(legs.leg2)].join(','));
+check('events come more often in leg 2 (mean gap, s)', legs.gap2 < legs.gap1 - 5 && EV.GAP_S[1][1] < EV.GAP_S[0][1], JSON.stringify(legs));
 
 // ---- save migration (v1 from M1, plus the pre-M1 best-depth key) ----------------------------
 await page.evaluate(() => { localStorage.clear(); localStorage.setItem('drill.save', JSON.stringify({ v: 1, credits: 777, runs: 3, cashouts: 2, rigsLost: 1, relaysReached: 4 })); localStorage.setItem('drill.bestDepth', '1234'); });

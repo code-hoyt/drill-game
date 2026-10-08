@@ -1,7 +1,7 @@
 // HUD overlay (unaffected by the game camera's pan/zoom): depth, gauges,
 // alert icons, toasts, throttle (outside view + HELM station inside),
 // station actions (inside view), pilot status bar (both views).
-import { GAME_W, GAME_H, TUNING as T, LAYOUT as L, loadBest } from '../config.js';
+import { GAME_W, GAME_H, TUNING as T, LAYOUT as L, ORE, EVENTS as E, loadBest } from '../config.js';
 import { FONT_KEY } from '../systems/PixelFont.js';
 import { Button } from '../ui/Button.js';
 
@@ -31,7 +31,22 @@ export class UIScene extends Phaser.Scene {
     txt(106, 3, 'HULL', 6, 0x9aa0b8); txt(106, 10, 'HEAT', 6, 0x9aa0b8); txt(106, 17, 'BIT', 6, 0x9aa0b8);
 
     // --- alert icons ------------------------------------------------------------
-    this.icons = ['hull', 'heat', 'bit', 'rock', 'hard'].map((k) => ({ k, img: this.add.image(0, 28, 'ic_' + k).setOrigin(0).setVisible(false) }));
+    this.icons = ['fire', 'surge', 'jam', 'hull', 'heat', 'bit', 'rock', 'hard', 'ore'].map((k) => ({ k, img: this.add.image(0, 28, 'ic_' + k).setOrigin(0).setVisible(false) }));
+
+    // --- vein chip (top right): where the vein is vs the drill tip --------------------------
+    this.chipBg = this.add.graphics();
+    this.chipText = txt(176, 30, '', 6).setOrigin(1, 0);
+
+    // --- surge card (both views): a decision with a countdown --------------------------------
+    this.surgeBg = this.add.graphics().setDepth(48);
+    this.surgeTitle = txt(GAME_W / 2, 60, '', 6, 0xe08aff).setOrigin(0.5, 0).setDepth(49);
+    this.surgeSub = txt(GAME_W / 2, 69, 'PICK ONE OR IT BLOWS OUT', 6, 0x9aa0b8).setOrigin(0.5, 0).setDepth(49);
+    this.surgeBtns = [
+      new Button(this, 8, 79, 80, 22, 'OVERCLOCK', { onTap: () => this.g.resolveSurge('overclock'), color: 0x6a2a8a, pressColor: 0x9a4ac4 }),
+      new Button(this, 92, 79, 80, 22, 'SHUT DOWN', { onTap: () => this.g.resolveSurge('shutdown'), color: 0x2a5a8a, pressColor: 0x4a84c4 }),
+    ];
+    this.surgeHint = txt(GAME_W / 2, 104, `FAST+PAY X${E.OVERCLOCK_PAY} / HOT    STOP ${E.SHUTDOWN_S}S / COOL`, 6, 0x7a7f96).setOrigin(0.5, 0).setDepth(49);
+    this.showSurge(false);
 
     // --- toast ------------------------------------------------------------------
     this.toastBg = this.add.graphics().setVisible(false);
@@ -66,17 +81,26 @@ export class UIScene extends Phaser.Scene {
     this.hintText = txt(6, PANEL_Y + 13, '', 6, 0x7a7f96);
     const hold = (action) => ({ onDown: () => this.g.setHold(action), onUp: () => { if (this.g.hold === action) this.g.setHold(null); } });
     const AY = PANEL_Y + 25;
+    // key = button id; .action = the hold it drives (two layouts of FIX BIT share 'repair')
     this.actionBtns = {
       vent:   new Button(this, 8, AY, 164, 22, 'HOLD: VENT HEAT', { ...hold('vent'), color: 0x8a2f24, pressColor: 0xc4503a }),
       repair: new Button(this, 8, AY, 164, 22, 'HOLD: FIX DRILL BIT', { ...hold('repair'), color: 0x2f5a8a, pressColor: 0x4a84c4 }),
       patch:  new Button(this, 8, AY, 80, 22, 'HOLD: PATCH', { ...hold('patch'), color: 0x2f7a3a, pressColor: 0x4ab05a }),
       blast:  new Button(this, 92, AY, 80, 22, 'HOLD: BLAST', { ...hold('blast'), color: 0x6a3a8a, pressColor: 0x9a5ac4 }),
+      extract: new Button(this, 8, AY, 104, 22, 'HOLD: EXTRACT', { ...hold('extract'), color: 0x8a6a1a, pressColor: 0xc49a2a }),
+      freebit: new Button(this, 8, AY, 104, 22, 'HOLD: FREE BIT', { ...hold('freebit'), color: 0x56627e, pressColor: 0x7a8ab0 }),
+      repair2: new Button(this, 116, AY, 56, 22, 'FIX BIT', { ...hold('repair'), color: 0x2f5a8a, pressColor: 0x4a84c4 }),
+      extinguish: new Button(this, 8, AY, 164, 22, 'HOLD: EXTINGUISH', { ...hold('extinguish'), color: 0xa0401a, pressColor: 0xe0602a }),
     };
+    for (const [k, b] of Object.entries(this.actionBtns)) b.action = k === 'repair2' ? 'repair' : k;
+    this.veinBars = this.add.graphics();
+    this.barLabels = [txt(6, PANEL_Y + 13, 'ORE', 6, 0xffd23f), txt(90, PANEL_Y + 13, 'RISK', 6, 0xff4a4a)];
+    this.barLabels.forEach((o) => o.setVisible(false));
     // HELM action area: horizontal throttle with -/+ buttons
     this.hMinus = new Button(this, 6, AY, 24, 22, '-', { size: 12, onTap: () => this.g.nudgeThrottle(-T.THROTTLE_STEP) });
     this.hPlus = new Button(this, 150, AY, 24, 22, '+', { size: 12, onTap: () => this.g.nudgeThrottle(T.THROTTLE_STEP) });
     this.hGfx = this.add.graphics();
-    this.hZone = this.add.zone(HTRACK.x, AY, HTRACK.w, 22).setOrigin(0);
+    this.hZone = this.add.zone(HTRACK.x - 3, AY, HTRACK.w + 6, 22).setOrigin(0); // a little past both ends so 0% / 100% are easy to hit
     this.hZone.on('pointerdown', (p) => this.startDrag(p, 'h'));
 
     this.input.on('pointermove', (p) => { if (this.dragId === p.id && p.isDown) this.dragTo(p); });
@@ -102,7 +126,27 @@ export class UIScene extends Phaser.Scene {
     this.vGfx.setVisible(!inside);
     inside ? this.vZone.disableInteractive() : this.vZone.setInteractive();
     [this.panel, this.panelLine, this.stationText, this.hintText].forEach((o) => o.setVisible(inside));
-    if (!inside) { Object.values(this.actionBtns).forEach((b) => b.setVisible(false)); this.showHelmControls(false); }
+    if (!inside) { Object.values(this.actionBtns).forEach((b) => b.setVisible(false)); this.showHelmControls(false); this.veinBars.clear(); this.barLabels.forEach((o) => o.setVisible(false)); }
+  }
+
+  showSurge(v) {
+    if (this.surgeShown === v) return;
+    this.surgeShown = v;
+    [this.surgeBg, this.surgeTitle, this.surgeSub, this.surgeHint].forEach((o) => o.setVisible(v));
+    this.surgeBtns.forEach((b) => b.setVisible(v));
+  }
+
+  /** Vein chip text + colour: where the vein is relative to the drill tip. */
+  veinChip(g, s, time) {
+    const V = g.veins, v = V.current;
+    if (!v) return null;
+    const d = V.dist(v), n = v.def.name;
+    if (v.state === 'stopped') {
+      if (g.hold === 'extract' && g.crew.working) return [`EXTRACTING ${Math.round(v.taken * 100)}%`, 0xffd23f];
+      return ['STOPPED AT VEIN', 0x8affa0];
+    }
+    if (V.inWindow(v)) return [Math.floor(time / 200) % 2 ? 'STOP ZONE: BRAKE!' : `${n} VEIN: STOP!`, Math.floor(time / 200) % 2 ? 0xffffff : 0x8affa0];
+    return [`${n} VEIN ${Math.max(0, Math.round(d))}M`, v.def.tint];
   }
 
   showHelmControls(v) {
@@ -136,13 +180,31 @@ export class UIScene extends Phaser.Scene {
 
     // alerts
     const a = g.alerts();
-    const active = { hull: a.hull, heat: a.engine, bit: a.drill, rock: a.rock, hard: a.hard };
+    const active = { hull: a.hull, heat: s.heat >= T.HEAT_ALERT, bit: s.wear >= T.WEAR_ALERT, rock: a.rock, hard: a.hard, ore: a.ore, fire: a.fire, jam: a.jam, surge: a.surge };
     let x = 4;
     const blink = Math.floor(time / 300) % 2 === 0;
     for (const ic of this.icons) {
       const on = active[ic.k];
       ic.img.setVisible(on);
       if (on) { ic.img.x = x; x += 13; ic.img.setAlpha(blink ? 1 : 0.55); }
+    }
+
+    // vein chip
+    const chip = this.veinChip(g, s, time);
+    this.chipBg.clear(); this.chipText.setVisible(!!chip);
+    if (chip) {
+      this.chipText.setText(chip[0]).setTint(chip[1]);
+      const w = this.chipText.width + 6;
+      this.chipBg.fillStyle(0x000000, 0.75).fillRect(Math.round(179 - w), 28, Math.round(w), 10).fillStyle(chip[1], 1).fillRect(Math.round(179 - w), 28, 1, 10);
+    }
+
+    // surge decision card
+    const sg = g.director.surge;
+    this.showSurge(!!sg);
+    if (sg) {
+      const flash = Math.floor(time / 250) % 2 === 0;
+      this.surgeBg.clear().fillStyle(0x000000, 0.85).fillRect(4, 57, 172, 56).lineStyle(1, flash ? 0xe08aff : 0x6a2a8a, 1).strokeRect(4.5, 57.5, 171, 55);
+      this.surgeTitle.setText(`POWER SURGE!  ${Math.ceil(sg.t)}S`);
     }
 
     // toasts (each stays readable for at least 0.6 s; queue capped at 3)
@@ -224,14 +286,27 @@ export class UIScene extends Phaser.Scene {
     const c = g.crew;
     const station = c.station;
     const show = (ids) => Object.entries(this.actionBtns).forEach(([k, btn]) => btn.setVisible(ids.includes(k)));
-    this.showHelmControls(station === 'helm');
-    this.hintText.setText('TAP A ROOM TO WALK THERE');
+    const fire = station && g.director.fires[station];
+    this.showHelmControls(station === 'helm' && !fire);
+    this.hintText.setText('TAP A ROOM TO WALK THERE').setTint(0x7a7f96).setVisible(true);
+    this.veinBars.clear(); this.barLabels.forEach((o) => o.setVisible(false));
+    const vein = g.veins.current, stopped = g.veins.stopped;
     if (!station) {
       this.stationText.setText(`WALKING TO ${ROOM_NAMES[c.target]}...`).setTint(0xc8c8d8);
       show([]);
+    } else if (fire) {
+      this.stationText.setText(`FIRE IN ${ROOM_NAMES[station]}!`).setTint(Math.floor(time / 250) % 2 ? 0xff6a3a : 0xffd23f);
+      this.hintText.setText('STATION DOWN. PUT IT OUT BEFORE IT SPREADS');
+      show(['extinguish']);
+      this.actionBtns.extinguish.setEnabled(true).setProgress(fire.put / g.director.putOutTime(station));
     } else if (station === 'helm') {
       this.stationText.setText(`HELM   SPEED ${Math.round(s.throttle * 100)}%`).setTint(s.throttle > s.safeThrottle + 1e-6 ? 0xffc35c : 0x8affa0);
-      this.hintText.setText('DRAG TO SET SPEED. GREEN = SAFE');
+      const j = g.director.jam;
+      if (j) this.hintText.setText(`JAMMED: ROCK 0% THEN ${Math.round(E.JAM_ROCK_HIGH * 100)}%+  ${j.rocks}/${E.JAM_ROCKS}`).setTint(0xffc35c);
+      else if (s.shutdownT > 0) this.hintText.setText(`ENGINE OFF: RESTART IN ${Math.ceil(s.shutdownT)}S`).setTint(0x7fe0ff);
+      else if (stopped) this.hintText.setText(stopped.taken >= 1 ? 'VEIN DONE. SPEED UP' : 'STOPPED AT VEIN. GO TO DRL').setTint(0x8affa0);
+      else if (vein && g.veins.dist(vein) < 45) this.hintText.setText(g.veins.inWindow(vein) ? 'IN THE STOP ZONE: SPEED 0!' : `VEIN ${Math.max(0, Math.round(g.veins.dist(vein)))}M: STOP IN THE ZONE`).setTint(0xffd23f);
+      else this.hintText.setText('DRAG TO SET SPEED. GREEN = SAFE');
       show([]);
       this.drawHThrottle(s, time);
     } else if (station === 'engine') {
@@ -239,9 +314,29 @@ export class UIScene extends Phaser.Scene {
       show(['vent']);
       this.actionBtns.vent.setEnabled(s.heat > 0);
     } else if (station === 'drill') {
-      this.stationText.setText(`DRILL   BIT WEAR ${Math.round(s.wear)}%`).setTint(s.wear >= T.WEAR_ALERT ? 0xffc35c : 0xffffff);
-      show(['repair']);
+      const canExtract = g.availableActions().includes('extract');
+      if (s.jammed) {
+        this.stationText.setText('DRILL   BIT JAMMED!').setTint(0xff8a5c);
+        this.hintText.setText('SLOW + FREE. OR ROCK THE THROTTLE AT HELM');
+        show(['freebit', 'repair2']);
+        this.actionBtns.freebit.setEnabled(true).setProgress(g.director.jam.fixT / E.JAM_FIX_S);
+      } else if (stopped && stopped.taken < 1) {
+        this.stationText.setText(`DRILL   STOPPED AT ${stopped.def.name} VEIN`).setTint(0x8affa0);
+        this.hintText.setVisible(false);
+        this.drawVeinBars(stopped, time);
+        show(['extract', 'repair2']);
+        this.actionBtns.extract.setEnabled(canExtract).setProgress(stopped.taken);
+      } else if (vein && vein.state !== 'stopped') {
+        this.stationText.setText(`DRILL   BIT WEAR ${Math.round(s.wear)}%`).setTint(s.wear >= T.WEAR_ALERT ? 0xffc35c : 0xffffff);
+        this.hintText.setText(`${vein.def.name} VEIN ${Math.max(0, Math.round(g.veins.dist(vein)))}M: FULL STOP TO MINE`).setTint(0xffd23f);
+        show(['extract', 'repair2']);
+        this.actionBtns.extract.setEnabled(false).setProgress(0);
+      } else {
+        this.stationText.setText(`DRILL   BIT WEAR ${Math.round(s.wear)}%`).setTint(s.wear >= T.WEAR_ALERT ? 0xffc35c : 0xffffff);
+        show(['repair']);
+      }
       this.actionBtns.repair.setEnabled(s.wear > 0);
+      this.actionBtns.repair2.setEnabled(s.wear > 0);
     } else if (station === 'tools') {
       const rocks = g.obstacles.list.filter((o) => o.sprite.y > 10).length;
       this.stationText.setText(`TOOLS   HULL ${Math.round(s.hull)}%  ROCKS ${rocks}`).setTint(s.hull <= T.HULL_ALERT ? 0xff4a7a : 0xffffff);
@@ -251,6 +346,15 @@ export class UIScene extends Phaser.Scene {
       this.actionBtns.blast.setProgress(g.blastCharge / g.blastTime);
     }
     // release a hold whose button just got disabled/hidden
-    if (g.hold && !Object.entries(this.actionBtns).some(([k, b]) => k === g.hold && b.enabled && b.gfx.visible)) g.setHold(null);
+    if (g.hold && !Object.values(this.actionBtns).some((b) => b.action === g.hold && b.enabled && b.visible)) g.setHold(null);
+  }
+
+  /** ORE (taken) and RISK (instability) bars in the drill panel while stopped at a vein. */
+  drawVeinBars(v, time) {
+    const b = this.veinBars, y = PANEL_Y + 13;
+    b.fillStyle(0x3a3020, 1).fillRect(26, y + 1, 58, 5).fillStyle(0xffd23f, 1).fillRect(26, y + 1, Math.round(58 * v.taken), 5);
+    const r = Math.min(1, v.inst / ORE.COLLAPSE_AT);
+    b.fillStyle(0x3a1a1a, 1).fillRect(114, y + 1, 58, 5).fillStyle(r > 0.7 && Math.floor(time / 120) % 2 ? 0xffffff : 0xff4a4a, 1).fillRect(114, y + 1, Math.round(58 * r), 5);
+    this.barLabels.forEach((o) => o.setVisible(true));
   }
 }

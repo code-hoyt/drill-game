@@ -1,4 +1,4 @@
-# Drill (working title): prototype v0.8 (M2 + unlocks, transition cutscenes, station concourse)
+# Drill (working title): prototype v0.9 (ore veins + decision events, on top of M2/unlocks/cutscenes/concourse)
 
 An endless, portrait, pixel-art drilling game for phone browsers. You pilot a drill ship that bores **upward** through an alien planet and keep it alive by running your one crew member between stations. Your score is depth. Every 1000 m you clamp onto a relay and choose: push on for better pay, or cash out. Between contracts the rig docks at an orbital station. The home screen is the station concourse: pick contracts, hear from Ines, buy parts, and swap them in the rig bay. Design doc: [`docs/DESIGN.md`](docs/DESIGN.md).
 
@@ -57,7 +57,7 @@ Hotspots: drill nose 70×24 base px, each hull quadrant 43×31, and the kit lock
 
 Optional desktop keys: `W/S` or arrow keys for throttle (only when piloted), `Space` to toggle the view, `1/2/3/4` to pick a room (HELM/DRL/ENG/TLS), `E` (hold) for the primary action, `Q` (hold) to blast, `R`/`Enter` to restart.
 
-**Debug/playtest URL params:** `?anim=0` skips the cutscenes. `?unlock=all` unlocks every part. `?credits=5000` sets your credits. `?own=all` (or `?own=widecut,plating`) owns parts. `?stock=id,id,...` forces the Quartermaster's stock. `?wipe=1` clears the save. `?depth=950` starts the run at 950 m (relay 1 is 50 m ahead). `?boosts=plate,coolant,charge` fixes the relay supply offers (ids in `src/data/boosts.js`). In the console, `__drill.scene.getScene('Game').debugJump(1980)` jumps mid-run and keeps the haul.
+**Debug/playtest URL params:** `?anim=0` skips the cutscenes. `?unlock=all` unlocks every part. `?credits=5000` sets your credits. `?own=all` (or `?own=widecut,plating`) owns parts. `?stock=id,id,...` forces the Quartermaster's stock. `?wipe=1` clears the save. `?depth=950` starts the run at 950 m (relay 1 is 50 m ahead). `?boosts=plate,coolant,charge` fixes the relay supply offers (ids in `src/data/boosts.js`). `?vein=small|rich|fine` puts a vein ~45 m ahead at the start of the run. `?event=fire|jam|surge` triggers that event 1.5 s in (`?event=fire:helm` picks the room). `?noevents=1` turns off random veins and events (the tests use it). In the console, `__drill.scene.getScene('Game').debugJump(1980)` jumps mid-run and keeps the haul.
 
 ## Mechanics
 
@@ -81,6 +81,16 @@ Optional desktop keys: `W/S` or arrow keys for throttle (only when piloted), `Sp
   * **Retargeting** re-plans from where the crew is:
     * On a deck, same-deck targets mean walking straight there (including turning straight back); other-deck targets mean walking to the ladder and climbing once.
     * On the ladder, the crew continues or reverses straight to the deck the new target is on, then walks out.
+* **Ore veins ([C], v0.9)**: seams of ore cross the bore ahead (one every 120–200 m, a little more often each leg). You get an early alert ~70 m out (toast, ore icon, top-right chip `RICH VEIN 38M`). Inside 45 m, stop-window brackets show at the drill tip: the vein's centre line has to be 4 m ahead to 2 m past the tip.
+  * **Full stop** there (speed 0) → `STOPPED AT VEIN`. Walk to **DRL** and **hold EXTRACT**: ore credits flow into the haul (SMALL 50 / RICH 140 / FINE 330 per vein × the pay multiplier, over 3/5/6 s).
+  * Extracting raises the vein's **RISK** (instability; faster the more you've taken, plus tremors on rich/fine). Let go and it bleeds off. At 100 it **collapses**: hull damage and half of that vein's ore lost.
+  * Drive through it, or overshoot the window: **VEIN LOST**, 10% scrap.
+  * The relay break shows `DRILL n  ORE n`; the end screen shows `INCL. ORE (N VEINS)`.
+* **Decision events ([P], v0.9)**, one every 30–45 s in leg 1 (22–34 s in leg 2, then 16–26 s); a relay clamp-in clears them:
+  * **FIRE** in ENG/DRL/TLS: that station is down, the room offers only **EXTINGUISH**, and it chips the hull. Left 14 s, it spreads to a neighbour (at the HELM it kills the throttle).
+  * **DRILL JAM**: the rig stalls. Rock the throttle at the HELM 0% → 60%+ ×3 (fast, costs heat and hull), or hold **FREE BIT** at DRL (3.5 s, free).
+  * **POWER SURGE** (from leg 2; the first event after relay 1): a 6 s card. **OVERCLOCK** gives ×1.4 speed and ×1.5 pay for 10 s, but runs hot. **SHUT DOWN** turns the engine off 4 s and vents heat. Ignore it and it blows out (−15 hull, +40 heat).
+  * Heat and wear chores are toned down to make room: heat 5 (was 7), leaks every 40–65 s, wear 0.10/m.
 * **Speed / depth**: real speed eases toward the throttle (quick to brake, slower to accelerate). The rock scrolls down past the ship, and depth = px scrolled / `PX_PER_METER`.
 * **Engine heat (ENG, hold VENT)**: builds with `speed² × difficulty`, has passive cooling, and is doubled in hard rock. Random **coolant leaks** add a heat spike on a timer, so crawling isn't free. At 100% the engine is capped at 40% speed and the hull takes damage every second.
 * **Drill bit wear (DRL, hold FIX DRILL BIT)**: builds per metre drilled, tripled in hard rock, and goes up with grinding and ramming. At 100% speed is capped at 50% and the hull takes damage while moving.
@@ -188,6 +198,8 @@ src/
     ShipSystems.js         pure numbers: speed, depth, heat, wear, hull, leaks (no rendering)
     Terrain.js             scrolling rock/tunnel tiles, depth tint, hard-rock bands
     Obstacles.js           boulder spawn/scroll, ram / grind / blast
+    Veins.js               ore veins: spawn, stop window, extraction, instability/collapse, lost/scrap, on-screen markers
+    Events.js              decision events director: fire (spread/extinguish), drill jam (rock/free), power surge (overclock/shut down/blowout)
     Ship.js                ship visuals: 2-deck 2x2 cutaway + hub ladder, stations, exterior, drill, room tap zones
     Crew.js                crew member: hub-routed path planning, walk/climb/work animation
     ViewController.js      camera pan/zoom between outside and inside
@@ -196,9 +208,11 @@ src/
   ui/
     Button.js              touch button with tap + press-and-hold
 tests/e2e.mjs              Playwright phone-viewport test (see below)
-screenshots/               01-07 run + relay screens; 08 concourse (bay view), 08b concourse + NEW PARTS banner, 09/09b/09c Quartermaster (09c = page 2), 10 part swap, 11 Holt's log, 12 buy detail; 13 launch (winch out of the bore), 14 docking (clamps), 15 descent (drill bites), 16 locked parts, 17 descent mid-turn, 18 ascent mid-turn, 19 contract board, 20 Ines's window, 21 rig bay, 22 codex, 23 docking end frame (bay framing), 24 Holt steps out (lift), 25 summary in the content area (every panel shot shows the concourse below)
+screenshots/               01-07 run + relay screens; 08 concourse (bay view), 08b concourse + NEW PARTS banner, 09/09b/09c Quartermaster (09c = page 2), 10 part swap, 11 Holt's log, 12 buy detail; 13 launch (winch out of the bore), 14 docking (clamps), 15 descent (drill bites), 16 locked parts, 17 descent mid-turn, 18 ascent mid-turn, 19 contract board, 20 Ines's window, 21 rig bay, 22 codex, 23 docking end frame (bay framing), 24 Holt steps out (lift), 25 summary in the content area (every panel shot shows the concourse below); 26 vein approaching (stop window), 27 stopped + extracting, 28 fire, 29 jam, 30 power surge, 31 relay haul split (drill/ore), 32 end screen with the ore row
 docs/DESIGN.md             game design doc
 ```
+
+**Ore veins and events** are tuned in `src/config.js` → `ORE` (gaps, stop window, scrap, decay, escalation, collapse, per-type value/secs/instability/tremor/damage, spawn weights per leg) and `EVENTS` (gaps and pool per leg, fire spread/put-out, jam rocks/fix, surge decide/overclock/shutdown/blowout).
 
 ## Tuning constants (`src/config.js` → `TUNING`)
 
@@ -207,11 +221,11 @@ docs/DESIGN.md             game design doc
 | `MAX_SPEED_PX` / `PX_PER_METER` | 40 / 4 | 10 m/s at full throttle |
 | `ACCEL` / `DECEL` | 0.5 / 1.6 | speed change per second (fraction of max) |
 | `DIFF_DEPTH` | 400 | +100% heat/wear rates per 400 m |
-| `HEAT_RATE` / `HEAT_COOL` | 7 / 1.2 | heat/s at full speed (×speed²×difficulty) / passive cooling |
+| `HEAT_RATE` / `HEAT_COOL` | 5 (was 7) / 1.2 | heat/s at full speed (×speed²×difficulty) / passive cooling |
 | `VENT_RATE` | 35 | heat removed per second of venting |
 | `OVERHEAT_DAMAGE` / `OVERHEAT_SPEED_CAP` | 4 / 0.4 | hull/s and speed cap at max heat |
-| `SPIKE_INTERVAL` / `SPIKE_AMOUNT` / `SPIKE_START_DEPTH` | 25–45 s / 22 / 60 m | coolant leak events |
-| `WEAR_PER_METER` / `REPAIR_RATE` | 0.15 / 30 | bit wear per metre / per second repaired |
+| `SPIKE_INTERVAL` / `SPIKE_AMOUNT` / `SPIKE_START_DEPTH` | 40–65 s (was 25–45) / 22 / 60 m | coolant leak events |
+| `WEAR_PER_METER` / `REPAIR_RATE` | 0.10 (was 0.15) / 30 | bit wear per metre / per second repaired |
 | `WORN_DAMAGE` / `WORN_SPEED_CAP` | 3 / 0.5 | hull/s and speed cap with a dead bit |
 | `PATCH_RATE` | 9 | hull per second patched |
 | `RAM_SAFE_SPEED` | 0.35 | speed at/under which boulders are ground safely |
@@ -269,6 +283,15 @@ docs/DESIGN.md             game design doc
   * Light boots: same-deck walk 0.55 s, slower climbs.
 * Swapping is blocked mid-run and allowed again once docked.
 * Migration: a v1 save plus the old best-depth key become v3 with credits, stats and best intact.
+
+**Ore veins + events coverage (v0.9)**: the earlier flows run with `?noevents=1`, so random veins and events can't interfere. Then:
+* `?vein=rich` spawns a rich vein. Checks: the early alert (toast, chip, icon), the stop-window brackets, and no EXTRACT while moving. Braking with the outside slider stops in the window and gives `STOPPED AT VEIN`. At DRL, holding EXTRACT pays value × taken into the haul and raises RISK, and the risk bleeds off when you let go. Pushing it to 100 collapses the vein (−14 hull, half that vein's ore lost, hold released).
+* A small vein is emptied safely (+50). Driving through one at full speed gives `VEIN LOST` with 5 scrap.
+* The relay shows `DRILL n  ORE n`, and the end screen shows `INCL. ORE (2 VEINS)`.
+* `?event=fire:engine`: the station is down and only EXTINGUISH is offered. The hull chips, holding EXTINGUISH puts it out, and left alone it spreads to a neighbour. A HELM fire kills the throttle until it's out.
+* Jam: the rig stalls. Rocking the helm slider 0 → 80% three times frees it (+heat, −6 hull). Holding FREE BIT at DRL frees it for free.
+* Surge: the card shows. OVERCLOCK gives ×1.4 speed and ×1.5 pay per metre (measured) plus heat. SHUT DOWN stops the rig and vents heat, then it restarts. Ignoring it blows out (−15 hull, +40 heat).
+* A normal run spawns veins on its own. Leg 1 events are fire and jam only. The first leg-2 event is the surge, after which all three mix. The mean gap is shorter in leg 2.
 
 **Unlocks + cutscenes coverage** (the main flow runs with `?anim=0`; the cutscene section runs with them on):
 * Cashing out at 2000 m unlocks exactly the 500–2000 m parts, and the dock shows NEW PARTS AVAILABLE with their names once.

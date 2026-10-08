@@ -20,19 +20,19 @@ export const TUNING = {
 
   // --- Engine heat (Engine station) --------------------------------------
   HEAT_MAX: 100,
-  HEAT_RATE: 7,            // heat/s at full speed (scales with speed^2 * difficulty)
+  HEAT_RATE: 5,            // heat/s at full speed (scales with speed^2 * difficulty). Was 7 before ore + events
   HEAT_COOL: 1.2,          // passive cooling / s
   HEAT_ALERT: 70,          // alert icon threshold
   VENT_RATE: 35,           // heat removed / s while venting
   OVERHEAT_DAMAGE: 4,      // hull / s while heat is maxed
   OVERHEAT_SPEED_CAP: 0.4, // engine limps while overheated
   SPIKE_START_DEPTH: 60,   // m before random coolant-leak heat spikes begin
-  SPIKE_INTERVAL: [25, 45],// s between spikes (shrinks with difficulty)
+  SPIKE_INTERVAL: [40, 65],// s between spikes (shrinks with difficulty). Was [25, 45]
   SPIKE_AMOUNT: 22,        // heat added by a spike
 
   // --- Drill bit wear (Drill station) ------------------------------------
   WEAR_MAX: 100,
-  WEAR_PER_METER: 0.15,    // wear per metre drilled (x difficulty)
+  WEAR_PER_METER: 0.10,    // wear per metre drilled (x difficulty). Was 0.15
   WEAR_ALERT: 70,
   REPAIR_RATE: 30,         // wear removed / s while repairing
   WORN_DAMAGE: 3,          // hull / s while bit is fully worn and moving
@@ -86,6 +86,57 @@ export const TUNING = {
   PILOT_REQUIRED: true,    // throttle only responds while the crew is at the HELM
   LOCK_TOAST_COOLDOWN: 900,// ms between "NO PILOT" toasts when tapping a locked throttle
   VIEW_PAN_MS: 650,        // camera transition time
+};
+
+// ---- Ore veins ([C] Cletus): come to a FULL STOP with the drill face at the vein, then work it --------
+export const ORE = {
+  START_DEPTH: 80,          // first vein can arrive after this (m)
+  GAP: [120, 200],          // metres between veins (x GAP_LEG_MUL^leg: a little more often each leg)
+  GAP_LEG_MUL: 0.85,
+  SPAWN_Y: -60,             // spawned above the screen: alert ~70 m out, on screen at ~55 m
+  WINDOW_AHEAD: 4,          // stop window: vein centre between 4 m ahead of the drill tip...
+  WINDOW_PAST: 2,           // ...and 2 m past it
+  STOP_SPEED: 0.001,        // "full stop": actual speed at/below this
+  SCRAP_FRAC: 0.1,          // overshoot / drilled through: scrap = 10% of the vein's value
+  DECAY: 14,                // instability lost per second while nobody is extracting
+  ESCALATE: 1.5,            // instability rate x (1 + ESCALATE x fraction already taken): greed gets riskier
+  COLLAPSE_AT: 100,
+  COLLAPSE_LOSS: 0.5,       // a collapse loses half the ore taken from that vein (+ hull damage)
+  CLEAR_M: 15,              // no boulders arrive within 15 m of a vein (and vice versa)
+  // value = credits for the whole vein at x1.0 pay (x the segment pay multiplier)
+  TYPES: {
+    small: { name: 'SMALL', value: 50,  secs: 3, inst: 10, tremor: 0,  tremorAmt: [0, 0],  dmg: 8,  tint: 0xd08a4a },
+    rich:  { name: 'RICH',  value: 140, secs: 5, inst: 17, tremor: 0.35, tremorAmt: [6, 12], dmg: 14, tint: 0xffd23f },
+    fine:  { name: 'FINE',  value: 330, secs: 6, inst: 24, tremor: 0.6, tremorAmt: [8, 16], dmg: 22, tint: 0x7ff0ff },
+  },
+  // spawn weights per relay leg (index = relays passed; last entry repeats)
+  WEIGHTS: [{ small: 0.6, rich: 0.32, fine: 0.08 }, { small: 0.45, rich: 0.38, fine: 0.17 }, { small: 0.35, rich: 0.4, fine: 0.25 }],
+};
+
+// ---- Run events ([P]): problems that need a choice, not just a hold ----------------------------
+export const EVENTS = {
+  START_DEPTH: 150,               // nothing before this
+  GAP_S: [[30, 45], [22, 34], [16, 26]],   // seconds between events, per leg (last repeats). Time-based: stopping doesn't pause them
+  POOL: [['jam', 'fire'], ['jam', 'fire', 'surge'], ['jam', 'fire', 'surge']],  // leg 2 adds the power surge
+  LEG2_FIRST: 'surge',            // the first event after pushing on from relay 1 is always the new one
+  MAX_ACTIVE: 2,
+  // FIRE: starts in ENG / DRL / TLS, disables that room's station, spreads to a neighbour if left
+  FIRE_SPREAD_S: 14,
+  FIRE_HULL_DPS: 0.5,             // per burning room
+  FIRE_PUTOUT_S: 1.4,             // hold EXTINGUISH in the room (+ FIRE_GROW_S per second it has burned, capped)
+  FIRE_GROW_S: 0.05, FIRE_PUTOUT_MAX: 2.6,
+  // JAM: the bit seizes (no progress; the engine strains while the throttle is up)
+  JAM_HEAT: 9,                    // heat/s x throttle while jammed
+  JAM_ROCKS: 3,                   // helm fix: swing the throttle 0% -> 60%+ three times...
+  JAM_ROCK_HIGH: 0.6, JAM_ROCK_LOW: 0.1,
+  JAM_ROCK_WINDOW_S: 4,           // ...each swing within 4 s of the last
+  JAM_ROCK_HEAT: 6, JAM_ROCK_HULL: 2,   // each swing strains the rig
+  JAM_FIX_S: 3.5,                 // drill fix: hold FREE BIT (slow but free)
+  // SURGE: a prompt. OVERCLOCK (fast + better pay, heat spike) vs SHUT DOWN (stop, engine vents). Ignored = blowout
+  SURGE_DECIDE_S: 6,
+  OVERCLOCK_S: 10, OVERCLOCK_SPEED: 1.4, OVERCLOCK_PAY: 1.5, OVERCLOCK_HEAT: 25, OVERCLOCK_HEAT_MUL: 2,
+  SHUTDOWN_S: 4, SHUTDOWN_COOL: 35,
+  BLOWOUT_HULL: 15, BLOWOUT_HEAT: 40,
 };
 
 // Transition animations. ONE knob: ANIM_SCALE multiplies every beat of the descent/ascent cutscenes

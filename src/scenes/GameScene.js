@@ -1,5 +1,7 @@
 // The world: terrain, boulders, the ship and its crew. Owns the simulation.
-import { TUNING as T, LAYOUT as L, loadBest, saveBest } from '../config.js';
+import { TUNING as T, LAYOUT as L, ORE, EVENTS as E, loadBest, saveBest } from '../config.js';
+import { Veins } from '../systems/Veins.js';
+import { EventDirector } from '../systems/Events.js';
 import { ShipSystems } from '../systems/ShipSystems.js';
 import { Terrain } from '../systems/Terrain.js';
 import { Obstacles } from '../systems/Obstacles.js';
@@ -13,7 +15,8 @@ import { bankRun, loadSave, logRadio, setRunActive } from '../systems/Save.js';
 import { ANIM } from '../systems/Settings.js';
 
 // Hold-actions per station. The HELM has none: its action area is the throttle itself.
-export const STATION_ACTIONS = { engine: ['vent'], helm: [], drill: ['repair'], tools: ['patch', 'blast'] };
+// DRL also runs EXTRACT (stopped at a vein) and FREE THE BIT (jam); any burning room offers EXTINGUISH only.
+export const STATION_ACTIONS = { engine: ['vent'], helm: [], drill: ['repair', 'extract', 'freebit'], tools: ['patch', 'blast'] };
 
 export class GameScene extends Phaser.Scene {
   constructor() { super('Game'); }
@@ -53,7 +56,12 @@ export class GameScene extends Phaser.Scene {
     this.forceOffers = null;   // test hook: fixed offer ids
     this.relayGfx = this.add.graphics().setDepth(2.5);
     this.relayLabel = this.add.bitmapText(4, 0, FONT_KEY, '', 6).setTint(0x7fe0ff).setDepth(2.6).setVisible(false);
-    this.obstacles.spawnFilter = (arrival) => !this.inRelayWindow(arrival, 0);
+    // --- ore veins + run events ---
+    this.toastLog = [];
+    this.veins = new Veins(this, this.state);
+    this.director = new EventDirector(this);
+    this.obstacles.spawnFilter = (arrival) => !this.inRelayWindow(arrival, 0) && !this.veins.near(arrival, ORE.CLEAR_M);
+    this.veins.spawnFilter = (arrival) => !this.inRelayWindow(arrival, 15) && !this.boulderNear(arrival, ORE.CLEAR_M);
 
     this.scene.launch('UI');
     this.setupKeyboard();
@@ -62,6 +70,11 @@ export class GameScene extends Phaser.Scene {
     const q = new URLSearchParams(window.location.search);
     if (q.has('depth')) this.debugJump(Number(q.get('depth')) || 0);
     if (q.has('boosts')) this.forceOffers = q.get('boosts').split(',');
+    // ?noevents=1: no random veins or events (tests / calm playtests). ?vein=small|rich|fine: one ~45 m ahead.
+    // ?event=fire|jam|surge (fire:engine picks the room): triggered 1.5 s into the run.
+    if (q.get('noevents') === '1') { this.veins.enabled = false; this.director.enabled = false; }
+    if (q.has('vein') && ORE.TYPES[q.get('vein')]) this.veins.spawn(q.get('vein'), L.DRILL_TIP_Y - 45 * T.PX_PER_METER);
+    if (q.has('event')) { const [type, arg] = q.get('event').split(':'); this.time.delayedCall(1500, () => { if (!this.over) this.director.trigger(type, arg); }); }
   }
 
   /** Is a depth inside a relay's clear window [R - WARN - pad, R + CLEAR_AFTER]? */
@@ -71,6 +84,12 @@ export class GameScene extends Phaser.Scene {
     return (next > 0 && next - depthM <= T.RELAY_WARN + pad) || (prev > 0 && depthM - prev <= T.RELAY_CLEAR_AFTER);
   }
 
+  /** A boulder (existing) arriving within m metres of this depth? */
+  boulderNear(arrivalM, m) {
+    const d = this.state.depth;
+    return this.obstacles.list.some((o) => Math.abs(d + (L.DRILL_TIP_Y - o.sprite.y - o.size.r) / T.PX_PER_METER - arrivalM) < m);
+  }
+
   get blastTime() { return T.BLAST_TIME * this.state.mods.blastTimeMul; }
   get relayNumber() { return this.state.relays + 1; }
 
@@ -78,6 +97,7 @@ export class GameScene extends Phaser.Scene {
   arriveAtRelay() {
     const s = this.state;
     s.anchor();
+    this.director.clearAll();
     this.setHold(null); this.blastCharge = 0;
     this.boostChosen = false;
     this.offers = drawBoosts(T.BOOST_CHOICES, Math.random, this.forceOffers);
@@ -128,7 +148,9 @@ export class GameScene extends Phaser.Scene {
     if (newBest) saveBest(depth);
     const save = bankRun({ banked, reason, relays, depth, planet: this.planet });
     logRadio(`C${this.contractNo} ${reason === 'cashout' ? 'CASH-OUT' : 'POD'}`, reason === 'cashout' ? CASHOUT_LINE : POD_LINE);
-    this.lastRun = { reason, depth, best: Math.max(depth, prevBest), newBest, haul, bonus, recovery, banked, credits: save.credits, relays };
+    const st = this.state;
+    this.lastRun = { reason, depth, best: Math.max(depth, prevBest), newBest, haul, bonus, recovery, banked, credits: save.credits, relays,
+      ore: Math.floor(st.ore), scrap: Math.floor(st.scrap), drill: Math.floor(st.drillPay), veins: st.veinsWorked + st.veinsCollapsed, veinsLost: st.veinsLost, collapses: st.veinsCollapsed };
     this.scene.stop('Relay');
     // With cutscenes: a short in-run beat, then the ascent (bore -> space -> dock), and the
     // summary over the docked rig. ?anim=0: the old summary over the run.
@@ -179,6 +201,8 @@ export class GameScene extends Phaser.Scene {
     this.obstacles.nextAt = depthM + 10;
     this.nextHardCheck = depthM + T.HARD_CHECK_GAP;
     this.relayWarned = s.nextRelayAt - depthM <= T.RELAY_WARN;
+    this.veins.clear();
+    this.veins.nextAt = depthM + 40;
   }
 
   drawRelayMarker(time) {
@@ -200,7 +224,14 @@ export class GameScene extends Phaser.Scene {
   get pilotEnRoute() { return !this.piloted && this.crew.walking && this.crew.target === 'helm'; }
 
   // Throttle commands are ignored (with feedback) unless someone is at the helm.
-  setThrottle(v) { if (!this.piloted) return this.lockedFeedback(); this.state.setThrottle(v); return true; }
+  setThrottle(v) {
+    if (!this.piloted) return this.lockedFeedback();
+    if (this.director.fires.helm) { if (this.time.now - this.lockedPing > T.LOCK_TOAST_COOLDOWN) this.toast('HELM ON FIRE: PUT IT OUT', 0xff6a3a); this.lockedPing = this.time.now; return false; }
+    this.state.setThrottle(v);
+    this.director.onThrottle(this.state.throttle);
+    return true;
+  }
+  resolveSurge(choice) { return this.director.resolveSurge(choice); }
   nudgeThrottle(d) { return this.setThrottle(this.state.throttle + d); }
   setThrottleFromUI(v) { return this.setThrottle(Math.max(0, Math.min(1, v))); }
   lockedFeedback() {
@@ -215,7 +246,7 @@ export class GameScene extends Phaser.Scene {
   toggleView() { this.setHold(null); this.view.toggle(); }
   setHold(action) { this.hold = action; if (action !== 'blast') this.blastCharge = 0; }
   onRoomTap(id) { this.setHold(null); this.crew.goTo(id); }
-  toast(text, color = 0xffffff) { this.toasts.push({ text, color }); }
+  toast(text, color = 0xffffff) { this.toasts.push({ text, color }); (this.toastLog ||= []).push(text); if (this.toastLog.length > 60) this.toastLog.shift(); }
 
   // Optional desktop keys: UP/DOWN or W/S throttle, SPACE/TAB view, 1-3 rooms, E hold primary action.
   setupKeyboard() {
@@ -227,7 +258,7 @@ export class GameScene extends Phaser.Scene {
     kb.on('keydown-S', () => this.nudgeThrottle(-T.THROTTLE_STEP));
     kb.on('keydown-SPACE', () => this.toggleView());
     ['ONE', 'TWO', 'THREE', 'FOUR'].forEach((k, i) => kb.on('keydown-' + k, () => L.ROOMS[i] && this.onRoomTap(L.ROOMS[i].id)));
-    kb.on('keydown-E', () => { const a = STATION_ACTIONS[this.crew.station]; if (a) this.setHold(a[0]); });
+    kb.on('keydown-E', () => { const a = this.availableActions(); if (a.length) this.setHold(a.includes('extract') ? 'extract' : a[0]); });
     kb.on('keydown-Q', () => { if (this.crew.station === 'tools' && !this.state.mods.noBlast) this.setHold('blast'); });
     kb.on('keyup-E', () => this.setHold(null));
     kb.on('keyup-Q', () => this.setHold(null));
@@ -267,11 +298,15 @@ export class GameScene extends Phaser.Scene {
     if (!hadAhead && this.obstacles.anyAhead()) this.toast('BOULDER AHEAD', 0xc9a7ff);
 
     // --- crew work ----------------------------------------------------------
-    const actions = STATION_ACTIONS[this.crew.station] || [];
-    const canWork = this.hold && !this.crew.walking && actions.includes(this.hold);
+    const room = this.crew.station;
+    const canWork = this.hold && !this.crew.walking && this.availableActions().includes(this.hold);
     this.crew.working = !!canWork;
+    let extracting = false;
     if (canWork) {
-      if (this.hold === 'blast') {
+      if (this.hold === 'extinguish') this.director.extinguish(room, dt);
+      else if (this.hold === 'freebit') this.director.fixJam(dt);
+      else if (this.hold === 'extract') extracting = true;
+      else if (this.hold === 'blast') {
         if (this.obstacles.target() && !s.mods.noBlast) {
           this.blastCharge += dt;
           if (this.blastCharge >= this.blastTime) {
@@ -285,6 +320,10 @@ export class GameScene extends Phaser.Scene {
         s.work(this.hold, dt);
       }
     }
+    this.handleVeinEvents(this.veins.update(dt, advancePx, extracting, time), s);
+    this.director.update(dt);
+    if (events.includes('overclockEnd')) this.toast('OVERCLOCK OVER', 0x9aa0b8);
+    if (events.includes('restart')) this.toast('ENGINE BACK ONLINE', 0x8affa0);
     const st = this.ship.room(this.crew.station || 'drill');
     this.ship.sparks.setPosition(st.stationX, st.floorY - 9);
     this.ship.sparks.emitting = this.crew.working;
@@ -311,17 +350,48 @@ export class GameScene extends Phaser.Scene {
     else if (events.includes('relay')) this.arriveAtRelay();
   }
 
+  /** Hold-actions Holt can use right where he stands (a burning room only offers EXTINGUISH). */
+  availableActions(room = this.crew.station) {
+    if (!room) return [];
+    if (this.director.fires[room]) return ['extinguish'];
+    const s = this.state, base = STATION_ACTIONS[room] || [];
+    return base.filter((a) => (a !== 'extract' || (this.veins.stopped && !s.jammed && this.veins.stopped.taken < 1)) && (a !== 'freebit' || s.jammed));
+  }
+
+  handleVeinEvents(evs, s) {
+    for (const e of evs) {
+      const v = e.v, n = v.def.name;
+      if (e.kind === 'appear') this.toast(`${n} VEIN AHEAD: FULL STOP AT IT`, v.def.tint);
+      else if (e.kind === 'window') this.toast(s.speed > ORE.STOP_SPEED ? 'VEIN AT THE DRILL: STOP NOW!' : 'AT THE VEIN', 0x8affa0);
+      else if (e.kind === 'stopped') { this.toast('STOPPED AT VEIN: EXTRACT AT DRL', 0x8affa0); this.cameras.main.shake(120, 0.004); }
+      else if (e.kind === 'moving') this.toast('MOVING: EXTRACTION NEEDS A FULL STOP', 0xffc35c);
+      else if (e.kind === 'tremor') { this.toast('TREMOR! VEIN UNSTABLE', 0xff8a5c); this.cameras.main.shake(160, 0.006); }
+      else if (e.kind === 'emptied') this.toast(`VEIN EMPTIED: +${Math.floor(v.credits)} CR ORE`, 0xffd23f);
+      else if (e.kind === 'collapse') {
+        this.toast(`VEIN COLLAPSED! -${Math.round(e.dmg)} HULL, -${Math.floor(e.loss)} CR`, 0xff4a4a);
+        this.cameras.main.shake(350, 0.016);
+        this.setHold(null);
+      } else if (e.kind === 'left') this.toast(`VEIN WORKED: +${Math.floor(v.credits)} CR ORE`, 0xffd23f);
+      else if (e.kind === 'lost') this.toast(`VEIN LOST! SCRAP +${Math.floor(e.scrap)} CR`, 0xff8a5c);
+    }
+  }
+
   alerts() {
-    const s = this.state;
+    const s = this.state, f = this.director.fires, vein = this.veins.current;
+    const veinStop = !!this.veins.stopped && this.veins.stopped.taken < 1;
     return {
-      engine: s.heat >= T.HEAT_ALERT,
-      helm: this.obstacles.anyAhead() && s.throttle > s.safeThrottle + 1e-6, // boulder ahead, going too fast
+      engine: s.heat >= T.HEAT_ALERT || !!f.engine,
+      helm: (this.obstacles.anyAhead() && s.throttle > s.safeThrottle + 1e-6) || !!f.helm || (!!vein && vein.state !== 'stopped' && this.veins.dist(vein) < 30 && s.throttle > 0),
       pilot: !this.piloted,
-      drill: s.wear >= T.WEAR_ALERT,
-      tools: s.hull <= T.HULL_ALERT || this.obstacles.anyAhead(),
+      drill: s.wear >= T.WEAR_ALERT || !!f.drill || s.jammed || veinStop,
+      tools: s.hull <= T.HULL_ALERT || this.obstacles.anyAhead() || !!f.tools,
       hull: s.hull <= T.HULL_ALERT,
       rock: this.obstacles.anyAhead(),
       hard: s.inHard || this.terrain.hardAhead(),
+      ore: !!vein,
+      fire: this.director.burning.length > 0,
+      jam: s.jammed,
+      surge: !!this.director.surge || s.overclockT > 0 || s.shutdownT > 0,
     };
   }
 

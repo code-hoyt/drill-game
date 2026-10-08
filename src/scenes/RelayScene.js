@@ -98,6 +98,8 @@ export class RelayScene extends Phaser.Scene {
     txt(30, 108, this.picked.name, 6, GOLD);
     txt(8, 122, 'HAUL', 6, GREY);
     this.haulText = txt(172, 122, '', 6, GOLD).setOrigin(1, 0);
+    // haul breakdown: metres drilled vs ore from veins (scrap from lost veins counts with ore)
+    this.oreText = txt(30, 122, `DRILL ${Math.floor(s.drillPay)}  ORE ${Math.floor(s.ore + s.scrap)}`, 6, 0x9a8f6a);
     txt(8, 134, 'HULL', 6, GREY);
     this.hullGfx = this.add.graphics();
     this.hullText = txt(172, 134, '', 6, 0xffffff).setOrigin(1, 0);

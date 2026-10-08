@@ -55,6 +55,10 @@ const ICON_SYMBOLS = {
   hull: ['..#..', '..#..', '#####', '..#..', '..#..'],
   rock: ['.###.', '##.##', '#####', '###.#', '.###.'],
   hard: ['#.#.#', '.#.#.', '#.#.#', '.#.#.', '#.#.#'],
+  ore:  ['..#..', '.###.', '#####', '.###.', '..#..'],
+  fire: ['..#..', '.##..', '.###.', '##.##', '.###.'],
+  jam:  ['#...#', '.#.#.', '..#..', '.#.#.', '#...#'],
+  surge: ['..##.', '.##..', '#####', '..##.', '.##..'],
 };
 
 export function createTextures(scene) {
@@ -93,6 +97,26 @@ export function createTextures(scene) {
       px(c - 2, c, '#3a3240', 3, 1); px(c, c + 1, '#3a3240', 1, 2); // crack
     });
   });
+
+  // Ore veins: a seam across the drill path (72x12), one palette per grade
+  const VEINS = { small: ['#5a3a2e', '#7a4e36', '#d08a4a', '#f0b070'], rich: ['#4a3a22', '#6a5226', '#ffd23f', '#fff2a8'],
+    fine: ['#26304a', '#3a4a6a', '#7ff0ff', '#e8d0ff'] };
+  Object.entries(VEINS).forEach(([k, [d1, d2, c1, c2]], n) => {
+    const r = rng(300 + n), W = 72, H = 12;
+    canvas(scene, 'vein_' + k, W, H, (ctx, px) => {
+      for (let x = 0; x < W; x++) {
+        const half = 3 + Math.round(2.5 * Math.sin(x * 0.21 + n) + r() * 1.4) - (x < 5 || x > W - 6 ? 2 : 0);
+        for (let y = 6 - half; y < 6 + half; y++) px(x, y, (y === 6 - half || y === 5 + half) ? '#1e1424' : (r() < 0.5 ? d1 : d2));
+      }
+      const crystals = k === 'small' ? 9 : k === 'rich' ? 14 : 18;
+      for (let i = 0; i < crystals; i++) {
+        const x = 3 + Math.floor(r() * (W - 6)), y = 3 + Math.floor(r() * 5);
+        px(x, y, c1, 2, 2); px(x, y, c2); if (k !== 'small' && r() < 0.5) px(x + 2, y + 1, c1);
+      }
+    });
+  });
+  pixelMap(scene, 'flame0', ['..r..', '.ryr.', '.ryr.', 'ryyyr', 'ryWyr', '.rrr.'], { r: '#e0561a', y: '#ffd23f', W: '#fff2a8' });
+  pixelMap(scene, 'flame1', ['.r...', '.rr..', 'ryyr.', 'ryyyr', 'rWyyr', '.rrr.'], { r: '#e0561a', y: '#ffd23f', W: '#fff2a8' });
 
   // Drill head (3 animation frames), points UP
   for (let f = 0; f < 3; f++) {
@@ -170,7 +194,7 @@ export function createTextures(scene) {
   Object.entries(CREW).forEach(([k, rows]) => pixelMap(scene, k, rows, CREW_PAL));
 
   // Alert icons for HUD (11x11) and world bubble
-  const iconColors = { heat: '#d9412b', bit: '#d98a2b', hull: '#c42b55', rock: '#8a5ad9', hard: '#3a6ad9' };
+  const iconColors = { heat: '#d9412b', bit: '#d98a2b', hull: '#c42b55', rock: '#8a5ad9', hard: '#3a6ad9', ore: '#b8901a', fire: '#e0561a', jam: '#56627e', surge: '#b0369a' };
   Object.entries(ICON_SYMBOLS).forEach(([k, sym]) => {
     canvas(scene, 'ic_' + k, 11, 11, (ctx, px) => {
       px(1, 0, '#111', 9, 11); px(0, 1, '#111', 11, 9);

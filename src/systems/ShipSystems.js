@@ -1,5 +1,5 @@
 // Pure gameplay numbers: speed, depth, heat, bit wear, hull. No rendering.
-import { TUNING as T } from '../config.js';
+import { TUNING as T, EVENTS as E } from '../config.js';
 import { applyParts } from '../data/parts.js';
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -22,6 +22,14 @@ export class ShipSystems {
     this.relays = 0;                  // relays passed (pushed on from)
     this.anchored = false;            // clamped in at a relay: simulation paused
     this.boosts = [];                 // ids of relay supplies picked this run
+    // --- ore + events ---
+    this.drillPay = 0;                // credits earned by metres drilled (haul = drillPay + ore + scrap - repairs)
+    this.ore = 0;                     // credits from ore veins (net of collapse losses)
+    this.scrap = 0;                   // scrap from veins that were overshot / drilled through
+    this.veinsWorked = 0; this.veinsLost = 0; this.veinsCollapsed = 0;
+    this.jammed = false;              // drill jam event: no progress, the engine strains
+    this.shutdownT = 0;               // power surge SHUT DOWN: seconds left with the engine off
+    this.overclockT = 0;              // power surge OVERCLOCK: seconds left boosted
     // Run modifiers: loadout parts (applied once, here) + relay supplies (stacked at relays).
     // Multipliers multiply; maxHullBonus/spareBits add; the rest are flags/overrides.
     this.mods = { heatMul: 1, wearMul: 1, ventMul: 1, repairMul: 1, patchMul: 1, blastTimeMul: 1,
@@ -36,7 +44,8 @@ export class ShipSystems {
   }
 
   /** Actual speed as a fraction of the *stock* top speed (parts change top speed). */
-  get realSpeed() { return this.speed * this.mods.maxSpeedMul; }
+  get realSpeed() { return this.speed * this.mods.maxSpeedMul * this.boostMul; }
+  get boostMul() { return this.overclockT > 0 ? E.OVERCLOCK_SPEED : 1; }
   /** Highest throttle setting that grinds boulders instead of ramming them. */
   get safeThrottle() { return Math.min(1, (this.mods.ramSafe ?? T.RAM_SAFE_SPEED) / this.mods.maxSpeedMul); }
   get ramming() { return this.speed > this.safeThrottle + 1e-6; }
@@ -56,6 +65,7 @@ export class ShipSystems {
     if (this.overheated) c = Math.min(c, this.mods.overheatCap ?? T.OVERHEAT_SPEED_CAP);
     if (this.worn) c = Math.min(c, T.WORN_SPEED_CAP);
     if (this.inHard) c = Math.min(c, T.HARD_SPEED_CAP);
+    if (this.jammed || this.shutdownT > 0) c = 0;
     return c;
   }
 
@@ -68,19 +78,24 @@ export class ShipSystems {
     const target = Math.min(this.throttle, this.speedCap);
     this.speed = approach(this.speed, target, (target > this.speed ? T.ACCEL * this.mods.accelMul : T.DECEL * this.mods.decelMul) * dt);
 
-    let advancePx = this.blocked ? 0 : this.speed * T.MAX_SPEED_PX * this.mods.maxSpeedMul * dt;
+    let advancePx = this.blocked ? 0 : this.speed * T.MAX_SPEED_PX * this.mods.maxSpeedMul * this.boostMul * dt;
     // never overshoot the next relay anchor
     const relayPx = this.nextRelayAt * T.PX_PER_METER;
     if (this.distance + advancePx >= relayPx) { advancePx = Math.max(0, relayPx - this.distance); events.push('relay'); }
     this.distance += advancePx;
-    this.haul += (advancePx / T.PX_PER_METER) * T.PAY_PER_METER * this.payMult;
+    const pay = (advancePx / T.PX_PER_METER) * T.PAY_PER_METER * this.payMult * (this.overclockT > 0 ? E.OVERCLOCK_PAY : 1);
+    this.haul += pay; this.drillPay += pay;
+    if (this.overclockT > 0 && (this.overclockT -= dt) <= 0) { this.overclockT = 0; events.push('overclockEnd'); }
+    if (this.shutdownT > 0 && (this.shutdownT -= dt) <= 0) { this.shutdownT = 0; events.push('restart'); }
 
     const diff = this.difficulty;
     const heatMul = this.inHard ? T.HARD_HEAT_MULT : 1;
     const wearMul = this.inHard ? T.HARD_WEAR_MULT : 1;
     // heat follows the *real* speed, so a faster bit runs hotter at full throttle
     const rs = this.realSpeed;
-    this.heat += (T.HEAT_RATE * rs * rs * diff * heatMul * this.mods.heatMul - T.HEAT_COOL * this.mods.coolMul) * dt;
+    const ocHeat = this.overclockT > 0 ? E.OVERCLOCK_HEAT_MUL : 1;
+    this.heat += (T.HEAT_RATE * rs * rs * diff * heatMul * this.mods.heatMul * ocHeat - T.HEAT_COOL * this.mods.coolMul) * dt;
+    if (this.jammed) this.heat += E.JAM_HEAT * this.throttle * dt;   // the engine strains against a seized bit
     this.wear += (advancePx / T.PX_PER_METER) * T.WEAR_PER_METER * diff * wearMul * this.mods.wearMul;
     if (this.wear >= T.WEAR_MAX && this.mods.spareBits > 0) { this.wear = 0; this.mods.spareBits -= 1; events.push('sparebit'); }
 
@@ -134,7 +149,7 @@ export class ShipSystems {
     return { points: n, cost };
   }
   // Clamp in: remember the throttle setting, stop dead, free heat + bit service.
-  anchor() { this.relayThrottle = this.throttle; this.anchored = true; this.speed = 0; this.throttle = 0; this.heat = 0; this.wear = 0; this.blocked = false; }
+  anchor() { this.jammed = false; this.shutdownT = 0; this.overclockT = 0; this.relayThrottle = this.throttle; this.anchored = true; this.speed = 0; this.throttle = 0; this.heat = 0; this.wear = 0; this.blocked = false; }
   // Undock: the throttle goes back to its pre-relay setting (wherever the crew is);
   // actual speed ramps up from 0 with the normal ACCEL in update().
   pushOn() { this.relays += 1; this.anchored = false; this.throttle = this.relayThrottle ?? 0; this.speed = 0; }
