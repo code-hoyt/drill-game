@@ -1,4 +1,4 @@
-# Drill (working title): prototype v0.7 (M2 + unlocks, transition cutscenes, station concourse)
+# Drill (working title): prototype v0.8 (M2 + unlocks, transition cutscenes, station concourse)
 
 An endless, portrait, pixel-art drilling game for phone browsers. You pilot a drill ship that bores **upward** through an alien planet and keep it alive by running your one crew member between stations. Your score is depth. Every 1000 m you clamp onto a relay and choose: push on for better pay, or cash out. Between contracts the rig docks at an orbital station. The home screen is the station concourse: pick contracts, hear from Ines, buy parts, and swap them in the rig bay. Design doc: [`docs/DESIGN.md`](docs/DESIGN.md).
 
@@ -15,24 +15,30 @@ ES modules don't load over `file://`, so you need a server.
 
 ## How to play
 
-**Flow:** title → **station concourse** (home) → CONTRACT BOARD: accept a contract → Holt walks to the airlock and rides the lift up into the rig → *descent cutscene* → run → relay breaks → cash out or hull loss → *ascent cutscene* → Holt rides the lift down onto the concourse → end-of-run summary over the concourse → **the concourse**.
+**Flow:** title → **station concourse** (home) → CONTRACT BOARD: accept a contract → Holt walks to the airlock and rides the lift up into the rig → *descent cutscene* → run → relay breaks → cash out or hull loss → *ascent cutscene* → Holt rides the lift down onto the concourse → end-of-run summary in the content area above the concourse → **the concourse**.
 
-**Transition cutscenes** (pixel art, built from the rig's own textures; **tap anywhere to skip**, after a 0.4 s grace so a stray tap at the start doesn't skip; "TAP TO SKIP" appears when skipping is live). The run shows the rig **drill-up** (flipped for the phone), and so does the docking bay above the concourse. Outside, on the surface and in space, it's **drill-down**. The camera turns 180° to bridge the two (only the cutscene's world camera turns; the captions and every HUD stay upright):
-* **Descent (4.6 s, after the boarding beat: the walk to the airlock, up to 0.9 s, plus the 0.55 s lift):** opens on exactly the concourse's bay framing (rig drill-up, station below) and the camera turns out to the station view (drill down, 0.8 s). The clamps release ("UNDOCKED") and the rig drops away toward the rust planet, which grows beneath it. Cut to the surface at dusk: the rig drops nose-first on thrusters. The drill bites (chips, shake, spinning bit), and as the rig sinks into its hole the camera follows it and turns 180° with a gentle zoom (1.15 s). It lands in the run's view: drill up, rock above, ship where the run draws it. Then a short fade into the run.
-* **Ascent (4.6 s, after the in-run beat: 0.85 s fade on cash out, or the 1.6 s escape-pod ride on hull loss; then 0.55 s on the concourse):** opens on the run's view (drill up, rock above). As the rig is winched out of the bore on the gantry cable (or the pod launches), the camera turns 180° (1.5 s) to the surface's drill-down view. Cut to space: it climbs to the station's docking port and the clamps engage ("CLAMPED"). The camera turns once more and closes in (0.65 s), ending on exactly the concourse's framing of the rig in its bay. The concourse fades in, Holt rides the airlock lift down onto the floor, and the run summary opens over the concourse.
+**Transition cutscenes** (pixel art, built from the rig's own textures; **tap anywhere to skip**, after a ~0.5 s grace so a stray tap at the start doesn't skip; "TAP TO SKIP" appears when skipping is live). **Speed is one knob: `ANIM_SCALE` in `src/config.js`** (currently **2** = double length; playtest override `?animscale=1.5`). It multiplies every cutscene beat: tweens, turns, cuts, captions, flash/shake/fade. The base timeline is 4.6 s, so 2 gives 9.2 s per cutscene. The skip grace scales by the cube root (0.4 → 0.5 s), the airlock lift by the square root (0.55 → 0.78 s), and the in-run lead-ins (cash-out fade, pod launch) don't scale. The beat times below are at scale 1; double them for the current build. The run shows the rig **drill-up** (flipped for the phone), and so does the docking bay above the concourse. Outside, on the surface and in space, it's **drill-down**. The camera turns 180° to bridge the two (only the cutscene's world camera turns; the captions and every HUD stay upright):
+* **Descent (4.6 s × ANIM_SCALE = 9.2 s, after the boarding beat: the walk to the airlock, up to 0.9 s, plus the 0.78 s lift):** opens on exactly the concourse's bay framing (rig drill-up, station below) and the camera turns out to the station view (drill down, 0.8 s). The clamps release ("UNDOCKED") and the rig drops away toward the rust planet, which grows beneath it. Cut to the surface at dusk: the rig drops nose-first on thrusters. The drill bites (chips, shake, spinning bit), and as the rig sinks into its hole the camera follows it and turns 180° with a gentle zoom (1.15 s). It lands in the run's view: drill up, rock above, ship where the run draws it. Then a short fade into the run.
+* **Ascent (4.6 s × ANIM_SCALE = 9.2 s, after the in-run beat: 0.85 s fade on cash out, or the 1.6 s escape-pod ride on hull loss; then the 0.78 s lift on the concourse):** opens on the run's view (drill up, rock above). As the rig is winched out of the bore on the gantry cable (or the pod launches), the camera turns 180° (1.5 s) to the surface's drill-down view. Cut to space: it climbs to the station's docking port and the clamps engage ("CLAMPED"). The camera turns once more and closes in (0.65 s), ending on exactly the concourse's framing of the rig in its bay. The concourse fades in, Holt rides the airlock lift down onto the floor, and the run summary opens in the content area above the concourse.
 * `?anim=0` turns them off (the old flow: summary over the run, and straight into the run from the contract board).
 
-**Station concourse (home base).** The rig hangs drill-up in docking bay 3 at the top of the screen, gripped by its hull end. Under it is a small side-view concourse with five signed spots. Tap a spot (or its sign) and Holt walks there; its panel opens when he arrives, or at once if he's already there. He walks at 160 px/s, so the farthest pair (board ↔ bunk) takes 0.9 s, and neighbours take about 0.23 s:
+**Station concourse (home base).** The screen, top to bottom: HUD (0–22) | **content area** (22–202) | **concourse strip** (202–300) | bottom bar (303–320, base px).
+* The **concourse strip** sits at the bottom and is always visible and tappable, whatever is open above it. It holds five signed spots and Holt.
+* The **content area** shows docking bay 3 by default: the rig stands drill-up on the station roof, gripped by its hull end. When Holt reaches a spot, that spot's panel fills the content area, and only the content area.
+* Tap a spot (anywhere in its column) and Holt walks there. The open panel stays up until he arrives, then swaps. The sign of the spot he's at (or heading to, blinking) is highlighted with a pointer.
+* Back to the bay view: tap the active spot again, or **X** in the panel header. On a sub-panel (slot list, codex, buy, locked), tapping the active spot goes back to that spot's main panel; the header's **<** does too.
+* The bottom bar says where Holt is ("AT THE QUARTERMASTER", "WALKING TO …"). Short toasts (equipped, bought, rerolled) briefly replace that line, so they never cover a panel.
+* Walking speed is 160 px/s: the farthest pair (board ↔ bunk) takes 0.9 s, and neighbours take about 0.23 s.
 
 | Spot (left → right) | Prop | Opens |
 |---|---|---|
-| **CONTRACT BOARD** | wall screen with posted contracts | Mission select, built from `src/data/contracts.js` (one Kessa-4 contract for now; M3 adds planets). ACCEPT starts the boarding beat. |
-| **INES'S WINDOW** | dispatch booth, Ines behind the glass, a mug on the counter | Her latest message, the paged radio replay of older traffic, and a story stub for later. |
-| **AIRLOCK / RIG BAY** | the lift shaft up to the rig's docking collar | The **rig bay** parts screen (see below). Tapping the rig itself, or the **RIG BAY** button, does the same. |
-| **QUARTERMASTER** | shelves of parts, crates, the quartermaster bot at the counter | The parts vendor: rotating stock, reroll, LOCKED list, buy screen. |
-| **HOLT'S BUNK** | bunk bed, locker, codex shelf | Holt's log (stats, next unlock, loadout) with a **CODEX SHELF** button (stub until M4). |
+| **CONTRACT BOARD** | wall screen with posted contracts | Mission select, built from `src/data/contracts.js` (one Kessa-4 contract for now; M3 adds planets, paged 2 per screen). ACCEPT starts the boarding beat. |
+| **INES'S WINDOW** | dispatch booth, Ines behind the glass, a mug on the counter | Her latest message, the radio replay of older traffic (2 per page, < NEWER / OLDER >), and a story stub for later. |
+| **AIRLOCK / RIG BAY** | the lift shaft up to the rig's docking collar | The **rig bay** parts screen (see below). Tapping the rig in the bay view does the same. |
+| **QUARTERMASTER** | shelves of parts, crates, the quartermaster bot at the counter | The parts vendor: rotating stock (6 per page, < PREV / NEXT >), reroll, LOCKED list (7 per page), buy screen. |
+| **HOLT'S BUNK** | bunk bed, locker, codex shelf | Holt's log (stats, next unlock) with a **CODEX SHELF** button (stub until M4). The loadout lives in the rig bay. |
 
-**Rig bay (garage-style parts screen).** The rig's exterior at 2x, drill up, in the bay. Pulsing corner brackets mark six hotspots, each with a tag showing the slot and the part fitted (green when it isn't the stock part):
+**Rig bay (garage-style parts screen).** It fits the content area: the rig's exterior at 1x (as in the bay view), drill up, on the left, with the airlock door and Holt's locker under it. Six **callouts** run down the right, one per slot, showing the slot name and the part fitted (green when it isn't the stock part). Each slot has its own colour, used both on its callout and on the pulsing corner brackets of its hotspot on the rig:
 * the **drill nose**: drill head
 * the **cockpit porthole**, top-left: helm
 * the **plating**, top-right: hull
@@ -40,7 +46,7 @@ ES modules don't load over `file://`, so you need a server.
 * the **tool hatch**, bottom-right: tools
 * **Holt's locker** by the airlock door below the rig: Holt's kit
 
-Each hotspot is at least 74×32 base px (about 160×70 screen px at 390×844). Tapping one opens that slot's swap list, with each owned part's upside and downside. BACK returns to the bay. Swapping only works while docked.
+Hotspots: drill nose 70×24 base px, each hull quadrant 43×31, and the kit locker 40×30. At 390×844 that's at least about 87×52 screen px. Callouts are 80×24. Tapping a hotspot or its callout opens that slot's swap list, with each owned part's upside and downside (paged if it doesn't fit); **<** returns to the bay. Swapping only works while docked.
 
 
 | View | Controls |
@@ -177,7 +183,7 @@ src/
     contracts.js           planets/contracts for the HELM board (M3 extends)
     dispatch.js            Ines's relay messages (1-4 + fallbacks), ping, sign-offs
   systems/
-    Settings.js            URL settings (?anim=0)
+    Settings.js            URL settings (?anim=0, ?animscale=N) + the derived cutscene/grace/lift durations
     Save.js                localStorage save v3 + migration, unlocks, vendor stock/reroll/buy, equip (blocked mid-run), radio log, URL shortcuts
     ShipSystems.js         pure numbers: speed, depth, heat, wear, hull, leaks (no rendering)
     Terrain.js             scrolling rock/tunnel tiles, depth tint, hard-rock bands
@@ -190,7 +196,7 @@ src/
   ui/
     Button.js              touch button with tap + press-and-hold
 tests/e2e.mjs              Playwright phone-viewport test (see below)
-screenshots/               01-07 run + relay screens; 08 concourse, 09/09b Quartermaster, 10 part swap, 11 Holt's log, 12 buy detail; 13 launch (winch out of the bore), 14 docking (clamps), 15 descent (drill bites), 16 locked parts, 17 descent mid-turn, 18 ascent mid-turn, 19 contract board, 20 Ines's window, 21 rig bay, 22 codex, 23 docking end frame (bay framing), 24 Holt steps out (lift), 25 summary over the concourse
+screenshots/               01-07 run + relay screens; 08 concourse (bay view), 08b concourse + NEW PARTS banner, 09/09b/09c Quartermaster (09c = page 2), 10 part swap, 11 Holt's log, 12 buy detail; 13 launch (winch out of the bore), 14 docking (clamps), 15 descent (drill bites), 16 locked parts, 17 descent mid-turn, 18 ascent mid-turn, 19 contract board, 20 Ines's window, 21 rig bay, 22 codex, 23 docking end frame (bay framing), 24 Holt steps out (lift), 25 summary in the content area (every panel shot shows the concourse below)
 docs/DESIGN.md             game design doc
 ```
 
@@ -245,8 +251,13 @@ docs/DESIGN.md             game design doc
 
 **M2 coverage**:
 * The flow: title → concourse → CONTRACT BOARD → ACCEPT CONTRACT → run, then end screen → TO THE CONCOURSE.
-* Concourse: 5 spots. Tapping each one walks Holt there and opens the right panel (board, Ines's window, Quartermaster, Holt's log, rig bay). Every walk is ≤ 1.05 s; measured 0.23–0.46 s between neighbours and 0.91 s board → bunk. Tapping the rig walks to the airlock. Codex opens from the bunk.
-* Rig bay: 6 thumb-sized hotspots, each opening its own slot list. Tags show the equipped parts and update after a swap. Equipping heavy plating (hull) and wide-cut (drill nose) from the bay persists.
+* Concourse: 5 spots, and the legend block is gone. The bottom bar shows where Holt is.
+  * Tapping each spot walks Holt there and opens the right panel (board, Ines's window, Quartermaster, Holt's log, rig bay). Each spot is tapped while the previous panel is still open: the old panel stays up during the walk, the target sign highlights, then the panel swaps.
+  * Every walk is ≤ 1.05 s; measured 0.23–0.46 s between neighbours and 0.91 s board → bunk.
+  * With every panel open, all panel objects stay inside the content area (22–202), and the five concourse columns stay live and uncovered.
+  * Tapping the active spot closes to the bay view, and tapping again reopens. X closes. On the codex, tapping the bunk returns to the log. Tapping the rig walks to the airlock.
+* Rig bay: 6 thumb-sized hotspots plus 6 callouts, each opening its own slot list. Callouts show the equipped parts and update after a swap. Equipping heavy plating (hull) and wide-cut (drill nose) from the bay persists.
+* Quartermaster paging: 12 offers show 6 per page. NEXT shows the other 6 (all 12 reachable, no repeats) and PREV goes back. The buy screen and slot lists fit the content area.
 * Vendor stock: 12 offers, 2 per slot, never stock or owned parts; it's randomized across draws and refreshed per contract.
 * Shortcuts: `?credits=` and `?stock=` work.
 * Reroll costs 100 and the next costs 200.
@@ -265,9 +276,10 @@ docs/DESIGN.md             game design doc
 * Thresholds: 499 vs 500, 999 vs 1000, 2999 vs 3000 m, and 3 lifetime relays for the tool belt.
 * Grandfathering: a v2 save that owns Wide-cut and Heavy charge at best 600 m keeps them owned and equipped, and its stale stock is re-drawn from unlocked parts.
 * A fresh save has 12 locked parts and a 6-offer stock of starters.
-* ACCEPT walks Holt to the airlock and up the lift (boarding ≤ 1.3 s), then the descent plays and ends in the run. Cash out plays the ascent, Holt rides the lift down, and the summary sits on top of the concourse; TO THE CONCOURSE closes it. Each cutscene takes about 4.6 s (allowed 4.3–5.3 s). The camera reaches 180° with a gentle zoom (at most 1.3x), the ascent opens at 180° (the run's view), the UI camera never turns, and the run and dock cameras are left unrotated.
-* The NEW PARTS banner waits until Holt has stepped out and the summary is closed. Toasts sit below it, never overlapping.
-* A tap inside the 0.4 s grace window is ignored; a tap after it skips (descent into the run; escape-pod ascent to the dock with the RIG LOST summary).
+* `ANIM_SCALE` is 2 in config: cutscenes 9.2 s, grace about 0.5 s, lift about 0.78 s. With `?animscale=1`, a real descent runs about 4.6 s, with a 400 ms grace and a 550 ms lift.
+* ACCEPT walks Holt to the airlock and up the lift (boarding ≤ 1.7 s), then the descent plays and ends in the run. Cash out plays the ascent, Holt rides the lift down, and the summary sits inside the content area (22–202) with the concourse visible; CLOSE dismisses it. So does tapping a concourse spot: Holt then walks there. Each cutscene takes about 9.2 s (allowed −5% / +10% + 0.3 s). The camera reaches 180° with a gentle zoom (at most 1.3x), the ascent opens at 180° (the run's view), the UI camera never turns, and the run and dock cameras are left unrotated.
+* The NEW PARTS banner waits until Holt has stepped out and the summary is closed. It sits inside the bay view and hides when a panel opens. Toasts use the bottom bar, so nothing overlaps.
+* A tap inside the grace window (about 0.5 s) is ignored; a tap after it skips (descent into the run; escape-pod ascent to the dock with the RIG LOST summary).
 * Tap-to-skip works on the descent (straight into the run) and on the escape-pod ascent (docked + RIG LOST summary).
 
 Debug pokes (via `window.__drill`) are used only to set up states quickly.

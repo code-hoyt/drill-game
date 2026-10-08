@@ -88,6 +88,17 @@ export const TUNING = {
   VIEW_PAN_MS: 650,        // camera transition time
 };
 
+// Transition animations. ONE knob: ANIM_SCALE multiplies every beat of the descent/ascent cutscenes
+// (tweens, turns, cuts, captions). Base timeline = 4.6 s each, so 2 = ~9.2 s. Human-scale beats on the
+// concourse (the airlock lift) and the tap-to-skip grace only scale modestly (square / cube root).
+// Playtest override: ?animscale=1.5 (any value 0.25..4).
+export const ANIM_SCALE = 2;
+export const ANIM_TIMING = {
+  BASE_MS: 4600,           // cutscene length at SCALE 1
+  BASE_GRACE_MS: 400,      // taps ignored at the start of a cutscene (scaled by ANIM_SCALE^(1/3): 2 -> ~0.5 s)
+  BASE_LIFT_MS: 550,       // airlock lift ride rig <-> concourse (scaled by ANIM_SCALE^(1/2): 2 -> ~0.78 s)
+};
+
 // World layout (world units = base pixels; the world is one screen wide).
 //
 // The ship is a 2-deck, 2x2 grid of rooms around a central hub column with a
