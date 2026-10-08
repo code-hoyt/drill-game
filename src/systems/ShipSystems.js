@@ -1,5 +1,5 @@
 // Pure gameplay numbers: speed, depth, heat, bit wear, hull. No rendering.
-import { TUNING as T, EVENTS as E } from '../config.js';
+import { CALM, TUNING as T, EVENTS as E } from '../config.js';
 import { applyParts } from '../data/parts.js';
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -45,6 +45,8 @@ export class ShipSystems {
 
   /** Actual speed as a fraction of the *stock* top speed (parts change top speed). */
   get realSpeed() { return this.speed * this.mods.maxSpeedMul * this.boostMul; }
+  /** Full stop (actual speed 0, not clamped at a relay): the safe, calm state. */
+  get calm() { return !this.anchored && this.speed <= 1e-6; }
   get boostMul() { return this.overclockT > 0 ? E.OVERCLOCK_SPEED : 1; }
   /** Highest throttle setting that grinds boulders instead of ramming them. */
   get safeThrottle() { return Math.min(1, (this.mods.ramSafe ?? T.RAM_SAFE_SPEED) / this.mods.maxSpeedMul); }
@@ -95,12 +97,14 @@ export class ShipSystems {
     const rs = this.realSpeed;
     const ocHeat = this.overclockT > 0 ? E.OVERCLOCK_HEAT_MUL : 1;
     this.heat += (T.HEAT_RATE * rs * rs * diff * heatMul * this.mods.heatMul * ocHeat - T.HEAT_COOL * this.mods.coolMul) * dt;
-    if (this.jammed) this.heat += E.JAM_HEAT * this.throttle * dt;   // the engine strains against a seized bit
+    const calm = this.calm;
+    if (calm) this.heat -= CALM.COOL * dt;                            // full stop: the engine bleeds heat fast
+    else if (this.jammed) this.heat += E.JAM_HEAT * this.throttle * dt;   // straining against a seizing bit (until it stalls)
     this.wear += (advancePx / T.PX_PER_METER) * T.WEAR_PER_METER * diff * wearMul * this.mods.wearMul;
     if (this.wear >= T.WEAR_MAX && this.mods.spareBits > 0) { this.wear = 0; this.mods.spareBits -= 1; events.push('sparebit'); }
 
     // Random coolant leaks: time-based pressure so crawling isn't free.
-    if (this.depth > T.SPIKE_START_DEPTH) {
+    if (this.depth > T.SPIKE_START_DEPTH && !calm) {   // (the leak timer pauses at a full stop)
       this.spikeTimer -= dt;
       if (this.spikeTimer <= 0) {
         this.heat += T.SPIKE_AMOUNT * this.mods.spikeMul;
@@ -112,7 +116,7 @@ export class ShipSystems {
     let dmg = 0;
     if (this.overheated) dmg += T.OVERHEAT_DAMAGE * this.mods.overheatDmgMul;
     if (this.worn && this.speed > 0.05) dmg += T.WORN_DAMAGE;
-    this.damage(dmg * dt);
+    if (!calm) this.damage(dmg * dt);   // nothing ticks the hull at a full stop
 
     this.heat = clamp(this.heat, 0, T.HEAT_MAX);
     this.wear = clamp(this.wear, 0, T.WEAR_MAX);

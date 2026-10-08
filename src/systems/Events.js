@@ -6,7 +6,7 @@
 //   SURGE : (from relay leg 2) a prompt: OVERCLOCK (faster + pay x1.5 for 10 s, heat spike, hotter) or
 //           SHUT DOWN (engine off 4 s, it vents heat). Ignore it and it blows out (hull + heat).
 // Time-based, so they keep coming while you're stopped at a vein. More often each relay leg.
-import { TUNING as T, EVENTS as E } from '../config.js';
+import { TUNING as T, EVENTS as E, CALM } from '../config.js';
 
 export const NEIGHBOURS = { helm: ['drill', 'engine'], drill: ['helm', 'tools'], engine: ['helm', 'tools'], tools: ['drill', 'engine'] };
 const SHORT = { helm: 'HELM', drill: 'DRL', engine: 'ENG', tools: 'TLS' };
@@ -39,6 +39,11 @@ export class EventDirector {
   update(dt) {
     const s = this.s, g = this.scene;
     if (s.anchored || g.over) return;
+    this.animateFlames();
+    // Full stop is safe: fires hold (no spread, no hull damage), a pending surge's countdown pauses,
+    // and the event timer pauses. Moving again: the next event is at least RESUME_GRACE_S away.
+    if (s.calm) { this.wasCalm = true; return; }
+    if (this.wasCalm) { this.wasCalm = false; this.timer = Math.max(this.timer, CALM.RESUME_GRACE_S); }
     // fires burn, chip the hull, and spread if left alone
     for (const [room, f] of Object.entries(this.fires)) {
       f.t += dt; f.spreadT -= dt;
@@ -49,7 +54,6 @@ export class EventDirector {
         if (free.length) { const r = free[Math.floor(Math.random() * free.length)]; this.startFire(r, true); }
       }
     }
-    this.animateFlames();
     if (this.surge && (this.surge.t -= dt) <= 0) this.resolveSurge('timeout');
     // scheduler
     if (!this.enabled || s.depth < E.START_DEPTH || g.inRelayWindow(s.depth, 10)) return;

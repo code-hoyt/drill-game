@@ -139,7 +139,7 @@ export class UIScene extends Phaser.Scene {
   /** Vein chip text + colour: where the vein is relative to the drill tip. */
   veinChip(g, s, time) {
     const V = g.veins, v = V.current;
-    if (!v) return null;
+    if (!v) return s.calm ? ['ALL STOP: HOLDING', 0x7fe0ff] : null;
     const d = V.dist(v), n = v.def.name;
     if (v.state === 'stopped') {
       if (g.hold === 'extract' && g.crew.working) return [`EXTRACTING ${Math.round(v.taken * 100)}%`, 0xffd23f];
@@ -169,7 +169,7 @@ export class UIScene extends Phaser.Scene {
     const b = this.bars.clear();
     const bar = (y, v, color, warn) => {
       b.fillStyle(0x000000, 1).fillRect(124, y, 52, 5);
-      const flash = warn && Math.floor(time / 200) % 2 === 0;
+      const flash = warn && !s.calm && Math.floor(time / 200) % 2 === 0;   // full stop: gauges stop flashing too
       b.fillStyle(flash ? 0xffffff : color, 1).fillRect(125, y + 1, Math.round(50 * v), 3);
     };
     this.haulText.setText(`${Math.floor(s.haul)} CR`);
@@ -182,11 +182,11 @@ export class UIScene extends Phaser.Scene {
     const a = g.alerts();
     const active = { hull: a.hull, heat: s.heat >= T.HEAT_ALERT, bit: s.wear >= T.WEAR_ALERT, rock: a.rock, hard: a.hard, ore: a.ore, fire: a.fire, jam: a.jam, surge: a.surge };
     let x = 4;
-    const blink = Math.floor(time / 300) % 2 === 0;
+    const blink = Math.floor(time / 300) % 2 === 0, ck = g.calmK || 0;   // full stop: alarms dim and stop blinking
     for (const ic of this.icons) {
       const on = active[ic.k];
       ic.img.setVisible(on);
-      if (on) { ic.img.x = x; x += 13; ic.img.setAlpha(blink ? 1 : 0.55); }
+      if (on) { ic.img.x = x; x += 13; ic.img.setAlpha((blink ? 1 : 0.55) * (1 - ck) + 0.45 * ck); }
     }
 
     // vein chip
@@ -202,7 +202,8 @@ export class UIScene extends Phaser.Scene {
     const sg = g.director.surge;
     this.showSurge(!!sg);
     if (sg) {
-      const flash = Math.floor(time / 250) % 2 === 0;
+      const flash = Math.floor(time / 250) % 2 === 0 && !s.calm;
+      this.surgeSub.setText(s.calm ? 'STOPPED: COUNTDOWN PAUSED' : 'PICK ONE OR IT BLOWS OUT').setTint(s.calm ? 0x7fe0ff : 0x9aa0b8);
       this.surgeBg.clear().fillStyle(0x000000, 0.85).fillRect(4, 57, 172, 56).lineStyle(1, flash ? 0xe08aff : 0x6a2a8a, 1).strokeRect(4.5, 57.5, 171, 55);
       this.surgeTitle.setText(`POWER SURGE!  ${Math.ceil(sg.t)}S`);
     }
@@ -227,8 +228,8 @@ export class UIScene extends Phaser.Scene {
     this.pilotText.setVisible(piloted || g.pilotEnRoute);
     if (piloted) this.pilotText.setText(g.crew.station === 'helm' ? 'PILOT AT HELM' : 'PILOT AT DRL (LINKAGE)').setTint(0x8affa0);
     else if (g.pilotEnRoute) this.pilotText.setText('PILOT EN ROUTE...').setTint(0xffc35c);
-    const spd = `SPD ${Math.round(s.throttle * 100)}%`;
-    this.speedText.setText(spd).setTint(piloted ? 0xffffff : 0x9aa0b8);
+    const spd = s.calm ? 'ALL STOP' : `SPD ${Math.round(s.throttle * 100)}%`;
+    this.speedText.setText(spd).setTint(s.calm ? 0x7fe0ff : piloted ? 0xffffff : 0x9aa0b8);
     this.speedLock.setVisible(!piloted).setX(177 - this.speedText.width - 2);
 
     if (inside) this.updateInside(g, s, time); else this.drawVThrottle(s, piloted, time);

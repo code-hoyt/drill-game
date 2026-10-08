@@ -75,14 +75,24 @@ The leg between relays used to be meter upkeep (vent, fix bit, patch). Two addit
 - A seam of ore crosses the bore ahead. It's announced ~70 m out (toast `RICH VEIN AHEAD: FULL STOP AT IT`, an ore icon, and a top-right chip `RICH VEIN 38M`). It scrolls on screen at ~55 m, with a dashed centre line and a name/distance label beside the bore.
 - Inside 45 m, **stop-window brackets** appear at the drill tip. The window runs from 4 m ahead of the tip to 2 m past it. The chip flashes `STOP ZONE: BRAKE!` while the vein is inside the window.
 - **Full stop** (actual speed 0) with the vein inside the window gives `STOPPED AT VEIN`. Holt walks HELM → DRL (same deck, ~0.7 s) and **holds EXTRACT**. Ore credits flow into the haul at `value / secs` per second. The value is per type, × the segment pay multiplier.
-- **Push your luck:** extracting raises the vein's instability. The rate grows the more you've taken, and rich and fine veins add random **tremors**. Release and it bleeds off (14/s). At 100 the vein **collapses**: hull damage (8/14/22), and half of what you took from that vein is lost. Stop early to bank a safe partial haul.
+- **Push your luck:** extracting raises the vein's instability. The rate grows the more you've taken. Release and it bleeds off (14/s). At 100 the vein **collapses**: hull damage (8/14/22), and half of what you took from that vein is lost. Stop early to bank a safe partial haul.
 - **Overshoot / drill through at speed:** `VEIN LOST`, scrap = 10% of its value.
 - Pull away mid-extraction and you keep what you took (`VEIN WORKED`).
-- Types: SMALL (50 cr, 3 s, low risk, can be emptied safely), RICH (140, 5 s, collapses at ~75% without breaks), FINE (330, 6 s, collapses at ~50% without breaks, nasty tremors). Rich and fine get more common each leg. Veins come every 120–200 m (×0.85 per leg), with no boulders within 15 m of one and none in a relay approach.
+- Types: SMALL (50 cr, 3 s, low risk, can be emptied safely), RICH (140, 5 s, collapses at ~75% without breaks), FINE (330, 6 s, collapses at ~50% without breaks). **[C] Risk is purely greed-driven**: there are no random tremor spikes, and a `VEIN UNSTABLE: EASE OFF?` warning shows at 70. Rich and fine get more common each leg. Veins come every 120–200 m (×0.85 per leg), with no boulders within 15 m of one and none in a relay approach.
 - Economy check: a leg has ~5–6 veins. At ×1.0 that's roughly 250–600 cr of ore if you work them well, alongside ~1000 cr of metres. Ore is a big bonus that doesn't dwarf drilling, and a 2200–3500 cr part is still several contracts away. The haul is split at relays (`DRILL n  ORE n`) and on the end screen (`INCL. ORE (N VEINS)`).
 - Rhythm: helm to brake → DRL to extract (the drill face is right there) → back to helm. Every walk is a same-deck trip.
 
-**[P] Decision events** (time-based, so they keep coming while you sit at a vein):
+**[C] A full stop is safe: "I can just stop and everything relaxes."** At actual speed 0 (throttle at 0, a jam stall, or a surge shutdown; not counting a relay clamp-in):
+- No new events spawn, and the event timer pauses. When you move again, the next event is at least 4 s away.
+- Fires hold: no spread and no hull damage, though the room still needs EXTINGUISH before its station works.
+- A pending power surge pauses its countdown. The card stays up and reads `STOPPED: COUNTDOWN PAUSED`, and you can still pick either option. (We chose this over auto-resolving it as a shutdown because the decision stays visible and nothing happens behind your back.)
+- A jam builds no heat, there are no coolant leaks, and no hull damage ticks from overheating, a dead bit, or fire.
+- Heat bleeds off fast: 6/s extra on top of the passive 1.2/s.
+- Choices you make still cost: a vein collapse, or rocking a jammed bit.
+- Calm cues: `ALL STOP` in the bottom bar, an `ALL STOP: HOLDING` chip (or `STOPPED AT VEIN`), alert icons dimmed and no longer blinking, room `!` bubbles dimmed, the red hull light off, and rock dust settling in the bore for a couple of seconds. Everything fades back on throttle-up.
+- The only cost of stopping is lost time; nothing pays while you're stopped.
+
+**[P] Decision events** (time-based while you're moving; they pause at a full stop, see above):
 - **FIRE** (ENG / DRL / TLS): the station in that room is dead and the room only offers EXTINGUISH. Each burning room chips 0.5 hull/s, and after 14 s the fire spreads to a neighbouring room (it can reach the HELM, which kills the throttle). Put-out takes 1.4 s, plus a little more the longer it has burned. Choice: drop what you're doing, or let it burn while you finish the vein.
 - **DRILL JAM**: the bit seizes and the rig stalls (heat climbs if the throttle stays up). Two fixes: **rock the throttle** at the HELM (0% → 60%+, 3 times, within 4 s each; fast, but +6 heat and −2 hull per swing) or **hold FREE BIT** at DRL (3.5 s, free).
 - **POWER SURGE** (new in leg 2; the first event after relay 1 is always this one): a 6 s prompt. **OVERCLOCK**: 10 s at ×1.4 speed and ×1.5 pay per metre, +25 heat and double heat rate. **SHUT DOWN**: the engine is off for 4 s and vents 35 heat. **Ignore it**: blowout, −15 hull, +40 heat.
@@ -90,7 +100,7 @@ The leg between relays used to be meter upkeep (vent, fix bit, patch). Two addit
 - Readability: the alert icons (fire / surge / jam / hull / heat / bit / boulder / hard rock / ore) sit top-left. Room `!` bubbles go up for a fire, a jam, or a vein stop at DRL. Toasts sit under the top bar, and the surge card sits mid-screen with a countdown.
 - Gas pocket was considered and skipped; it overlaps the stop mechanic.
 
-**Open questions:** should events pause while you're stopped at a vein (calmer), or stay as they are (the stop has a cost)? Should the surge be decided at the ENG station (spatial) instead of anywhere?
+**Open questions:** should the surge be decided at the ENG station (spatial) instead of anywhere?
 
 ### [P] The break: relay anchors
 

@@ -83,9 +83,17 @@ Optional desktop keys: `W/S` or arrow keys for throttle (only when piloted), `Sp
     * On the ladder, the crew continues or reverses straight to the deck the new target is on, then walks out.
 * **Ore veins ([C], v0.9)**: seams of ore cross the bore ahead (one every 120–200 m, a little more often each leg). You get an early alert ~70 m out (toast, ore icon, top-right chip `RICH VEIN 38M`). Inside 45 m, stop-window brackets show at the drill tip: the vein's centre line has to be 4 m ahead to 2 m past the tip.
   * **Full stop** there (speed 0) → `STOPPED AT VEIN`. Walk to **DRL** and **hold EXTRACT**: ore credits flow into the haul (SMALL 50 / RICH 140 / FINE 330 per vein × the pay multiplier, over 3/5/6 s).
-  * Extracting raises the vein's **RISK** (instability; faster the more you've taken, plus tremors on rich/fine). Let go and it bleeds off. At 100 it **collapses**: hull damage and half of that vein's ore lost.
+  * Extracting raises the vein's **RISK** (instability; purely greed-driven: faster the more you've taken, no random tremors, with a warning at 70). Let go and it bleeds off. At 100 it **collapses**: hull damage and half of that vein's ore lost.
   * Drive through it, or overshoot the window: **VEIN LOST**, 10% scrap.
   * The relay break shows `DRILL n  ORE n`; the end screen shows `INCL. ORE (N VEINS)`.
+* **Full stop is safe ([C])**: at actual speed 0 (throttle at 0, a jam stall, or a surge shutdown):
+  * No new events spawn, and the event timer pauses. It resumes with at least a 4 s grace.
+  * Fires don't spread or hurt the hull, though the room still needs EXTINGUISH.
+  * A pending surge's countdown pauses (`STOPPED: COUNTDOWN PAUSED`).
+  * A jam builds no heat, there are no coolant leaks, and no hull damage ticks.
+  * Heat cools 6/s faster than passive.
+  * Cues: `ALL STOP` in the bottom bar and an `ALL STOP: HOLDING` chip. Alarms dim and stop blinking, the red hull light goes off, and dust settles; it all fades back on throttle-up.
+  * The only cost is lost time (no pay while stopped). Discrete choices (a vein collapse, rocking a jam) still cost. Tuning is in `CALM` in `src/config.js`.
 * **Decision events ([P], v0.9)**, one every 30–45 s in leg 1 (22–34 s in leg 2, then 16–26 s); a relay clamp-in clears them:
   * **FIRE** in ENG/DRL/TLS: that station is down, the room offers only **EXTINGUISH**, and it chips the hull. Left 14 s, it spreads to a neighbour (at the HELM it kills the throttle).
   * **DRILL JAM**: the rig stalls. Rock the throttle at the HELM 0% → 60%+ ×3 (fast, costs heat and hull), or hold **FREE BIT** at DRL (3.5 s, free).
@@ -208,7 +216,7 @@ src/
   ui/
     Button.js              touch button with tap + press-and-hold
 tests/e2e.mjs              Playwright phone-viewport test (see below)
-screenshots/               01-07 run + relay screens; 08 concourse (bay view), 08b concourse + NEW PARTS banner, 09/09b/09c Quartermaster (09c = page 2), 10 part swap, 11 Holt's log, 12 buy detail; 13 launch (winch out of the bore), 14 docking (clamps), 15 descent (drill bites), 16 locked parts, 17 descent mid-turn, 18 ascent mid-turn, 19 contract board, 20 Ines's window, 21 rig bay, 22 codex, 23 docking end frame (bay framing), 24 Holt steps out (lift), 25 summary in the content area (every panel shot shows the concourse below); 26 vein approaching (stop window), 27 stopped + extracting, 28 fire, 29 jam, 30 power surge, 31 relay haul split (drill/ore), 32 end screen with the ore row
+screenshots/               01-07 run + relay screens; 08 concourse (bay view), 08b concourse + NEW PARTS banner, 09/09b/09c Quartermaster (09c = page 2), 10 part swap, 11 Holt's log, 12 buy detail; 13 launch (winch out of the bore), 14 docking (clamps), 15 descent (drill bites), 16 locked parts, 17 descent mid-turn, 18 ascent mid-turn, 19 contract board, 20 Ines's window, 21 rig bay, 22 codex, 23 docking end frame (bay framing), 24 Holt steps out (lift), 25 summary in the content area (every panel shot shows the concourse below); 26 vein approaching (stop window), 27 stopped + extracting, 28 fire, 29 jam, 30 power surge, 31 relay haul split (drill/ore), 32 end screen with the ore row, 33 ALL STOP (calm cues with a fire held)
 docs/DESIGN.md             game design doc
 ```
 
@@ -291,6 +299,15 @@ docs/DESIGN.md             game design doc
 * `?event=fire:engine`: the station is down and only EXTINGUISH is offered. The hull chips, holding EXTINGUISH puts it out, and left alone it spreads to a neighbour. A HELM fire kills the throttle until it's out.
 * Jam: the rig stalls. Rocking the helm slider 0 → 80% three times frees it (+heat, −6 hull). Holding FREE BIT at DRL frees it for free.
 * Surge: the card shows. OVERCLOCK gives ×1.4 speed and ×1.5 pay per metre (measured) plus heat. SHUT DOWN stops the rig and vents heat, then it restarts. Ignoring it blows out (−15 hull, +40 heat).
+* Full stop is safe:
+  * Over 3 s stopped, there are no event spawns (the timer is frozen) and no coolant leak.
+  * A fire holds (no spread, no hull damage) but still blocks its station.
+  * There's no hull loss with a burning room, maxed heat and a dead bit, and heat drops at about 7/s.
+  * The calm cues show (`ALL STOP`, alarms dimmed and steady, hull light off).
+  * A jam stall builds no heat, and a pending surge's countdown pauses.
+  * Throttle-up resumes the countdown, fire damage and spread, and the cues fade.
+  * Events resume after a 4 s or longer grace.
+  * Stopped at a vein, extraction risk still rises.
 * A normal run spawns veins on its own. Leg 1 events are fire and jam only. The first leg-2 event is the surge, after which all three mix. The mean gap is shorter in leg 2.
 
 **Unlocks + cutscenes coverage** (the main flow runs with `?anim=0`; the cutscene section runs with them on):

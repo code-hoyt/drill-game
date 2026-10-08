@@ -682,8 +682,8 @@ al = (await animLog()).at(-1);
 check('ANIM_SCALE override 1 -> descent ~4.6 s, grace 400 ms, lift 550 ms', CFG1.scale === 1 && CFG1.graceMs === 400 && CFG1.liftMs === 550 && al.expectMs === 4600 && !al.skipped && ANIM_OK(al.ms, 4600), JSON.stringify({ CFG1, al }));
 
 // ---- ore veins ([C]) + decision events ([P]) ----------------------------------------------------
-const CONF = await page.evaluate(async () => { const c = await import(new URL('src/config.js', location.href).href); return { ORE: c.ORE, EV: c.EVENTS }; });
-const { ORE, EV } = CONF;
+const CONF = await page.evaluate(async () => { const c = await import(new URL('src/config.js', location.href).href); return { ORE: c.ORE, EV: c.EVENTS, CALMC: c.CALM }; });
+const { ORE, EV, CALMC } = CONF;
 const touchDown = async (gx, gy) => { const p = P(gx, gy); await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: p.x, y: p.y, id: 1 }] }); };
 const touchUp = () => cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
 const runFrom = async (q) => { await page.goto(BASE + '?anim=0' + q); await wait(1500); await tap(90, 160); await wait(800); await startContract(); await waitFor('g.crew && g.crew.station === "helm" && !!g.veins', 3000); };
@@ -711,9 +711,10 @@ await touchDown(...ACTION_LEFT); await wait(1500);
 await page.screenshot({ path: `${OUT}/27-vein-extracting.png` });
 const chipX = await G('ui.chipText.text');
 await wait(300); await touchUp(); await wait(100);
-const ex1 = await G(`({ ore: s.ore, haul: s.haul, inst: ${V}.inst, taken: ${V}.taken, credits: ${V}.credits, value: ${V}.value, hold: g.hold, state: ${V}.state })`);
+const ex1 = await G(`({ ore: s.ore, haul: s.haul, inst: ${V}.inst, taken: ${V}.taken, credits: ${V}.credits, value: ${V}.value, hold: g.hold, state: ${V}.state, calm: s.calm && ui.speedText.text === 'ALL STOP' })`);
 check('holding EXTRACT pays ore credits into the haul (value x taken)', ex1.ore - ex0.ore > 30 && Math.abs((ex1.haul - ex0.haul) - (ex1.ore - ex0.ore)) < 0.01 && Math.abs(ex1.credits - ex1.taken * ex1.value) < 0.01 && ex1.value === ORE.TYPES.rich.value && ex1.state === 'stopped',
   `+${(ex1.ore - ex0.ore).toFixed(1)} cr, taken ${(ex1.taken * 100).toFixed(0)}%`);
+check('stopped at a vein is a calm full stop (ALL STOP), yet extraction risk still rises with greed', ex1.calm && ex1.inst > ex0.inst + 20 && Object.values(ORE.TYPES).every((t) => !('tremor' in t)), JSON.stringify({ calm: ex1.calm, inst: ex1.inst }));
 check('extraction raises instability; chip reads EXTRACTING n%; releasing stops it', ex1.inst > ex0.inst + 20 && chipX.startsWith('EXTRACTING') && ex1.hold === null, `inst ${ex1.inst.toFixed(1)} chip=${chipX}`);
 await wait(600);
 check('instability bleeds off while nobody extracts (push-your-luck breather)', (await G(`${V}.inst`)) < ex1.inst - 5);
@@ -721,6 +722,7 @@ check('instability bleeds off while nobody extracts (push-your-luck breather)', 
 const c0 = await G(`(${V}.inst = ORE_MAX, { ore: s.ore, hull: s.hull, credits: ${V}.credits })`.replace('ORE_MAX', ORE.COLLAPSE_AT - 1));
 await touchDown(...ACTION_LEFT); await wait(500); await touchUp(); await wait(100);
 const c1 = await G('({ ore: s.ore, hull: s.hull, collapsed: s.veinsCollapsed, v: g.veins.list.find(v => v.type === "rich"), hold: g.hold })');
+check('risk warning toast as instability crosses 70 (no random tremor spikes)', await toastSeen('VEIN UNSTABLE'));
 check('instability 100 -> VEIN COLLAPSED: hull chipped, half that vein\'s ore lost, hold released', c1.collapsed === 1 && c1.v.state === 'collapsed' && Math.abs((c0.hull - c1.hull) - ORE.TYPES.rich.dmg) < 0.6 && c1.ore < c0.ore - 20 && Math.abs(c1.v.credits - c0.credits / 2) < 2 && c1.hold === null && (await toastSeen('VEIN COLLAPSED')),
   `hull ${c0.hull.toFixed(1)} -> ${c1.hull.toFixed(1)}, ore ${c0.ore.toFixed(1)} -> ${c1.ore.toFixed(1)}`);
 // a small vein, worked to the end (low instability: safe to empty)
@@ -778,10 +780,12 @@ await G('(s.heat = 10, s.hull = 100, g.director.trigger("jam"), true)'); await w
 const jm = await G('({ jammed: s.jammed, speed: s.speed, icon: ui.icons.find(i => i.k === "jam").img.visible, hint: ui.hintText.text })');
 check('DRILL JAMMED: the rig stalls, jam icon + helm hint', jm.jammed && jm.speed < 0.05 && jm.icon && jm.hint.startsWith('JAMMED: ROCK') && (await toastSeen('DRILL JAMMED')), JSON.stringify(jm));
 await page.screenshot({ path: `${OUT}/29-event-jam.png` });
-const j0 = await G('({ heat: s.heat, hull: s.hull })');
+// (a jam stalls the rig = full stop: heat bleeds off at the calm rate meanwhile, so allow for that)
+const j0 = await G('(s.heat = 50, { heat: s.heat, hull: s.hull })'); const jt0 = Date.now();
 for (let i = 0; i < EV.JAM_ROCKS; i++) { await tap(...H_TRACK(0)); await wait(150); await tap(...H_TRACK(0.8)); await wait(250); }
+const jCool = (CALMC.COOL + T.HEAT_COOL) * ((Date.now() - jt0) / 1000 + 0.3);
 const j1 = await G('({ jammed: s.jammed, heat: s.heat, hull: s.hull })');
-check(`fast fix at the HELM: rock the throttle 0% -> 60%+ x${EV.JAM_ROCKS} frees the bit, but costs heat + hull`, !j1.jammed && j1.heat >= j0.heat + EV.JAM_ROCKS * EV.JAM_ROCK_HEAT - 0.5 && Math.abs((j0.hull - j1.hull) - EV.JAM_ROCKS * EV.JAM_ROCK_HULL) < 0.01 && (await toastSeen('BIT ROCKED FREE')), JSON.stringify({ j0, j1 }));
+check(`fast fix at the HELM: rock the throttle 0% -> 60%+ x${EV.JAM_ROCKS} frees the bit, but costs heat + hull`, !j1.jammed && j1.heat >= j0.heat + EV.JAM_ROCKS * EV.JAM_ROCK_HEAT - jCool && Math.abs((j0.hull - j1.hull) - EV.JAM_ROCKS * EV.JAM_ROCK_HULL) < 0.01 && (await toastSeen('BIT ROCKED FREE')), JSON.stringify({ j0, j1 }));
 await G('(s.heat = 0, g.director.trigger("jam"), g.setThrottle(0), true)');
 await goRoom('drill');
 const j2 = await G('({ hull: s.hull, panel: ui.stationText.text, btn: ui.actionBtns.freebit.visible })');
@@ -808,7 +812,8 @@ await wait(1500);
 check('SHUT DOWN: engine off (rig stops), vents heat', sd.sd > EV.SHUTDOWN_S - 0.5 && sd.heat <= 60 - EV.SHUTDOWN_COOL + 1 && (await G('s.speed')) < 0.05, JSON.stringify(sd));
 await waitFor('s.shutdownT === 0', 4000); await wait(600);
 check('engine restarts after the shutdown', (await G('s.speed')) > 0.05 && (await toastSeen('ENGINE BACK ONLINE')));
-const to0 = await G('(g.setThrottle(0), g.obstacles.list.slice().forEach(o => g.obstacles.destroy(o, false)), s.hull = 80, s.heat = 10, g.director.trigger("surge"), { hull: s.hull })');
+// (keep rolling at a safe grind speed: at a full stop the countdown would pause)
+const to0 = await G('(g.setThrottle(0.3), g.obstacles.list.slice().forEach(o => g.obstacles.destroy(o, false)), s.hull = 80, s.heat = 10, g.director.trigger("surge"), { hull: s.hull })');
 await wait(EV.SURGE_DECIDE_S * 1000 + 600);
 const to1 = await G('({ hull: s.hull, heat: s.heat, card: ui.surgeShown })');
 check('ignore the surge -> blowout: hull + heat hit', !to1.card && Math.abs(to0.hull - to1.hull - EV.BLOWOUT_HULL) < 1 && to1.heat >= EV.BLOWOUT_HEAT - 1 && (await toastSeen('SURGE BLOWOUT')), JSON.stringify(to1));
@@ -828,6 +833,52 @@ const legs = await G(`(() => { const d = g.director, out = { leg1: [], leg2first
 check('leg 1 events: fire + jam only (no surge)', legs.leg1.length === 40 && legs.leg1.includes('fire') && legs.leg1.includes('jam') && !legs.leg1.includes('surge'), legs.leg1.join(','));
 check('leg 2: the first event is the new POWER SURGE; then all three mix', legs.leg2first === 'surge' && ['fire', 'jam', 'surge'].every((t) => legs.leg2.includes(t)), legs.leg2first + ' / ' + [...new Set(legs.leg2)].join(','));
 check('events come more often in leg 2 (mean gap, s)', legs.gap2 < legs.gap1 - 5 && EV.GAP_S[1][1] < EV.GAP_S[0][1], JSON.stringify(legs));
+
+// ---- full stop is safe ([C]) -------------------------------------------------------------------
+await runFrom('');   // random events on (veins off for a clean chip)
+await G('(g.debugJump(300), g.veins.enabled = false, g.veins.clear(), g.setThrottle(0.3), true)');
+await wait(800);
+await G('(g.director.trigger("fire", "tools"), true)'); await wait(700);
+const movingHull = await G('s.hull');
+await wait(500);
+check('moving: a fire burns the hull', (await G('s.hull')) < movingHull - 0.1);
+await G('(g.setThrottle(0), true)');
+await waitFor('s.calm', 3000); await wait(400);
+const spikes0 = await G('g.toastLog.filter(t => t.startsWith("COOLANT")).length');
+const cs0 = await G('(g.director.timer = 0.3, s.spikeTimer = 0.2, g.director.fires.tools.spreadT = 0.3, s.heat = 100, s.wear = 100, { hull: s.hull, log: g.director.log.length, settle: g.settle.emitting })');
+const ia = await G('ui.icons.filter(i => i.img.visible).map(i => +i.img.alpha.toFixed(2))'); await wait(170);
+const ib = await G('ui.icons.filter(i => i.img.visible).map(i => +i.img.alpha.toFixed(2))');
+await page.screenshot({ path: `${OUT}/33-all-stop.png` });
+await wait(2800);
+const cs1 = await G(`({ hull: s.hull, log: g.director.log.length, timer: g.director.timer, burning: g.director.burning, spreadT: g.director.fires.tools && g.director.fires.tools.spreadT,
+  heat: s.heat, spikes: g.toastLog.filter(t => t.startsWith("COOLANT")).length, ext: g.availableActions("tools").join(), spd: ui.speedText.text, chip: ui.chipText.text, ck: g.calmK,
+  light: g.ship.warnLight.visible, bubble: g.ship.bubbles.tools.alpha })`);
+check('full stop: no events spawn over 3 s (event timer paused) and no coolant leak', cs1.log === cs0.log && Math.abs(cs1.timer - 0.3) < 1e-9 && cs1.spikes === spikes0, JSON.stringify({ log: cs1.log, timer: cs1.timer }));
+check('full stop: the fire holds (no spread, no hull damage) but still blocks TLS until put out', cs1.burning.join() === 'tools' && Math.abs(cs1.spreadT - 0.3) < 1e-9 && cs1.ext === 'extinguish', JSON.stringify(cs1.burning));
+check('full stop: no hull loss at all (burning room + maxed heat + dead bit)', cs1.hull === cs0.hull, `${cs0.hull} -> ${cs1.hull}`);
+check(`full stop: heat drops fast (~${CALMC.COOL + T.HEAT_COOL}/s vs ${T.HEAT_COOL}/s passive)`, cs1.heat <= 100 - (CALMC.COOL + T.HEAT_COOL) * 2.8 * 0.85, `100 -> ${cs1.heat.toFixed(1)} in ~2.8 s`);
+check('calm cues: ALL STOP in the bottom bar + chip, alarms dimmed and steady, hull light off, bubbles dimmed, dust settling', cs1.spd === 'ALL STOP' && cs1.chip === 'ALL STOP: HOLDING' && cs1.ck === 1 && !cs1.light && cs1.bubble < 0.5
+  && ia.length > 0 && new Set(ia.concat(ib)).size === 1 && ia[0] <= 0.5 && cs0.settle, JSON.stringify({ ia, ib, bubble: cs1.bubble, settle: cs0.settle }));
+await G('(s.heat = 30, g.setThrottle(0.8), g.director.trigger("jam"), true)'); await wait(1200);
+const jc = await G('({ heat: s.heat, calm: s.calm, jammed: s.jammed })');
+check('a jam stall is a full stop too: it builds no heat', jc.jammed && jc.calm && jc.heat < 30, JSON.stringify(jc));
+await G('(g.director.fixJam(99), g.setThrottle(0), true)'); await wait(300);
+const spHull = await G('(g.director.trigger("surge"), s.hull)'); await wait(2000);
+const spz = await G('({ t: g.director.surge && g.director.surge.t, sub: ui.surgeSub.text, hull: s.hull })');
+check('full stop: a pending POWER SURGE pauses its countdown (card says so)', spz.t === EV.SURGE_DECIDE_S && spz.sub === 'STOPPED: COUNTDOWN PAUSED' && spz.hull === spHull, JSON.stringify(spz));
+// throttle up: everything resumes
+await G('(g.obstacles.list.slice().forEach(o => g.obstacles.destroy(o, false)), g.director.fires.tools.spreadT = 10, g.setThrottle(0.3), true)');
+await waitFor('!s.calm', 2000); const rs0 = await G('({ hull: s.hull, t: g.director.surge.t, spreadT: g.director.fires.tools.spreadT })'); await wait(1500);
+const rs1 = await G('({ hull: s.hull, t: g.director.surge && g.director.surge.t, spreadT: g.director.fires.tools && g.director.fires.tools.spreadT, spd: ui.speedText.text, chip: ui.chipText.visible, ck: g.calmK, sub: ui.surgeSub.text })');
+check('moving again: surge countdown, fire damage + spread resume; calm cues fade out', rs1.t < rs0.t - 1 && rs1.hull < rs0.hull && rs1.spreadT < rs0.spreadT - 1 && rs1.spd === 'SPD 30%' && !rs1.chip && rs1.ck === 0 && rs1.sub === 'PICK ONE OR IT BLOWS OUT', JSON.stringify({ rs0, rs1 }));
+await G('(g.director.resolveSurge("overclock"), s.overclockT = 0, g.director.clearAll(), g.setThrottle(0), true)');
+await waitFor('s.calm', 3000);
+await G('(g.director.timer = 0.5, true)'); await wait(1200);
+const ev0 = await G('g.director.log.length');
+await G('(g.setThrottle(0.3), true)'); await waitFor('!s.calm', 2000); await wait(100);
+const grace = await G('g.director.timer');
+const resumed = await waitFor(`g.director.log.length > ${ev0}`, 7000);
+check(`events resume after moving again (next one at least ${CALMC.RESUME_GRACE_S} s out)`, grace > CALMC.RESUME_GRACE_S - 0.5 && resumed, `timer after restart ${grace.toFixed(2)} s; events ${ev0} -> ${await G('g.director.log.length')}`);
 
 // ---- save migration (v1 from M1, plus the pre-M1 best-depth key) ----------------------------
 await page.evaluate(() => { localStorage.clear(); localStorage.setItem('drill.save', JSON.stringify({ v: 1, credits: 777, runs: 3, cashouts: 2, rigsLost: 1, relaysReached: 4 })); localStorage.setItem('drill.bestDepth', '1234'); });

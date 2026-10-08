@@ -1,5 +1,5 @@
 // The world: terrain, boulders, the ship and its crew. Owns the simulation.
-import { TUNING as T, LAYOUT as L, ORE, EVENTS as E, loadBest, saveBest } from '../config.js';
+import { TUNING as T, LAYOUT as L, ORE, EVENTS as E, CALM, loadBest, saveBest } from '../config.js';
 import { Veins } from '../systems/Veins.js';
 import { EventDirector } from '../systems/Events.js';
 import { ShipSystems } from '../systems/ShipSystems.js';
@@ -58,6 +58,12 @@ export class GameScene extends Phaser.Scene {
     this.relayLabel = this.add.bitmapText(4, 0, FONT_KEY, '', 6).setTint(0x7fe0ff).setDepth(2.6).setVisible(false);
     // --- ore veins + run events ---
     this.toastLog = [];
+    // full stop = calm: cue strength 0..1 (fades), and rock dust settling in the bore after a stop
+    this.calmK = 0; this.wasCalm = false; this.settleT = 0;
+    this.settle = this.add.particles(0, 0, 'px', {
+      x: { min: 30, max: 150 }, y: { min: 60, max: 200 }, speedY: { min: 3, max: 9 }, speedX: { min: -2, max: 2 },
+      lifespan: 1800, alpha: { start: 0.55, end: 0 }, tint: [0x8a7f8f, 0xb8a8a0, 0x5e5363], frequency: 45, emitting: false,
+    }).setDepth(3);
     this.veins = new Veins(this, this.state);
     this.director = new EventDirector(this);
     this.obstacles.spawnFilter = (arrival) => !this.inRelayWindow(arrival, 0) && !this.veins.near(arrival, ORE.CLEAR_M);
@@ -324,6 +330,7 @@ export class GameScene extends Phaser.Scene {
     this.director.update(dt);
     if (events.includes('overclockEnd')) this.toast('OVERCLOCK OVER', 0x9aa0b8);
     if (events.includes('restart')) this.toast('ENGINE BACK ONLINE', 0x8affa0);
+    this.updateCalm(dt, s);
     const st = this.ship.room(this.crew.station || 'drill');
     this.ship.sparks.setPosition(st.stationX, st.floorY - 9);
     this.ship.sparks.emitting = this.crew.working;
@@ -350,6 +357,18 @@ export class GameScene extends Phaser.Scene {
     else if (events.includes('relay')) this.arriveAtRelay();
   }
 
+  /** Full stop = calm: cues fade in (alarms dim, hull light steadies, dust settles) and back out on throttle-up. */
+  updateCalm(dt, s) {
+    const calm = s.calm;
+    const k = calm ? 1 : 0, step = CALM.FADE * dt;
+    this.calmK = this.calmK < k ? Math.min(k, this.calmK + step) : Math.max(k, this.calmK - step);
+    if (calm && !this.wasCalm) this.settleT = CALM.SETTLE_S;
+    this.wasCalm = calm;
+    this.settleT = calm ? Math.max(0, this.settleT - dt) : 0;
+    this.settle.emitting = this.settleT > 0.4;
+    this.ship.calmK = this.calmK;
+  }
+
   /** Hold-actions Holt can use right where he stands (a burning room only offers EXTINGUISH). */
   availableActions(room = this.crew.station) {
     if (!room) return [];
@@ -365,7 +384,7 @@ export class GameScene extends Phaser.Scene {
       else if (e.kind === 'window') this.toast(s.speed > ORE.STOP_SPEED ? 'VEIN AT THE DRILL: STOP NOW!' : 'AT THE VEIN', 0x8affa0);
       else if (e.kind === 'stopped') { this.toast('STOPPED AT VEIN: EXTRACT AT DRL', 0x8affa0); this.cameras.main.shake(120, 0.004); }
       else if (e.kind === 'moving') this.toast('MOVING: EXTRACTION NEEDS A FULL STOP', 0xffc35c);
-      else if (e.kind === 'tremor') { this.toast('TREMOR! VEIN UNSTABLE', 0xff8a5c); this.cameras.main.shake(160, 0.006); }
+      else if (e.kind === 'unstable') { this.toast('VEIN UNSTABLE: EASE OFF?', 0xff8a5c); this.cameras.main.shake(120, 0.003); }
       else if (e.kind === 'emptied') this.toast(`VEIN EMPTIED: +${Math.floor(v.credits)} CR ORE`, 0xffd23f);
       else if (e.kind === 'collapse') {
         this.toast(`VEIN COLLAPSED! -${Math.round(e.dmg)} HULL, -${Math.floor(e.loss)} CR`, 0xff4a4a);

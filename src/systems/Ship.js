@@ -112,9 +112,11 @@ export class Ship {
     this.chips.emitting = speed > 0.05;
     this.chips.frequency = Math.max(15, 80 - speed * 70);
 
-    for (const id of Object.keys(this.bubbles)) this.bubbles[id].setVisible(!!alerts[id]);
+    // full stop (calmK -> 1): bubbles dim, the red hull light stops blinking
+    const ck = this.calmK || 0;
+    for (const id of Object.keys(this.bubbles)) this.bubbles[id].setVisible(!!alerts[id]).setAlpha(1 - 0.55 * ck);
     const anyAlert = this.rooms.some((r) => alerts[r.id]);
-    this.warnLight.setVisible(anyAlert && Math.floor(time / 250) % 2 === 0 && this.exterior.alpha > 0.5);
+    this.warnLight.setVisible(anyAlert && ck < 0.5 && Math.floor(time / 250) % 2 === 0 && this.exterior.alpha > 0.5);
     this.exhaust.emitting = venting;
   }
 }

@@ -97,7 +97,8 @@ export const ORE = {
   WINDOW_AHEAD: 4,          // stop window: vein centre between 4 m ahead of the drill tip...
   WINDOW_PAST: 2,           // ...and 2 m past it
   STOP_SPEED: 0.001,        // "full stop": actual speed at/below this
-  SCRAP_FRAC: 0.1,          // overshoot / drilled through: scrap = 10% of the vein's value
+  SCRAP_FRAC: 0.1,
+  WARN_AT: 70,              // risk warning toast (once per vein) as instability crosses this          // overshoot / drilled through: scrap = 10% of the vein's value
   DECAY: 14,                // instability lost per second while nobody is extracting
   ESCALATE: 1.5,            // instability rate x (1 + ESCALATE x fraction already taken): greed gets riskier
   COLLAPSE_AT: 100,
@@ -105,12 +106,26 @@ export const ORE = {
   CLEAR_M: 15,              // no boulders arrive within 15 m of a vein (and vice versa)
   // value = credits for the whole vein at x1.0 pay (x the segment pay multiplier)
   TYPES: {
-    small: { name: 'SMALL', value: 50,  secs: 3, inst: 10, tremor: 0,  tremorAmt: [0, 0],  dmg: 8,  tint: 0xd08a4a },
-    rich:  { name: 'RICH',  value: 140, secs: 5, inst: 17, tremor: 0.35, tremorAmt: [6, 12], dmg: 14, tint: 0xffd23f },
-    fine:  { name: 'FINE',  value: 330, secs: 6, inst: 24, tremor: 0.6, tremorAmt: [8, 16], dmg: 22, tint: 0x7ff0ff },
+    // risk is purely greed-driven (no random tremors): inst/s x (1 + ESCALATE x taken). Without breaks a
+    // small vein empties safely, a rich one collapses at ~75% taken, a fine one at ~50%.
+    small: { name: 'SMALL', value: 50,  secs: 3, inst: 10, dmg: 8,  tint: 0xd08a4a },
+    rich:  { name: 'RICH',  value: 140, secs: 5, inst: 17, dmg: 14, tint: 0xffd23f },
+    fine:  { name: 'FINE',  value: 330, secs: 6, inst: 24, dmg: 22, tint: 0x7ff0ff },
   },
   // spawn weights per relay leg (index = relays passed; last entry repeats)
   WEIGHTS: [{ small: 0.6, rich: 0.32, fine: 0.08 }, { small: 0.45, rich: 0.38, fine: 0.17 }, { small: 0.35, rich: 0.4, fine: 0.25 }],
+};
+
+// ---- Full stop is safe ([C]) ------------------------------------------------------------------
+// Actual speed 0 (throttle at 0, a jam stall, a surge shutdown): everything relaxes. No new events
+// (the event timer pauses), fires don't spread or burn the hull, a pending surge's countdown pauses,
+// a jam doesn't build heat, no coolant leaks, no ticking hull damage, and heat bleeds off fast.
+// Discrete costs you choose still apply (a vein collapse, rocking a jammed bit).
+export const CALM = {
+  COOL: 6,              // extra heat cooling / s while stopped (passive HEAT_COOL is 1.2)
+  RESUME_GRACE_S: 4,    // after moving again, the next event is at least this many seconds off
+  FADE: 2.5,            // calm cues fade in/out at this rate (1/s): alarms dim, hull light steadies
+  SETTLE_S: 2.5,        // rock dust settles for this long after the stop
 };
 
 // ---- Run events ([P]): problems that need a choice, not just a hold ----------------------------

@@ -60,7 +60,7 @@ export class Veins {
 
   /**
    * Advance veins with the world. extracting: Holt is holding EXTRACT at the drill (already validated).
-   * Returns events: { kind: 'appear'|'window'|'stopped'|'moving'|'tremor'|'emptied'|'collapse'|'left'|'lost', v, ... }
+   * Returns events: { kind: 'appear'|'window'|'stopped'|'moving'|'unstable'|'emptied'|'collapse'|'left'|'lost', v, ... }
    */
   update(dt, advancePx, extracting, time) {
     const s = this.sys, out = [];
@@ -97,11 +97,9 @@ export class Veins {
         const frac = Math.min(dt / v.def.secs, 1 - v.taken);
         const cr = v.value * frac;
         v.taken += frac; v.credits += cr; s.haul += cr; s.ore += cr;
+        // risk is purely how greedily you extract (no random tremors): faster the more you've taken
         v.inst += v.def.inst * (1 + ORE.ESCALATE * v.taken) * dt;
-        if (v.def.tremor && Math.random() < v.def.tremor * dt) {
-          const [lo, hi] = v.def.tremorAmt; const amt = lo + Math.random() * (hi - lo);
-          v.inst += amt; out.push({ kind: 'tremor', v, amt });
-        }
+        if (!v.warned && v.inst >= ORE.WARN_AT && v.inst < ORE.COLLAPSE_AT) { v.warned = true; out.push({ kind: 'unstable', v }); }
         if (Math.random() < 0.5) this.glint.emitParticleAt(90 + (Math.random() - 0.5) * 50, v.y, 1);
         if (v.inst >= ORE.COLLAPSE_AT) {
           const loss = v.credits * ORE.COLLAPSE_LOSS;
