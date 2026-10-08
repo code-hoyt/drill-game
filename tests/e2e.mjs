@@ -227,21 +227,105 @@ check('crew reaches helm -> piloted again', await G('g.piloted && g.crew.station
 await tap(...O_PLUS); await wait(120);
 check('outside throttle works again once piloted', near(await thr(), 0.6), 'throttle=' + await thr());
 
-// ---- game over + restart ------------------------------------------------------------
+// ---- hull loss: escape pod, keep 1/3 ---------------------------------------------------
+await G('(s.haul = 300, true)');
 await G('(s.hull = 6, s.heat = 100, s.wear = 100, true)');
 await page.waitForFunction(() => __drill.scene.isActive('GameOver'), null, { timeout: 8000 }).catch(() => {});
 await wait(600);
-const go = await page.evaluate(() => ({ active: __drill.scene.isActive('GameOver'), best: localStorage.getItem('drill.bestDepth') }));
+const go = await page.evaluate(() => ({ active: __drill.scene.isActive('GameOver'), best: localStorage.getItem('drill.bestDepth'), save: JSON.parse(localStorage.getItem('drill.save') || 'null') }));
 const finalDepth = Math.floor(await G('s.depth'));
-check('hull 0 -> game over screen', go.active, JSON.stringify(go));
+const lostRun = await G('g.lastRun');
+check('hull 0 -> end screen (RIG LOST)', go.active && lostRun.reason === 'lost', JSON.stringify(lostRun));
 check('best depth saved to localStorage', Number(go.best) === finalDepth, `best=${go.best} depth=${finalDepth}`);
+check('hull loss banks 1/3 of the haul (floor)', lostRun.banked === Math.floor(lostRun.haul / 3) && go.save && go.save.credits === lostRun.banked && go.save.rigsLost === 1,
+  `haul=${lostRun.haul} banked=${lostRun.banked} save=${JSON.stringify(go.save)}`);
+check('escape pod launched (drill gone, pod sprite)', await G('!g.ship.drill.visible && g.children.list.some(c => c.texture && c.texture.key === "pod")'));
 await page.screenshot({ path: `${OUT}/04-game-over.png` });
-await tap(90, 207); await wait(1000);
-const after = await G('({ depth: s.depth, hull: s.hull, over: g.over, ui: __drill.scene.isActive("UI"), go: __drill.scene.isActive("GameOver"), helm: g.crew.station, piloted: g.piloted })');
-check('restart: fresh run, crew back at helm', !after.over && after.hull === 100 && after.depth < 5 && after.ui && !after.go && after.helm === 'helm' && after.piloted, JSON.stringify(after));
+await tap(90, 249); await wait(1000);
+const after = await G('({ depth: s.depth, hull: s.hull, haul: s.haul, over: g.over, ui: __drill.scene.isActive("UI"), go: __drill.scene.isActive("GameOver"), helm: g.crew.station, piloted: g.piloted })');
+check('NEW CONTRACT: fresh run, crew back at helm, haul reset', !after.over && after.hull === 100 && after.haul < 5 && Math.abs(after.haul - after.depth) < 0.01 && after.depth < 5 && after.ui && !after.go && after.helm === 'helm' && after.piloted, JSON.stringify(after));
 await tap(...O_PLUS); await wait(120);
 check('throttle works after restart', near(await thr(), 0.4), 'throttle=' + await thr());
 check('UI best label shows saved best', (await G('ui.bestText.text')).includes(go.best));
+
+// ---- M1: relay breaks ------------------------------------------------------------------
+const T = await page.evaluate(async () => (await import(new URL('src/config.js', location.href).href)).TUNING);
+const relayActive = () => page.evaluate(() => __drill.scene.isActive('Relay'));
+const R = (fn) => page.evaluate(`(() => { const r = __drill.scene.getScene('Relay'); const g = __drill.scene.getScene('Game'); const s = g.state; return (${fn}); })()`);
+// earn some haul at x1.0 on the way
+const pay0 = await G('(() => { const h = s.haul, d = s.distance; return { h, d }; })()');
+await wait(800);
+const pay1 = await G('({ h: s.haul, d: s.distance })');
+const m0 = (pay1.d - pay0.d) / T.PX_PER_METER;
+check('haul accrues at metres x 1.0 in segment 1', m0 > 0.5 && Math.abs((pay1.h - pay0.h) - m0 * T.PAY_PER_METER) < 0.01, `+${m0.toFixed(2)}m -> +${(pay1.h - pay0.h).toFixed(2)}cr`);
+check('HUD shows haul + pay rate', (await G('ui.haulText.text')).endsWith(' CR') && (await G('ui.payText.text')) === 'PAY X1.0', await G('ui.haulText.text + " / " + ui.payText.text'));
+await G('(g.debugJump(930), g.forceOffers = ["plate", "coolant", "charge"], g.obstacles.spawnLog.length = 0, s.haul = 400, s.heat = 20, s.wear = 40, s.hull = 55, g.setThrottle(0.9), g.toasts.length = 0, true)');
+check('debug jump to 930 m', Math.abs((await G('s.depth')) - 930) < 2 && (await G('s.nextRelayAt')) === T.RELAY_INTERVAL);
+await waitFor('g.relayWarned', 6000);
+check('Ines relay warning ~50 m before the relay', await G('g.relayWarned && s.depth >= s.nextRelayAt - T.RELAY_WARN - 1'.replace('T.RELAY_WARN', T.RELAY_WARN)), 'depth=' + (await G('s.depth')).toFixed(1));
+const warnSeen = await G('ui.toastText.text.includes("RELAY") || g.toasts.some(t => t.text.includes("RELAY"))');
+check('warning shown as a toast', warnSeen, await G('ui.toastText.text'));
+const heatBefore = await G('s.heat');
+await page.waitForFunction(() => __drill.scene.isActive('Relay'), null, { timeout: 20000 }).catch(() => {});
+const arr = await G('({ depth: s.depth, anchored: s.anchored, heat: s.heat, wear: s.wear, speed: s.speed, throttle: s.throttle, log: g.obstacles.spawnLog.slice(), ahead: g.obstacles.list.filter(o => o.sprite.y > 100).length, bands: g.terrain.bands.length })');
+check('arrives exactly at relay 1 (1000 m) and clamps in', arr.depth === 1000 && arr.anchored && arr.speed === 0 && arr.throttle === 0, JSON.stringify(arr));
+check('free service: heat and bit wear reset to 0', arr.heat === 0 && arr.wear === 0, `heat was ${heatBefore.toFixed(1)}`);
+check('approach was boulder-free (no spawns arriving 950-1030 m, none at the tip)', arr.log.every((d) => d < 1000 - T.RELAY_WARN || d >= 1000 + T.RELAY_CLEAR_AFTER) && arr.ahead === 0, 'spawnLog=' + JSON.stringify(arr.log));
+const d0 = await G('s.depth'); await wait(600);
+check('sim paused while anchored (no drift, no heat)', (await G('s.depth')) === d0 && (await G('s.heat')) === 0);
+check('relay scene: header + 3 random supply offers', (await R('r.n === 1 && r.cards.length === 3 && new Set(g.offers.map(o => o.id)).size === 3')), await R('g.offers.map(o => o.id).join(",")'));
+await wait(2600);
+const typed = await R('({ done: r.typingDone, text: r.lineTexts.map(t => t.text).join(" ") })');
+check('Ines dispatch types out in full', typed.done && typed.text.startsWith('RELAY ONE IS LIVE'), typed.text);
+await page.screenshot({ path: `${OUT}/05-relay-boost-choice.png` });
+// tap the PLATE KIT card (first card: y 120..154)
+const hull0 = await G('s.hull');
+await tap(90, 137); await wait(700);
+const bo = await G('({ boosts: s.boosts, max: s.maxHull, hull: s.hull, bonus: s.mods.maxHullBonus })');
+check('picking a supply applies it (PLATE KIT: +15 max hull, +15 hull)', bo.boosts.join() === 'plate' && bo.max === 115 && Math.abs(bo.hull - (hull0 + 15)) < 0.01, JSON.stringify(bo));
+check('only one supply per relay', (await G('g.chooseBoost("coolant")')) === false && (await G('s.boosts.length')) === 1);
+check('break screen phase shown after pick', (await R('r.phase')) === 'main');
+check('HUD hull bar uses boosted max', (await G('s.maxHull')) === 115);
+// repair: +10 at 4 cr/pt
+const rp0 = await G('({ haul: s.haul, hull: s.hull, per: s.repairCostPerPoint })');
+await tap(48, 166); await wait(250);
+const rp1 = await G('({ haul: s.haul, hull: s.hull })');
+check('relay 1 hull costs 4 cr/pt; +10 hull costs 40 from the haul', rp0.per === 4 && Math.abs(rp1.hull - rp0.hull - 10) < 0.01 && Math.abs(rp0.haul - rp1.haul - 40) < 0.01, `${JSON.stringify(rp0)} -> ${JSON.stringify(rp1)}`);
+await page.screenshot({ path: `${OUT}/06-relay-break.png` });
+// PUSH ON
+await tap(48, 277); await wait(400);
+const po = await G('({ relays: s.relays, mult: s.payMult, anchored: s.anchored, next: s.nextRelayAt, relay: __drill.scene.isActive("Relay"), throttle: s.throttle })');
+check('PUSH ON: break closes, pay rises to x1.5, next relay 2000 m', po.relays === 1 && po.mult === 1.5 && !po.anchored && po.next === 2000 && !po.relay && po.throttle === 0, JSON.stringify(po));
+check('HUD pay rate updated', (await G('ui.payText.text')) === 'PAY X1.5');
+await tap(...O_PLUS); await tap(...O_PLUS); await tap(...O_PLUS); await wait(200);
+check('helm throttle works again after push on', near(await thr(), 0.3), 'throttle=' + await thr());
+await wait(800);
+const q0 = await G('({ h: s.haul, d: s.distance })'); await wait(1000); const q1 = await G('({ h: s.haul, d: s.distance })');
+const m1 = (q1.d - q0.d) / T.PX_PER_METER;
+check('run continues; haul accrues at metres x 1.5', m1 > 1 && Math.abs((q1.h - q0.h) - m1 * 1.5) < 0.01, `+${m1.toFixed(2)}m -> +${(q1.h - q0.h).toFixed(2)}cr`);
+check('approach clear after relay: no spawns arriving 1000-1030 m', (await G('g.obstacles.spawnLog')).every((d) => d < 950 || d >= 1030), JSON.stringify(await G('g.obstacles.spawnLog')));
+// relay 2: repair price rises, then CASH OUT
+await G('(g.debugJump(1985), g.forceOffers = null, g.setThrottle(1), s.hull = 50, true)');
+await page.waitForFunction(() => __drill.scene.isActive('Relay'), null, { timeout: 15000 }).catch(() => {});
+check('arrives at relay 2 (2000 m)', (await G('s.depth')) === 2000 && (await G('s.anchored')) && (await R('r.n')) === 2);
+check('relay 2 hull costs 6 cr/pt (x1.5 per relay)', (await G('s.repairCostPerPoint')) === 6);
+await R('r.skipTyping()'); await wait(200);
+const offerIds = await G('g.offers.map(o => o.id)');
+await tap(90, 177); await wait(700);  // second card
+check('relay 2 offers are a random 3 and the pick stacks', offerIds.length === 3 && (await G('s.boosts.length')) === 2 && (await G('s.boosts[1]')) === offerIds[1], offerIds.join(','));
+const before = await G('({ haul: s.haul, credits: JSON.parse(localStorage.getItem("drill.save")).credits })');
+await tap(132, 277); await wait(1500);
+const co = await page.evaluate(() => ({ go: __drill.scene.isActive('GameOver'), relay: __drill.scene.isActive('Relay'), run: __drill.scene.getScene('Game').lastRun, save: JSON.parse(localStorage.getItem('drill.save')), best: localStorage.getItem('drill.bestDepth') }));
+check('CASH OUT: end screen shows CASHED OUT', co.go && !co.relay && co.run.reason === 'cashout', JSON.stringify(co.run));
+check('cash out banks the full haul + 10% (floor)', co.run.banked === Math.floor(before.haul * 1.1) && co.run.haul === Math.floor(before.haul) && co.run.bonus === co.run.banked - co.run.haul,
+  `haul=${before.haul.toFixed(2)} banked=${co.run.banked}`);
+check('credits persisted in localStorage (drill.save)', co.save.credits === before.credits + co.run.banked && co.save.cashouts === 1 && co.save.runs === 2, JSON.stringify(co.save));
+check('best depth 2000 saved on cash out', co.best === '2000' && co.run.newBest);
+await page.screenshot({ path: `${OUT}/07-cash-out.png` });
+await page.reload(); await wait(1500);
+check('title shows banked credits after reload', await page.evaluate(() => { const t = __drill.scene.getScene('Title'); return t.children.list.some(c => c.text && c.text.includes('CREDITS ' + JSON.parse(localStorage.getItem('drill.save')).credits)); }));
+await tap(90, 160); await wait(800);
+check('new contract after reload starts fresh (relay 1 next, x1.0)', await G('s.relays === 0 && s.payMult === 1 && s.haul < 5 && s.nextRelayAt === 1000'));
 
 check('no console errors', errs.length === 0, errs.join(' | '));
 console.log(`\n${results.filter((r) => r.ok).length}/${results.length} checks passed`);

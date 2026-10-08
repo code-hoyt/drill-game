@@ -3,6 +3,7 @@ import { BootScene } from './scenes/BootScene.js';
 import { TitleScene } from './scenes/TitleScene.js';
 import { GameScene } from './scenes/GameScene.js';
 import { UIScene } from './scenes/UIScene.js';
+import { RelayScene } from './scenes/RelayScene.js';
 import { GameOverScene } from './scenes/GameOverScene.js';
 
 const game = new Phaser.Game({
@@ -18,8 +19,8 @@ const game = new Phaser.Game({
     autoCenter: Phaser.Scale.CENTER_BOTH,
   },
   input: { activePointers: 3 },
-  // Render order = array order (UI above Game, GameOver above UI).
-  scene: [BootScene, TitleScene, GameScene, UIScene, GameOverScene],
+  // Render order = array order (UI above Game, Relay break above UI, GameOver on top).
+  scene: [BootScene, TitleScene, GameScene, UIScene, RelayScene, GameOverScene],
 });
 
 // Handy for debugging / automated tests.

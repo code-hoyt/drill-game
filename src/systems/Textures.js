@@ -160,6 +160,10 @@ export function createTextures(scene) {
     px(1, 8, '#555a6e', 9, 2);                                      // desk
     px(3, 10, '#7a3320', 5, 2); px(4, 12, '#3b3b4a', 1, 2); px(6, 12, '#3b3b4a', 1, 2); // seat
   });
+  // escape pod = the rig's crew cab
+  pixelMap(scene, 'pod', [
+    '..oooooo..', '.oooooooo.', 'oowwwoooo.', 'oowwwooooo', 'oooooooooo', 'oddddddddo', '.dd....dd.', '.y......y.',
+  ], { o: '#b5532f', w: '#ffd27a', d: '#5a2416', y: '#ffd23f' });
   pixelMap(scene, 'lock', ['.###.', '#...#', '#...#', '#####', '##.##', '##.##', '#####'], { '#': '#ff5a5a' });
 
   // Crew frames

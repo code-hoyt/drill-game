@@ -25,6 +25,8 @@ export class UIScene extends Phaser.Scene {
     txt(4, 3, 'DEPTH', 6, 0x9aa0b8);
     this.bestText = txt(30, 3, `BEST ${loadBest()}M`, 6, 0x4fd1c5);
     this.depthText = txt(4, 11, '0M', 12, 0xffffff);
+    this.haulText = txt(58, 11, '0 CR', 6, 0xffd23f);
+    this.payText = txt(58, 18, 'PAY X1.0', 6, 0x7fe0ff);
     this.bars = this.add.graphics();
     txt(106, 3, 'HULL', 6, 0x9aa0b8); txt(106, 10, 'HEAT', 6, 0x9aa0b8); txt(106, 17, 'BIT', 6, 0x9aa0b8);
 
@@ -126,7 +128,9 @@ export class UIScene extends Phaser.Scene {
       const flash = warn && Math.floor(time / 200) % 2 === 0;
       b.fillStyle(flash ? 0xffffff : color, 1).fillRect(125, y + 1, Math.round(50 * v), 3);
     };
-    bar(3, s.hull / T.HULL_MAX, s.hull > 50 ? 0x4ad66d : s.hull > T.HULL_ALERT ? 0xffc35c : 0xff4a4a, s.hull <= T.HULL_ALERT);
+    this.haulText.setText(`${Math.floor(s.haul)} CR`);
+    this.payText.setText(`PAY X${s.payMult.toFixed(1)}`);
+    bar(3, Math.min(1, s.hull / s.maxHull), s.hull > 50 ? 0x4ad66d : s.hull > T.HULL_ALERT ? 0xffc35c : 0xff4a4a, s.hull <= T.HULL_ALERT);
     bar(10, s.heat / T.HEAT_MAX, 0xff6b3d, s.heat >= T.HEAT_ALERT);
     bar(17, s.wear / T.WEAR_MAX, 0xffb347, s.wear >= T.WEAR_ALERT);
 
@@ -242,9 +246,9 @@ export class UIScene extends Phaser.Scene {
       const rocks = g.obstacles.list.filter((o) => o.sprite.y > 10).length;
       this.stationText.setText(`TOOLS   HULL ${Math.round(s.hull)}%  ROCKS ${rocks}`).setTint(s.hull <= T.HULL_ALERT ? 0xff4a7a : 0xffffff);
       show(['patch', 'blast']);
-      this.actionBtns.patch.setEnabled(s.hull < T.HULL_MAX);
+      this.actionBtns.patch.setEnabled(s.hull < s.maxHull);
       this.actionBtns.blast.setEnabled(!!g.obstacles.target());
-      this.actionBtns.blast.setProgress(g.blastCharge / T.BLAST_TIME);
+      this.actionBtns.blast.setProgress(g.blastCharge / g.blastTime);
     }
     // release a hold whose button just got disabled/hidden
     if (g.hold && !Object.entries(this.actionBtns).some(([k, b]) => k === g.hold && b.enabled && b.gfx.visible)) g.setHold(null);

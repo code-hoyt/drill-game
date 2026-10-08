@@ -64,6 +64,19 @@ export const TUNING = {
   HARD_WEAR_MULT: 3,
   HARD_SPEED_CAP: 0.7,
 
+  // --- Relays & earnings (M1) ----------------------------------------------
+  RELAY_INTERVAL: 1000,    // m between relay anchors (breaks)
+  RELAY_WARN: 50,          // m before a relay: dispatch ping + no boulders/hard rock arrive in this window
+  RELAY_CLEAR_AFTER: 30,   // m after a relay that are also kept boulder-free
+  PAY_PER_METER: 1,        // credits per metre before the multiplier
+  PAY_MULT_STEP: 0.5,      // segment multiplier = 1 + STEP x relays passed  (x1.0, x1.5, x2.0, ...)
+  CASHOUT_BONUS: 0.10,     // cash out at a relay: keep haul + 10%
+  HULL_LOSS_KEEP: 1 / 3,   // hull loss: escape pod keeps 1/3 of the haul
+  REPAIR_COST_BASE: 4,     // credits per hull point at relay 1
+  REPAIR_COST_GROWTH: 1.5, // x per relay after the first (4, 6, 9, 13.5, ...)
+  REPAIR_STEP: 10,         // hull points per "+10" repair tap
+  BOOST_CHOICES: 3,        // relay supplies offered per relay (distinct, random)
+
   // --- Crew / views -------------------------------------------------------
   // Same-deck trip: 32 px straight across the deck (over the ladder grate) = 32/48 = ~0.67 s.
   // Cross-deck trip: 16 px to the ladder + 28 px direct climb + 16 px out = 32/48 + 28/70 = ~1.07 s.

@@ -13,6 +13,8 @@ export class Obstacles {
     this.sys = systems;
     this.list = [];
     this.nextAt = 25; // first boulder at 25 m so the player meets one quickly
+    this.spawnFilter = null; // (arrivalDepthM) => bool; lets the relay approach stay clear
+    this.spawnLog = [];      // recent arrival depths (debug/tests)
     this.debris = scene.add.particles(0, 0, 'px2', {
       speed: { min: 20, max: 70 }, angle: { min: 0, max: 360 }, lifespan: 600, gravityY: 90,
       tint: [0x8a7f8f, 0xb3a9b6, 0x5e5363], emitting: false,
@@ -39,7 +41,11 @@ export class Obstacles {
   update(dt, advancePx, time) {
     const s = this.sys;
     if (s.depth >= this.nextAt) {
-      this.spawn(s.depth);
+      const arrival = s.depth + (L.DRILL_TIP_Y + 30) / T.PX_PER_METER; // depth at which it reaches the drill
+      if (!this.spawnFilter || this.spawnFilter(arrival)) {
+        this.spawn(s.depth);
+        this.spawnLog.push(Math.round(arrival)); if (this.spawnLog.length > 30) this.spawnLog.shift();
+      }
       this.nextAt = s.depth + this.gapForDepth(s.depth) * Phaser.Math.FloatBetween(0.7, 1.3);
     }
 
@@ -51,7 +57,7 @@ export class Obstacles {
         o.sprite.y = L.DRILL_TIP_Y - o.size.r;
         o.contact = true;
         if (s.speed > T.RAM_SAFE_SPEED) {
-          const dmg = (T.RAM_DAMAGE_BASE + T.RAM_DAMAGE_SPEED * s.speed) * o.size.mult;
+          const dmg = (T.RAM_DAMAGE_BASE + T.RAM_DAMAGE_SPEED * s.speed) * o.size.mult * s.mods.ramMul;
           s.damage(dmg);
           s.wear = Math.min(T.WEAR_MAX, s.wear + T.RAM_WEAR);
           s.speed *= 0.3; // jolt
@@ -71,7 +77,7 @@ export class Obstacles {
       }
       // warning bubble when approaching too fast
       const dist = L.DRILL_TIP_Y - bottom;
-      const danger = dist < T.WARN_DISTANCE && s.speed > T.RAM_SAFE_SPEED && o.sprite.y > 0;
+      const danger = dist < T.WARN_DISTANCE * s.mods.warnMul && s.speed > T.RAM_SAFE_SPEED && o.sprite.y > 0;
       o.warn.setPosition(o.sprite.x + o.size.r + 5, o.sprite.y - 4).setVisible(danger && Math.floor(time / 200) % 2 === 0);
     }
     return { blocked, rammed };

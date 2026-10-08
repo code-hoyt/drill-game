@@ -7,6 +7,9 @@ import { Ship } from '../systems/Ship.js';
 import { Crew } from '../systems/Crew.js';
 import { ViewController } from '../systems/ViewController.js';
 import { FONT_KEY } from '../systems/PixelFont.js';
+import { drawBoosts } from '../data/boosts.js';
+import { RELAY_PING } from '../data/dispatch.js';
+import { bankRun } from '../systems/Save.js';
 
 // Hold-actions per station. The HELM has none: its action area is the throttle itself.
 export const STATION_ACTIONS = { engine: ['vent'], helm: [], drill: ['repair'], tools: ['patch', 'blast'] };
@@ -35,8 +38,142 @@ export class GameScene extends Phaser.Scene {
       tint: [0xff6b3d, 0xffd23f, 0xb5532f, 0x555555], emitting: false,
     }).setDepth(40);
 
+    // --- M1: relays ---
+    this.relayWarned = false;
+    this.offers = [];          // relay supplies offered at the current relay
+    this.boostChosen = false;
+    this.forceOffers = null;   // test hook: fixed offer ids
+    this.relayGfx = this.add.graphics().setDepth(2.5);
+    this.relayLabel = this.add.bitmapText(4, 0, FONT_KEY, '', 6).setTint(0x7fe0ff).setDepth(2.6).setVisible(false);
+    this.obstacles.spawnFilter = (arrival) => !this.inRelayWindow(arrival, 0);
+
     this.scene.launch('UI');
     this.setupKeyboard();
+
+    // Debug/test hooks via URL: ?depth=950 starts the run at 950 m, ?boosts=plate,coolant,charge fixes relay offers.
+    const q = new URLSearchParams(window.location.search);
+    if (q.has('depth')) this.debugJump(Number(q.get('depth')) || 0);
+    if (q.has('boosts')) this.forceOffers = q.get('boosts').split(',');
+  }
+
+  /** Is a depth inside a relay's clear window [R - WARN - pad, R + CLEAR_AFTER]? */
+  inRelayWindow(depthM, pad = 0) {
+    const I = T.RELAY_INTERVAL;
+    const next = Math.ceil(depthM / I) * I, prev = Math.floor(depthM / I) * I;
+    return (next > 0 && next - depthM <= T.RELAY_WARN + pad) || (prev > 0 && depthM - prev <= T.RELAY_CLEAR_AFTER);
+  }
+
+  get blastTime() { return T.BLAST_TIME * this.state.mods.blastTimeMul; }
+  get relayNumber() { return this.state.relays + 1; }
+
+  // ---- relays (M1) -----------------------------------------------------------
+  arriveAtRelay() {
+    const s = this.state;
+    s.anchor();
+    this.setHold(null); this.blastCharge = 0;
+    this.boostChosen = false;
+    this.offers = drawBoosts(T.BOOST_CHOICES, Math.random, this.forceOffers);
+    this.cameras.main.shake(200, 0.008);
+    this.toast(`RELAY ${this.relayNumber} ANCHORED`, 0x7fe0ff);
+    this.time.delayedCall(450, () => { if (!this.over) this.scene.launch('Relay'); });
+  }
+
+  chooseBoost(id) {
+    if (this.boostChosen) return false;
+    const b = this.offers.find((o) => o.id === id);
+    if (!b) return false;
+    const s = this.state;
+    b.apply(s.mods, s);
+    s.hull = Math.min(s.hull, s.maxHull);
+    s.boosts.push(b.id);
+    this.crew.speedMul = s.mods.crewSpeedMul;
+    this.boostChosen = true;
+    return true;
+  }
+
+  buyRepair(points) { return this.state.buyRepair(points); }
+
+  pushOn() {
+    const s = this.state;
+    s.pushOn();
+    this.relayWarned = false;
+    this.scene.stop('Relay');
+    this.toast(`SEGMENT ${s.relays + 1}: PAY X${s.payMult.toFixed(1)}`, 0x7fe0ff);
+    if (!this.piloted) this.toast('THROTTLE AT 0. GET HOLT TO THE HELM', 0xffc35c);
+  }
+
+  cashOut() {
+    const s = this.state;
+    const haul = Math.floor(s.haul);
+    const banked = Math.floor(s.haul * (1 + T.CASHOUT_BONUS));
+    this.endRun({ reason: 'cashout', haul, bonus: banked - haul, banked, relays: s.relays + 1 });
+  }
+
+  endRun({ reason, haul, bonus = 0, recovery = 0, banked, relays }) {
+    this.over = true;
+    this.hold = null;
+    this.state.throttle = 0; this.state.speed = 0;
+    const depth = Math.floor(this.state.depth);
+    const prevBest = loadBest();
+    const newBest = depth > prevBest;
+    if (newBest) saveBest(depth);
+    const save = bankRun({ banked, reason, relays });
+    this.lastRun = { reason, depth, best: Math.max(depth, prevBest), newBest, haul, bonus, recovery, banked, credits: save.credits, relays };
+    this.scene.stop('Relay');
+    if (reason === 'cashout') {
+      this.cameras.main.fadeOut(700, 0, 0, 0);
+      this.time.delayedCall(750, () => this.scene.launch('GameOver', this.lastRun));
+    } else {
+      this.escapePod();
+      this.time.delayedCall(1500, () => this.scene.launch('GameOver', this.lastRun));
+    }
+  }
+
+  escapePod() {
+    this.view.set('outside');
+    this.ship.sparks.emitting = false; this.ship.chips.emitting = false; this.ship.exhaust.emitting = false;
+    this.boom.explode(60, 90, L.DRILL_TIP_Y + 10);
+    this.ship.drill.setVisible(false);
+    this.cameras.main.shake(500, 0.02);
+    this.cameras.main.flash(300, 255, 80, 40);
+    // the crew cab is the escape pod: it detaches and rides the bore back (down the screen)
+    this.ship.exterior.setTint(0x6a4a4a);
+    const pod = this.add.image(90, L.SHIP_TOP + 18, 'pod').setDepth(42).setScale(2);
+    const trail = this.add.particles(0, 0, 'px2', {
+      speed: { min: 5, max: 20 }, angle: { min: 250, max: 290 }, lifespan: 500, alpha: { start: 0.8, end: 0 },
+      tint: [0xffd23f, 0xff6b3d, 0xcfcfdf], frequency: 25,
+    }).setDepth(41);
+    trail.startFollow(pod, 0, -6);
+    // pop clear of the wreck, hang a beat, then ride the bore back down past the HUD
+    this.tweens.chain({ targets: pod, tweens: [
+      { y: L.SHIP_TOP - 14, duration: 320, delay: 150, ease: 'Back.easeOut' },
+      { y: 420, duration: 800, delay: 180, ease: 'Quad.easeIn', onComplete: () => trail.stop() },
+    ] });
+  }
+
+  /** Debug/test: put the run at a given depth (keeps haul). Jumping to 970 lands 30 m before relay 1. */
+  debugJump(depthM) {
+    const s = this.state;
+    s.relays = Math.max(0, Math.floor((depthM - 1e-6) / T.RELAY_INTERVAL));
+    s.distance = depthM * T.PX_PER_METER;
+    for (const o of [...this.obstacles.list]) this.obstacles.destroy(o, false);
+    for (const b of this.terrain.bands) b.sprite.destroy();
+    this.terrain.bands = [];
+    this.obstacles.nextAt = depthM + 10;
+    this.nextHardCheck = depthM + T.HARD_CHECK_GAP;
+    this.relayWarned = s.nextRelayAt - depthM <= T.RELAY_WARN;
+  }
+
+  drawRelayMarker(time) {
+    const s = this.state, g = this.relayGfx.clear();
+    const y = Math.round(L.DRILL_TIP_Y - (s.nextRelayAt - s.depth) * T.PX_PER_METER);
+    const show = y > -10 && y <= L.DRILL_TIP_Y + 1;
+    this.relayLabel.setVisible(show);
+    if (!show) return;
+    for (let x = 0; x < 180; x += 6) g.fillStyle(0x7fe0ff, 0.9).fillRect(x, y, 3, 1);
+    g.fillStyle(0x7fe0ff, 0.25).fillRect(0, y + 1, 180, 1);
+    if (s.anchored && Math.floor(time / 400) % 2 === 0) g.fillStyle(0xff4a4a, 1).fillRect(L.SHIP_X - 6, y + 2, 3, 3).fillRect(L.SHIP_X + L.SHIP_W + 3, y + 2, 3, 3);
+    this.relayLabel.setText(`RELAY ${this.relayNumber}`).setPosition(4, y - 8);
   }
 
   // ---- commands (called by the UI scene) ----------------------------------
@@ -84,11 +221,19 @@ export class GameScene extends Phaser.Scene {
     const dt = Math.min(delta, 50) / 1000;
     const s = this.state;
     s.lastDamage = 0;
+    if (s.anchored) { // clamped in at a relay: nothing builds up, the world waits
+      this.crew.working = false; this.ship.sparks.emitting = false;
+      this.crew.update(dt);
+      this.ship.update(dt, 0, false, {}, false, time);
+      this.drawRelayMarker(time);
+      return;
+    }
 
     // --- terrain features ---------------------------------------------------
     s.inHard = this.terrain.tipInHard();
     if (s.depth >= this.nextHardCheck) {
-      if (Math.random() < T.HARD_CHANCE) this.terrain.spawnHardBand();
+      // hard bands arrive ~57-82 m ahead; keep them out of the relay approach window
+      if (Math.random() < T.HARD_CHANCE && !this.inRelayWindow(s.depth + 57, 25)) this.terrain.spawnHardBand();
       this.nextHardCheck += T.HARD_CHECK_GAP;
     }
 
@@ -99,6 +244,8 @@ export class GameScene extends Phaser.Scene {
     const { blocked, rammed } = this.obstacles.update(dt, advancePx, time);
     s.blocked = blocked;
     if (events.includes('spike')) this.toast('COOLANT LEAK! HEAT UP', 0xff8a5c);
+    if (events.includes('sparebit')) this.toast('SPARE BIT SWAPPED IN', 0x8affa0);
+    if (!this.relayWarned && s.nextRelayAt - s.depth <= T.RELAY_WARN) { this.relayWarned = true; this.toast(RELAY_PING, 0x7fe0ff); }
     if (rammed) this.onRam(rammed);
     if (!hadAhead && this.obstacles.anyAhead()) this.toast('BOULDER AHEAD', 0xc9a7ff);
 
@@ -110,7 +257,7 @@ export class GameScene extends Phaser.Scene {
       if (this.hold === 'blast') {
         if (this.obstacles.target()) {
           this.blastCharge += dt;
-          if (this.blastCharge >= T.BLAST_TIME) { this.obstacles.blast(); this.blastCharge = 0; this.toast('ROCK CLEARED', 0x8affa0); }
+          if (this.blastCharge >= this.blastTime) { this.obstacles.blast(); this.blastCharge = 0; this.toast('ROCK CLEARED', 0x8affa0); }
         } else { this.blastCharge = 0; this.crew.working = false; }
       } else {
         s.work(this.hold, dt);
@@ -136,7 +283,9 @@ export class GameScene extends Phaser.Scene {
       this.wasPiloted = piloted;
     }
 
+    this.drawRelayMarker(time);
     if (s.dead) this.gameOver();
+    else if (events.includes('relay')) this.arriveAtRelay();
   }
 
   alerts() {
@@ -166,16 +315,8 @@ export class GameScene extends Phaser.Scene {
   }
 
   gameOver() {
-    this.over = true;
-    this.hold = null;
-    const depth = Math.floor(this.state.depth);
-    const prevBest = loadBest();
-    const newBest = depth > prevBest;
-    if (newBest) saveBest(depth);
-    this.ship.sparks.emitting = false; this.ship.chips.emitting = false; this.ship.exhaust.emitting = false;
-    this.boom.explode(60, 90, L.SHIP_TOP + 20);
-    this.cameras.main.shake(500, 0.02);
-    this.cameras.main.flash(300, 255, 80, 40);
-    this.time.delayedCall(900, () => this.scene.launch('GameOver', { depth, best: Math.max(depth, prevBest), newBest }));
+    const haul = Math.floor(this.state.haul);
+    const banked = Math.floor(this.state.haul * T.HULL_LOSS_KEEP);
+    this.endRun({ reason: 'lost', haul, recovery: haul - banked, banked, relays: this.state.relays });
   }
 }

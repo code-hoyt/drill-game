@@ -1,4 +1,5 @@
 import { GAME_W, GAME_H, loadBest } from '../config.js';
+import { loadSave } from '../systems/Save.js';
 import { FONT_KEY } from '../systems/PixelFont.js';
 
 export class TitleScene extends Phaser.Scene {
@@ -13,11 +14,13 @@ export class TitleScene extends Phaser.Scene {
     t(88, 6, 'AN ENDLESS DIG INTO AN ALIEN WORLD', 0xb8b0c8);
     const best = loadBest();
     t(112, 6, best ? `BEST DEPTH ${best}M` : 'NO RECORD YET', 0x4fd1c5);
+    const save = loadSave();
+    t(122, 6, `CREDITS ${save.credits} CR`, 0xffd23f);
     this.start = t(250, 12, 'TAP TO START', 0xffffff);
     t(272, 6, 'OUTSIDE: WATCH AHEAD, SET SPEED', 0x9aa0b8);
     t(281, 6, 'INSIDE: TAP ROOMS, HOLD TO WORK', 0x9aa0b8);
     t(290, 6, 'SPEED ONLY CHANGES AT THE HELM', 0x9aa0b8);
-    t(299, 6, "DON'T LET THE HULL HIT ZERO", 0x9aa0b8);
+    t(299, 6, 'RELAY EVERY 1000M: PUSH ON OR CASH OUT', 0x9aa0b8);
     this.tweens.add({ targets: this.start, alpha: 0.2, duration: 500, yoyo: true, repeat: -1 });
     this.input.once('pointerdown', () => this.scene.start('Game'));
     this.input.keyboard?.once('keydown', () => this.scene.start('Game'));
