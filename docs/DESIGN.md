@@ -95,6 +95,7 @@ Every 1000 m the contract calls for a **relay anchor**: a beacon bolted into the
 - **Hull loss [C]:** Holt ejects in the escape pod and keeps **1/3 of the haul**.
   - **[P]** The rig's crew cab *is* the escape pod, so his home survives.
   - **[P]** The company recovers the wrecked drill section, refits it, and takes the other 2/3 as "recovery and refit." The rig comes back whole for the next contract.
+- **[C] Transitions (built after M2):** short cutscenes, each about 2.6 s and tappable to skip. On the way back, the rig is winched out of the bore (or the pod launches), then a cut to space, where it rises to the station and the clamps engage. **The summary comes after docking**, shown over the docked rig. On contract start, the rig undocks, drops toward the planet, and the drill nose bites into the surface, landing in the run. They reuse the rig textures.
 - Depth reached is the score either way.
 - **Always kept:** best depth per planet, codex finds (transmitted the moment you recover them), and unlocked parts and planets.
 
@@ -177,6 +178,26 @@ Every 1000 m the contract calls for a **relay anchor**: a beacon bolted into the
 - Tool belt (kit): station work +25%, climb −25%.
 
 Prices run 350–900 credits. A relay-1 cash-out is about 1,100. Not built yet: finds and voids on the Long scanner, and the Heavy charge destroying finds (both wait for M4 finds), plus the vendor **hold** option. The README lists the full table.
+
+**[C] Part unlocks (approved after M2; Cletus left the specifics to us).** Not every sidegrade is buyable from day one. **One alternative per slot is open from the start**, and the rest unlock by **best depth on any contract** (and one by lifetime relays), as a steady trickle of roughly two parts every 500 m so there is always a next thing to chase:
+
+| Unlocks at | Parts |
+|---|---|
+| Start | Diamond-core bit, Cold-loop engine, Ablative skin, Patch foam, Long scanner, Light boots |
+| Best 500 m | Climbing harness, Light frame |
+| Best 1000 m | Grinder head, Dead-man governor |
+| Best 1500 m | Overdrive turbine, Quick capacitor |
+| Best 2000 m | Heavy plating, Bypass valve |
+| 3 relays (lifetime) | Tool belt |
+| Best 2500 m | Cable linkage |
+| Best 3000 m | Wide-cut bit, Heavy charge |
+
+- The starters are the gentlest trade-offs. The bigger swings (Wide-cut, Heavy charge, Cable linkage, Heavy plating) wait until you can survive them.
+- The Quartermaster only draws from **unlocked, unowned** parts. The guarantees still hold: 2 per slot when the pool allows, otherwise what's left. A fresh save sees 6 offers (one per slot).
+- Locked parts are shown on the Quartermaster's **LOCKED** page ("REACH 3000M"), on each slot screen, and as **NEXT UNLOCK** in the vendor and Holt's log.
+- When something unlocks, the dock shows a brief **NEW PARTS AVAILABLE** banner once, after the run summary.
+- Unlocks are permanent. **Owned parts are grandfathered** (always unlocked). Older saves silently open the milestones they already reached, with no banner.
+- M3 can move the depth gates per planet. For now best depth means the best on any contract.
 
 **The dead-man governor** is a mechanical spring limiter: "Approved under Clause 4(b): no decision-making components." Its costs:
 - It **trips on everything**, including harmless rock and finds.

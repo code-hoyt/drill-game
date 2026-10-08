@@ -1,4 +1,4 @@
-# Drill (working title): prototype v0.5 (M2: loadout + docked home base)
+# Drill (working title): prototype v0.6 (M2 + unlocks and transition cutscenes)
 
 An endless, portrait, pixel-art drilling game for phone browsers. You pilot a drill ship that bores **upward** through an alien planet and keep it alive by running your one crew member between stations. Your score is depth. Every 1000 m you clamp onto a relay and choose: push on for better pay, or cash out. Between contracts the rig docks at an orbital station: that docked interior is the home screen, where you swap parts and buy new ones. Design doc: [`docs/DESIGN.md`](docs/DESIGN.md).
 
@@ -15,7 +15,12 @@ ES modules don't load over `file://`, so you need a server.
 
 ## How to play
 
-**Flow:** title → **docked rig** (home) → HELM: accept a contract → run → relay breaks → end screen → **back to the docked rig**.
+**Flow:** title → **docked rig** (home) → HELM: accept a contract → *descent cutscene* → run → relay breaks → cash out or hull loss → *ascent cutscene* → end-of-run summary over the docked rig → **back to the docked rig**.
+
+**Transition cutscenes** (pixel art, built from the rig's own textures; **tap anywhere to skip**):
+* **Descent (2.6 s):** clamps release and the rig drops away from the orbital station toward the rust planet, which grows beneath it. Cut to the surface at dusk: the rig drops nose-first with thruster exhaust, the drill bites into the rock (chips, shake, spinning bit), and it sinks into its hole. Then the run starts.
+* **Ascent (2.6 s, after a short in-run beat: 0.5 s fade on cash out, or 1.0 s pod ejection on hull loss):** at the surface, the rig is winched out of the bore hole on the gantry cable. If the hull was lost, the escape pod launches out instead. Cut to space: it climbs to the station's docking port and the clamps engage ("CLAMPED"). Then the run summary opens over the docked rig.
+* `?anim=0` turns them off (the old flow: summary over the run, and straight into the run from the contract board).
 
 **Docked rig (home base).** It's the same 2x2 interior. Tap a room or prop and Holt walks there, using the same pathing as in a run. The menu opens when he arrives:
 
@@ -36,7 +41,7 @@ ES modules don't load over `file://`, so you need a server.
 
 Optional desktop keys: `W/S` or arrow keys for throttle (only when piloted), `Space` to toggle the view, `1/2/3/4` to pick a room (HELM/DRL/ENG/TLS), `E` (hold) for the primary action, `Q` (hold) to blast, `R`/`Enter` to restart.
 
-**Debug/playtest URL params:** `?credits=5000` sets your credits. `?own=all` (or `?own=widecut,plating`) owns parts. `?stock=id,id,...` forces the Quartermaster's stock. `?wipe=1` clears the save. `?depth=950` starts the run at 950 m (relay 1 is 50 m ahead). `?boosts=plate,coolant,charge` fixes the relay supply offers (ids in `src/data/boosts.js`). In the console, `__drill.scene.getScene('Game').debugJump(1980)` jumps mid-run and keeps the haul.
+**Debug/playtest URL params:** `?anim=0` skips the cutscenes. `?unlock=all` unlocks every part. `?credits=5000` sets your credits. `?own=all` (or `?own=widecut,plating`) owns parts. `?stock=id,id,...` forces the Quartermaster's stock. `?wipe=1` clears the save. `?depth=950` starts the run at 950 m (relay 1 is 50 m ahead). `?boosts=plate,coolant,charge` fixes the relay supply offers (ids in `src/data/boosts.js`). In the console, `__drill.scene.getScene('Game').debugJump(1980)` jumps mid-run and keeps the haul.
 
 ## Mechanics
 
@@ -121,9 +126,23 @@ Optional desktop keys: `W/S` or arrow keys for throttle (only when piloted), `Sp
   * The stock **refreshes after every contract**, whether you cash out or lose the rig.
   * **Reroll** costs 100 → 200 → 400… (doubling) and resets when the stock refreshes. A reroll always changes something when the pool allows.
   * Tap an offer to see its full upside, downside, what it replaces, and the price. Then choose **BUY + EQUIP** (one tap) or **BUY ONLY**.
-* **Save** (`localStorage['drill.save']`, v2):
-  * Contents: credits, total earned, runs, cash-outs, rigs lost, relays reached, deepest relay, best depth per planet, owned parts, loadout, vendor stock and reroll count, and Ines's radio log (last 40).
-  * **Migration**: a v1 save (M1) keeps its credits and stats, and the old `drill.bestDepth` key is folded into `best.kessa4`. No save is ever wiped by an upgrade.
+* **Unlocks (milestones)**: one alternative per slot is buyable from the start. The others open as your **best depth** (any contract) or **lifetime relays** grow, then join the Quartermaster's rotation. A purple **NEW PARTS AVAILABLE** notice shows once at the dock (tap to dismiss, gone after 4 s). Unlocks are permanent, and owned parts always count as unlocked (grandfathered).
+
+  | Unlocks at | Parts |
+  |---|---|
+  | Start | Diamond-core bit, Cold-loop engine, Ablative skin, Patch foam, Long scanner, Light boots |
+  | Best 500 m | Climbing harness, Light frame |
+  | Best 1000 m | Grinder head, Dead-man governor |
+  | Best 1500 m | Overdrive turbine, Quick capacitor |
+  | Best 2000 m | Heavy plating, Bypass valve |
+  | 3 relays (lifetime) | Tool belt |
+  | Best 2500 m | Cable linkage |
+  | Best 3000 m | Wide-cut bit, Heavy charge |
+
+  Locked parts are listed on the Quartermaster's **LOCKED** page ("REACH 3000M"), on each slot screen, and as **NEXT UNLOCK** in the vendor and Holt's log.
+* **Save** (`localStorage['drill.save']`, v3):
+  * Contents: credits, total earned, runs, cash-outs, rigs lost, relays reached, deepest relay, best depth per planet, owned parts, loadout, vendor stock and reroll count, unlocked parts (plus a pending NEW PARTS notice), and Ines's radio log (last 40).
+  * **Migration**: a v1 save (M1) keeps its credits and stats, and the old `drill.bestDepth` key is folded into `best.kessa4`. A v2 save (M2) becomes v3: milestones it already reached open silently, owned parts are grandfathered, and an old stock with now-locked parts is re-drawn. No save is ever wiped by an upgrade.
 
 ## File structure
 
@@ -140,14 +159,16 @@ src/
     UIScene.js             HUD overlay: depth, bars, alerts, toasts, throttles (outside + helm), station panel, pilot bar
     DockScene.js           docked home base: Dock (rig interior, Holt walks, props) + DockUI (HUD, menus: contracts, radio, slots, stats, codex, station, Quartermaster)
     RelayScene.js          relay break: Ines dispatch (typing/static), supply pick, repair, push on / cash out
-    GameOverScene.js       end screen: cashed out / rig lost, earnings breakdown, new contract
+    CutsceneScene.js       transition cutscenes: descent (station -> planet -> drill bites) and ascent (winch / pod -> station -> clamps), tap to skip
+    GameOverScene.js       end screen: cashed out / rig lost, earnings breakdown, back to the rig
   data/
     boosts.js              relay supplies + drawBoosts()
-    parts.js               6 slots, 24 parts (6 stock + 18 sidegrades), applyParts()
+    parts.js               6 slots, 24 parts (6 stock + 18 sidegrades), unlock milestones, applyParts()
     contracts.js           planets/contracts for the HELM board (M3 extends)
     dispatch.js            Ines's relay messages (1-4 + fallbacks), ping, sign-offs
   systems/
-    Save.js                localStorage save v2 + migration, vendor stock/reroll/buy, equip (blocked mid-run), radio log, URL shortcuts
+    Settings.js            URL settings (?anim=0)
+    Save.js                localStorage save v3 + migration, unlocks, vendor stock/reroll/buy, equip (blocked mid-run), radio log, URL shortcuts
     ShipSystems.js         pure numbers: speed, depth, heat, wear, hull, leaks (no rendering)
     Terrain.js             scrolling rock/tunnel tiles, depth tint, hard-rock bands
     Obstacles.js           boulder spawn/scroll, ram / grind / blast
@@ -159,7 +180,7 @@ src/
   ui/
     Button.js              touch button with tap + press-and-hold
 tests/e2e.mjs              Playwright phone-viewport test (see below)
-screenshots/               01-07 run + relay screens; 08 docked base, 09 Quartermaster, 10 part swap, 11 stats, 12 buy detail
+screenshots/               01-07 run + relay screens; 08 docked base, 09 Quartermaster, 10 part swap, 11 stats, 12 buy detail; 13 launch (winch out of the bore), 14 docking (clamps), 15 descent (drill bites), 16 locked parts
 docs/DESIGN.md             game design doc
 ```
 
@@ -225,7 +246,16 @@ docs/DESIGN.md             game design doc
   * Wide-cut: about 50 px/s at full speed, heat ×1.35, safe ram zone 28%.
   * Light boots: same-deck walk 0.55 s, slower climbs.
 * Swapping is blocked mid-run and allowed again once docked.
-* Migration: a v1 save plus the old best-depth key become v2 with credits, stats and best intact.
+* Migration: a v1 save plus the old best-depth key become v3 with credits, stats and best intact.
+
+**Unlocks + cutscenes coverage** (the main flow runs with `?anim=0`; the cutscene section runs with them on):
+* Cashing out at 2000 m unlocks exactly the 500–2000 m parts, and the dock shows NEW PARTS AVAILABLE with their names once.
+* The vendor never offers a locked part (live stock, plus 200 random draws). The LOCKED page lists what's left with its condition.
+* Thresholds: 499 vs 500, 999 vs 1000, 2999 vs 3000 m, and 3 lifetime relays for the tool belt.
+* Grandfathering: a v2 save that owns Wide-cut and Heavy charge at best 600 m keeps them owned and equipped, and its stale stock is re-drawn from unlocked parts.
+* A fresh save has 12 locked parts and a 6-offer stock of starters.
+* Descent plays on ACCEPT and ends in the run; cash out plays the ascent and ends docked with the summary on top; BACK TO THE RIG reveals the dock. Each takes under 3.1 s (measured 2.6 s).
+* Tap-to-skip works on the descent (straight into the run) and on the escape-pod ascent (docked + RIG LOST summary).
 
 Debug pokes (via `window.__drill`) are used only to set up states quickly.
 

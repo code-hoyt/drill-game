@@ -2,7 +2,7 @@
 // baseline balance; every other part is a sidegrade with a real downside.
 // A part's `mods` are folded into ShipSystems.mods at run start (multipliers multiply,
 // `add*` fields add, flags/overrides replace). `unlocked` gates the vendor pool (M3 licences
-// can flip it); everything here is unlocked in M2.
+// can flip it); see UNLOCKS below for the depth/relay milestones.
 
 export const SLOTS = [
   { id: 'drill',  name: 'DRILL HEAD', short: 'DRL', room: 'drill' },
@@ -49,6 +49,24 @@ export const PARTS = [
   P('kit', 'lightboots', 'LIGHT BOOTS', 350, 'WALK SPEED +25%', 'CLIMB SPEED -20%', { walkMul: 1.25, climbMul: 0.8 }),
   P('kit', 'toolbelt', 'TOOL BELT', 450, 'VENT, FIX + PATCH 25% FASTER', 'CLIMB SPEED -25%', { workMul: 1.25, climbMul: 0.75 }),
 ];
+
+// ---- unlocks ([C] M2 feedback) -------------------------------------------------------
+// One sidegrade per slot is open from the start; the rest unlock in pairs every 500 m of
+// best depth (any contract), plus one for lifetime relays reached, so there's always a next
+// thing to chase. Owned parts are never locked (grandfathered).
+export const UNLOCKS = {
+  // starters (no rule): diamond, coldloop, ablative, patchfoam, scanner, lightboots
+  harness: { depth: 500 },  lightframe: { depth: 500 },
+  grinder: { depth: 1000 }, governor: { depth: 1000 },
+  overdrive: { depth: 1500 }, quickcap: { depth: 1500 },
+  plating: { depth: 2000 }, bypass: { depth: 2000 },
+  toolbelt: { relays: 3 },
+  linkage: { depth: 2500 },
+  widecut: { depth: 3000 }, heavycharge: { depth: 3000 },
+};
+for (const p of PARTS) { p.unlock = UNLOCKS[p.id] || null; p.unlocked = !p.unlock; }
+export const unlockText = (p) => !p.unlock ? '' : p.unlock.depth ? `REACH ${p.unlock.depth}M` : `${p.unlock.relays} RELAYS (TOTAL)`;
+export const unlockMet = (p, progress) => !p.unlock || (p.unlock.depth ? progress.best >= p.unlock.depth : progress.relays >= p.unlock.relays);
 
 export const partById = (id) => PARTS.find((p) => p.id === id);
 export const stockPart = (slot) => PARTS.find((p) => p.slot === slot && p.stock);

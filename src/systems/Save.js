@@ -2,10 +2,10 @@
 // v1 (M1): credits + run stats.  v2 (M2): + owned parts, loadout, vendor stock, radio log,
 // per-planet best depth, lifetime earnings. Older saves are migrated, never wiped.
 import { loadBest } from '../config.js';
-import { PARTS, SLOTS, partById, DEFAULT_LOADOUT } from '../data/parts.js';
+import { PARTS, SLOTS, partById, DEFAULT_LOADOUT, unlockMet } from '../data/parts.js';
 
 const KEY = 'drill.save';
-export const VERSION = 2;
+export const VERSION = 3;
 export const VENDOR_PER_SLOT = 2;
 export const REROLL_BASE = 100;   // 100 -> 200 -> 400 ... per dock (resets when the stock refreshes)
 const RADIO_MAX = 40;
@@ -17,27 +17,52 @@ const DEFAULTS = () => ({
   loadout: DEFAULT_LOADOUT(),
   vendor: { stock: [], rerolls: 0, refreshes: 0 },
   radio: [],                                     // [{ tag, text }] newest last
+  unlocked: [],                                  // milestone parts unlocked so far (sticky)
+  newUnlocks: [],                                // unlocked since the last dock notice
 });
 
-/** Upgrade any older save object to the current version (pure; exported for tests). */
+// ---- unlocks ------------------------------------------------------------------------
+export const progressOf = (s) => ({ best: Math.max(0, ...Object.values(s.best || {})), relays: s.relaysReached || 0 });
+/** Starter parts, milestone parts already unlocked, and anything owned (grandfathered). */
+export const isUnlocked = (s, p) => !p.unlock || s.unlocked.includes(p.id) || s.owned.includes(p.id);
+/** Unlock every part whose milestone is met. Returns the newly unlocked ids. */
+export function checkUnlocks(s, notify = true) {
+  const prog = progressOf(s), fresh = [];
+  for (const p of PARTS) if (p.unlock && !s.unlocked.includes(p.id) && (unlockMet(p, prog) || s.owned.includes(p.id))) { s.unlocked.push(p.id); fresh.push(p.id); }
+  if (notify) s.newUnlocks = [...new Set([...(s.newUnlocks || []), ...fresh.filter((id) => !s.owned.includes(id))])];
+  return fresh;
+}
+
+/** Upgrade any older save object to the current version (pure; exported for tests).
+ *  v1 (M1): credits + stats.  v2 (M2): + parts/loadout/vendor/radio.  v3: + unlocks. */
 export function migrate(raw) {
   const s = DEFAULTS();
-  if (!raw || typeof raw !== 'object') { s.best.kessa4 = loadBest(); return s; }
-  if (raw.v === 1) {
+  const from = raw && typeof raw === 'object' ? raw.v : 0;
+  if (from === 1) {
     for (const k of ['credits', 'runs', 'cashouts', 'rigsLost', 'relaysReached']) s[k] = Number(raw[k]) || 0;
     s.totalEarned = s.credits; // v1 didn't track lifetime earnings; banked credits are the best floor
     s.migratedFrom = 1;
-  } else if (raw.v === VERSION) {
+  } else if (from === 2 || from === VERSION) {
     Object.assign(s, raw);
     s.loadout = { ...DEFAULT_LOADOUT(), ...(raw.loadout || {}) };
     s.vendor = { ...DEFAULTS().vendor, ...(raw.vendor || {}) };
     s.owned = [...new Set([...DEFAULTS().owned, ...(raw.owned || []).filter((id) => partById(id))])];
+    s.unlocked = (raw.unlocked || []).filter((id) => partById(id));
+    s.newUnlocks = raw.newUnlocks || [];
+    if (from === 2) s.migratedFrom = s.migratedFrom || 2;
   }
+  s.v = VERSION;
   // best depth lived in its own key before M2; keep the higher of both
   s.best = { ...s.best, kessa4: Math.max(s.best.kessa4 || 0, loadBest()) };
   // never leave an unowned / unknown part equipped
   for (const slot of SLOTS) if (!s.owned.includes(s.loadout[slot.id]) || partById(s.loadout[slot.id])?.slot !== slot.id) s.loadout[slot.id] = DEFAULT_LOADOUT()[slot.id];
-  if (!s.vendor.stock.length) s.vendor.stock = rollStock(s);
+  if (from !== VERSION) {
+    // pre-unlock saves: grandfather owned parts and silently open milestones already reached
+    checkUnlocks(s, false);
+    // an old stock that offered now-locked parts is re-drawn from the unlocked pool (keeps the per-slot guarantee)
+    const kept = s.vendor.stock.filter((id) => partById(id) && isUnlocked(s, partById(id)));
+    s.vendor.stock = kept.length && kept.length === s.vendor.stock.length ? kept : rollStock(s);
+  }
   return s;
 }
 
@@ -59,7 +84,7 @@ export function writeSave(save) {
 export function rollStock(save, rand = Math.random, avoid = null) {
   const out = [];
   for (const slot of SLOTS) {
-    const pool = PARTS.filter((p) => p.slot === slot.id && p.unlocked && !p.stock && !save.owned.includes(p.id));
+    const pool = PARTS.filter((p) => p.slot === slot.id && !p.stock && isUnlocked(save, p) && !save.owned.includes(p.id));
     let pick;
     for (let tries = 0; tries < 6; tries++) {
       const a = [...pool];
@@ -94,6 +119,7 @@ export function buyPart(id) {
   const s = loadSave(), p = partById(id);
   if (!p) return { ok: false, reason: 'UNKNOWN PART' };
   if (s.owned.includes(id)) return { ok: false, reason: 'ALREADY OWNED' };
+  if (!isUnlocked(s, p)) return { ok: false, reason: 'LOCKED' };
   if (!s.vendor.stock.includes(id)) return { ok: false, reason: 'NOT IN STOCK' };
   if (s.credits < p.price) return { ok: false, reason: 'NOT ENOUGH CREDITS' };
   s.credits -= p.price;
@@ -129,6 +155,7 @@ export function bankRun({ banked, reason, relays, depth = 0, planet = 'kessa4' }
   s.relaysReached += relays;
   s.deepestRelay = Math.max(s.deepestRelay || 0, relays);
   s.best[planet] = Math.max(s.best[planet] || 0, Math.floor(depth));
+  checkUnlocks(s);   // milestones first, so the new stock can include fresh unlocks
   refreshStock(s);
   return writeSave(s);
 }
@@ -141,17 +168,21 @@ export function logRadio(tag, text) {
   writeSave(s);
 }
 
-/** Test/playtest shortcuts from the URL: ?credits=5000, ?own=all|id,id, ?stock=id,id, ?wipe=1 */
+/** Clear the dock notice. */
+export function ackUnlocks() { const s = loadSave(); const ids = s.newUnlocks; s.newUnlocks = []; writeSave(s); return ids; }
+
+/** Test/playtest shortcuts from the URL: ?credits=5000, ?own=all|id,id, ?unlock=all, ?stock=id,id, ?wipe=1 */
 export function applyUrlShortcuts(search = window.location.search) {
   const q = new URLSearchParams(search);
   if (q.has('wipe')) { try { localStorage.removeItem(KEY); localStorage.removeItem('drill.bestDepth'); } catch { /* ignore */ } }
-  if (!['credits', 'own', 'stock'].some((k) => q.has(k))) return null;
+  if (!['credits', 'own', 'stock', 'unlock'].some((k) => q.has(k))) return null;
   const s = loadSave();
   if (q.has('credits')) s.credits = Math.max(0, Number(q.get('credits')) || 0);
   if (q.has('own')) {
     const ids = q.get('own') === 'all' ? PARTS.map((p) => p.id) : q.get('own').split(',').filter((id) => partById(id));
     s.owned = [...new Set([...s.owned, ...ids])];
   }
+  if (q.get('unlock') === 'all') s.unlocked = PARTS.filter((p) => p.unlock).map((p) => p.id);
   if (q.has('stock')) s.vendor.stock = q.get('stock').split(',').filter((id) => partById(id) && !partById(id).stock);
   return writeSave(s);
 }

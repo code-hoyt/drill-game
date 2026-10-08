@@ -10,6 +10,7 @@ import { FONT_KEY } from '../systems/PixelFont.js';
 import { drawBoosts } from '../data/boosts.js';
 import { RELAY_PING, relayMessage, CASHOUT_LINE, POD_LINE } from '../data/dispatch.js';
 import { bankRun, loadSave, logRadio, setRunActive } from '../systems/Save.js';
+import { ANIM } from '../systems/Settings.js';
 
 // Hold-actions per station. The HELM has none: its action area is the throttle itself.
 export const STATION_ACTIONS = { engine: ['vent'], helm: [], drill: ['repair'], tools: ['patch', 'blast'] };
@@ -129,12 +130,19 @@ export class GameScene extends Phaser.Scene {
     logRadio(`C${this.contractNo} ${reason === 'cashout' ? 'CASH-OUT' : 'POD'}`, reason === 'cashout' ? CASHOUT_LINE : POD_LINE);
     this.lastRun = { reason, depth, best: Math.max(depth, prevBest), newBest, haul, bonus, recovery, banked, credits: save.credits, relays };
     this.scene.stop('Relay');
+    // With cutscenes: a short in-run beat, then the ascent (bore -> space -> dock), and the
+    // summary over the docked rig. ?anim=0: the old summary over the run.
+    const next = () => {
+      if (!ANIM) { this.scene.launch('GameOver', this.lastRun); return; }
+      this.scene.stop('UI');
+      this.scene.start('Cutscene', { kind: 'ascent', vehicle: reason === 'cashout' ? 'rig' : 'pod', summary: this.lastRun });
+    };
     if (reason === 'cashout') {
-      this.cameras.main.fadeOut(700, 0, 0, 0);
-      this.time.delayedCall(750, () => this.scene.launch('GameOver', this.lastRun));
+      this.cameras.main.fadeOut(ANIM ? 450 : 700, 0, 0, 0);
+      this.time.delayedCall(ANIM ? 500 : 750, next);
     } else {
       this.escapePod();
-      this.time.delayedCall(1500, () => this.scene.launch('GameOver', this.lastRun));
+      this.time.delayedCall(ANIM ? 1000 : 1500, next);
     }
   }
 

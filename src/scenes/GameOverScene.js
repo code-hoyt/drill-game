@@ -46,6 +46,7 @@ export class GameOverScene extends Phaser.Scene {
   }
   // Home: the rig docks at the station; the Quartermaster has turned its stock over.
   restart() {
+    if (this.scene.isActive('Dock')) { this.scene.stop(); return; } // summary shown after docking
     this.scene.stop('UI');
     this.scene.stop('Relay');
     this.scene.stop('Game');

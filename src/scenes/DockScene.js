@@ -6,9 +6,10 @@ import { FONT_KEY } from '../systems/PixelFont.js';
 import { Button } from '../ui/Button.js';
 import { Ship } from '../systems/Ship.js';
 import { Crew } from '../systems/Crew.js';
-import { loadSave, buyPart, equipPart, reroll, rerollCost } from '../systems/Save.js';
-import { SLOTS, PARTS, partById, partsForSlot } from '../data/parts.js';
+import { loadSave, buyPart, equipPart, reroll, rerollCost, isUnlocked, ackUnlocks, progressOf } from '../systems/Save.js';
+import { SLOTS, PARTS, partById, partsForSlot, unlockText } from '../data/parts.js';
 import { CONTRACTS } from '../data/contracts.js';
+import { ANIM } from '../systems/Settings.js';
 
 const CYAN = 0x7fe0ff, GOLD = 0xffd23f, GREY = 0x9aa0b8, GREEN = 0x8affa0, RED = 0xff5a5a, DIM = 0x6a6278;
 
@@ -52,6 +53,7 @@ export class DockScene extends Phaser.Scene {
     this.pending = null;          // room/prop Holt is walking toward
     this.scene.launch('DockUI', data);
     this.ui = this.scene.get('DockUI');
+    if (data.summary) this.scene.launch('GameOver', data.summary); // end-of-run summary over the docked rig
     this.input.keyboard?.on('keydown-ONE', () => this.onRoomTap('helm'));
     this.input.keyboard?.on('keydown-TWO', () => this.onRoomTap('drill'));
     this.input.keyboard?.on('keydown-THREE', () => this.onRoomTap('engine'));
@@ -141,6 +143,7 @@ export class DockUIScene extends Phaser.Scene {
 
   create(data = {}) {
     this.dock = this.scene.get('Dock');
+    this.bannerChecked = false; this.banner = null; this.lastBanner = null;
     this.menu = null; this.menuKind = null; this.menuBtns = [];
     this.toastQ = []; this.toastT = 0;
     if (data.welcome) this.toast(data.welcome, 0x7fe0ff);
@@ -167,6 +170,8 @@ export class DockUIScene extends Phaser.Scene {
     this.stationBtn = new Button(this, 2, 305, 72, 14, 'STATION', { color: 0x2f4a6a, pressColor: 0x4a7a9a, depth: 220, onTap: () => this.dock.goProp('hatch', { x: L.HUB.cx, y: L.DECKS.bottom.floor }) });
     this.pilotText = hx(130, 308, 'HOLT ABOARD', GREEN).setOrigin(0.5, 0);
     this.refreshHud();
+    this.banner = null;
+    this.bannerT = 0;
 
     // keyboard (desktop playtest)
     this.input.keyboard?.on('keydown-H', () => this.dock.goProp('hatch', { x: L.HUB.cx, y: L.DECKS.bottom.floor }));
@@ -206,6 +211,7 @@ export class DockUIScene extends Phaser.Scene {
     else if (kind === 'station') this.buildStation();
     else if (kind === 'vendor') this.buildVendor();
     else if (kind === 'buy') this.buildBuy(arg);
+    else if (kind === 'locked') this.buildLocked();
     else if (kind === 'survey') this.buildStub('SURVEY OFFICE', 'NEW PLANET LICENCES OPEN WITH M3. THE CLERK IS ASLEEP AT HIS DESK.');
     else if (kind === 'ines') this.buildStub("INES'S WINDOW", 'SHE WAVES THROUGH THE GLASS. THE KETTLE IS ON. COME BACK AFTER THE NEXT CONTRACT.');
   }
@@ -287,7 +293,8 @@ export class DockUIScene extends Phaser.Scene {
   startContract(planet) {
     this.closeMenu();
     this.scene.stop('Dock');
-    this.scene.start('Game', { planet });
+    if (ANIM) this.scene.start('Cutscene', { kind: 'descent', planet });
+    else this.scene.start('Game', { planet });
   }
 
   // DRL / ENG / HELM slot, or one of the TLS bench slots
@@ -306,8 +313,13 @@ export class DockUIScene extends Phaser.Scene {
       this.btns.parts[p.id] = b;
       y += h + 4;
     }
-    const more = partsForSlot(slotId).filter((p) => !save.owned.includes(p.id)).length;
-    this.addT(GAME_W / 2, Math.max(y + 4, 230), more ? `${more} MORE AT THE QUARTERMASTER` : 'YOU OWN EVERY PART FOR THIS SLOT', 6, DIM, 0.5);
+    const notOwned = partsForSlot(slotId).filter((p) => !save.owned.includes(p.id));
+    const open = notOwned.filter((p) => isUnlocked(save, p)).length;
+    const lockedHere = notOwned.filter((p) => !isUnlocked(save, p));
+    let fy = Math.max(y + 4, 222);
+    if (open) { this.addT(GAME_W / 2, fy, `${open} MORE IN THE QUARTERMASTER'S ROTATION`, 6, DIM, 0.5); fy += 10; }
+    lockedHere.forEach((p) => { this.addT(GAME_W / 2, fy, `LOCKED: ${p.name} - ${unlockText(p)}`, 6, 0xc9a7ff, 0.5); fy += 10; });
+    if (!notOwned.length) this.addT(GAME_W / 2, fy, 'YOU OWN EVERY PART FOR THIS SLOT', 6, DIM, 0.5);
     if (slot.room === 'tools') this.btns.back = this.addBtn(10, 276, 160, 16, 'BACK TO THE BENCH', 0x3a3348, () => this.openMenu('tools'));
     else if (slot.id === 'helm') this.btns.back = this.addBtn(10, 276, 160, 16, 'BACK TO THE HELM', 0x3a3348, () => this.openMenu('helm'));
   }
@@ -348,15 +360,18 @@ export class DockUIScene extends Phaser.Scene {
       ['RELAYS REACHED', `${s.relaysReached}`],
       ['DEEPEST RELAY', `${s.deepestRelay || 0}`],
       ['PARTS OWNED', `${s.owned.length}/${PARTS.length}`],
+      ['PARTS UNLOCKED', `${PARTS.filter((p) => isUnlocked(s, p)).length}/${PARTS.length}`],
     ];
     rows.forEach(([a, b], i) => {
       this.addT(14, 46 + i * 14, a, 6, GREY);
       this.addT(166, 46 + i * 14, b, 6, GOLD, 1);
     });
-    this.addT(14, 182, 'LOADOUT', 6, CYAN);
+    const next = this.nextUnlock(s);
+    this.addT(14, 186, next ? `NEXT UNLOCK: ${next}` : 'ALL PARTS UNLOCKED', 6, 0xc9a7ff);
+    this.addT(14, 200, 'LOADOUT', 6, CYAN);
     SLOTS.forEach((sl, i) => {
-      this.addT(14, 194 + i * 10, sl.short, 6, DIM);
-      this.addT(34, 194 + i * 10, partById(s.loadout[sl.id]).name, 6, 0xffffff);
+      this.addT(14, 212 + i * 10, sl.short, 6, DIM);
+      this.addT(34, 212 + i * 10, partById(s.loadout[sl.id]).name, 6, 0xffffff);
     });
   }
 
@@ -401,8 +416,10 @@ export class DockUIScene extends Phaser.Scene {
     this.addT(12, 28, `${s.credits} CR`, 6, GOLD);
     this.addT(168, 28, 'NEW STOCK EVERY CONTRACT', 6, DIM, 1);
     const cost = rerollCost(s);
-    this.btns.reroll = this.addBtn(10, 38, 96, 16, `REROLL: ${cost} CR`, s.credits >= cost ? 0x5a4a2a : 0x3a3348, () => this.doReroll());
-    this.btns.back = this.addBtn(110, 38, 60, 16, 'BACK', 0x3a3348, () => this.openMenu('station'));
+    const locked = PARTS.filter((p) => !isUnlocked(s, p));
+    this.btns.reroll = this.addBtn(10, 38, 74, 16, `REROLL: ${cost}`, s.credits >= cost ? 0x5a4a2a : 0x3a3348, () => this.doReroll());
+    this.btns.locked = this.addBtn(87, 38, 46, 16, `LOCKED ${locked.length}`, 0x3a2a4a, () => this.openMenu('locked'));
+    this.btns.back = this.addBtn(136, 38, 34, 16, 'BACK', 0x3a3348, () => this.openMenu('station'));
     let y = 60;
     this.btns.offers = {};
     for (const slot of SLOTS) {
@@ -416,7 +433,40 @@ export class DockUIScene extends Phaser.Scene {
       }
     }
     if (y === 60) this.addT(GAME_W / 2, 90, 'SOLD OUT. RUN A CONTRACT.', 6, DIM, 0.5);
-    this.addT(GAME_W / 2, Math.max(y + 4, 284), 'TAP A PART FOR UPSIDE + DOWNSIDE', 6, DIM, 0.5);
+    const next = this.nextUnlock(s);
+    if (next && y < 262) this.addT(GAME_W / 2, y + 6, `NEXT UNLOCK: ${next}`, 6, 0xc9a7ff, 0.5);
+    this.addT(GAME_W / 2, Math.max(y + 18, 284), 'TAP A PART FOR UPSIDE + DOWNSIDE', 6, DIM, 0.5);
+  }
+
+  /** Text for the closest milestone still locked, e.g. 'REACH 1500M (2 PARTS)'. */
+  nextUnlock(s) {
+    const locked = PARTS.filter((p) => !isUnlocked(s, p));
+    if (!locked.length) return null;
+    const prog = progressOf(s);
+    const score = (p) => p.unlock.depth ? (p.unlock.depth - prog.best) / 500 : (p.unlock.relays - prog.relays);
+    const best = locked.slice().sort((a, b) => score(a) - score(b))[0];
+    const same = locked.filter((p) => unlockText(p) === unlockText(best)).length;
+    return `${unlockText(best)} (${same} PART${same > 1 ? 'S' : ''})`;
+  }
+
+  // Locked parts list (from the Quartermaster)
+  buildLocked() {
+    this.buildPanel('LOCKED PARTS');
+    const s = loadSave();
+    this.addT(12, 30, 'UNLOCK BY BEST DEPTH OR TOTAL RELAYS.', 6, GREY);
+    this.addT(12, 39, 'THEN THEY JOIN THE ROTATING STOCK.', 6, GREY);
+    const locked = PARTS.filter((p) => !isUnlocked(s, p))
+      .sort((a, b) => (a.unlock.depth || a.unlock.relays * 1000) - (b.unlock.depth || b.unlock.relays * 1000));
+    this.lockedRows = locked.map((p) => p.id);
+    locked.forEach((p, i) => {
+      const y = 54 + i * 17;
+      this.menu.push(this.add.rectangle(10, y, 160, 15, 0x15121c, 1).setOrigin(0).setDepth(302));
+      this.addT(15, y + 5, SLOTS.find((x) => x.id === p.slot).short, 6, DIM);
+      this.addT(33, y + 5, p.name, 6, 0x8a8298);
+      this.addT(165, y + 5, unlockText(p), 6, 0xc9a7ff, 1);
+    });
+    if (!locked.length) this.addT(GAME_W / 2, 90, 'EVERYTHING IS UNLOCKED.', 6, GREEN, 0.5);
+    this.btns.back = this.addBtn(10, 276, 160, 16, 'BACK TO STOCK', 0x3a3348, () => this.openMenu('vendor'));
   }
 
   buildBuy(id) {
@@ -459,7 +509,29 @@ export class DockUIScene extends Phaser.Scene {
     this.openMenu('vendor');
   }
 
+  /** 'NEW PARTS AVAILABLE' notice, shown once the end-of-run summary is closed. */
+  showUnlockBanner() {
+    const ids = ackUnlocks();
+    if (!ids.length) return;
+    const names = ids.map((id) => partById(id).name);
+    const lines = [];
+    let cur = '';
+    for (const n of names) { if ((cur ? cur + ', ' + n : n).length > 38) { lines.push(cur); cur = n; } else cur = cur ? cur + ', ' + n : n; }
+    lines.push(cur);
+    const h = 18 + lines.length * 8;
+    const objs = [this.add.rectangle(6, 26, 168, h, 0x1a1028, 0.96).setOrigin(0).setStrokeStyle(1, 0xc9a7ff).setDepth(250)];
+    objs.push(this.add.bitmapText(GAME_W / 2, 30, FONT_KEY, 'NEW PARTS AVAILABLE', 6).setOrigin(0.5, 0).setTint(0xc9a7ff).setDepth(251));
+    lines.forEach((l, i) => objs.push(this.add.bitmapText(GAME_W / 2, 40 + i * 8, FONT_KEY, l, 6).setOrigin(0.5, 0).setTint(0xffffff).setDepth(251)));
+    const zone = this.add.zone(6, 26, 168, h).setOrigin(0).setInteractive().setDepth(252).on('pointerdown', () => this.hideBanner());
+    objs.push(zone);
+    this.banner = { objs, ids, text: names.join(', ') };
+    this.bannerT = 4000;
+  }
+  hideBanner() { if (!this.banner) return; this.banner.objs.forEach((o) => o.destroy()); this.lastBanner = this.banner; this.banner = null; }
+
   update(time, delta) {
+    if (!this.banner && !this.bannerChecked && !this.scene.isActive('GameOver')) { this.bannerChecked = true; this.showUnlockBanner(); }
+    if (this.banner && (this.bannerT -= delta) <= 0) this.hideBanner();
     if (this.toastT > 0) this.toastT -= delta;
     else if (this.toastQ.length) {
       const t = this.toastQ.shift();

@@ -5,6 +5,7 @@ import { GameScene } from './scenes/GameScene.js';
 import { UIScene } from './scenes/UIScene.js';
 import { RelayScene } from './scenes/RelayScene.js';
 import { DockScene, DockUIScene } from './scenes/DockScene.js';
+import { CutsceneScene } from './scenes/CutsceneScene.js';
 import { GameOverScene } from './scenes/GameOverScene.js';
 
 const game = new Phaser.Game({
@@ -22,7 +23,7 @@ const game = new Phaser.Game({
   input: { activePointers: 3 },
   audio: { noAudio: true }, // no sound until M5; also avoids the autoplay-policy warning
   // Render order = array order (UI above Game, Relay break above UI, GameOver on top).
-  scene: [BootScene, TitleScene, DockScene, DockUIScene, GameScene, UIScene, RelayScene, GameOverScene],
+  scene: [BootScene, TitleScene, DockScene, DockUIScene, GameScene, UIScene, RelayScene, CutsceneScene, GameOverScene],
 });
 
 // Handy for debugging / automated tests.
