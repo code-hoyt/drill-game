@@ -51,15 +51,20 @@ const D = (fn) => page.evaluate(`(() => { const d = __drill.scene.getScene('Dock
 const tapBtn = async (expr) => { const b = await D(`(() => { const b = ${expr}; return b && { x: b.x + b.w / 2, y: b.y + b.h / 2 }; })()`); if (!b) throw new Error('no button ' + expr); await tap(b.x, b.y); await wait(150); };
 const dockMenu = () => D('u.menuKind');
 const PARTNAMES = Object.fromEntries((await page.evaluate(async () => (await import(new URL('src/data/parts.js', location.href).href)).PARTS.map((p) => [p.id, p.name]))));
+// concourse spots (base coords; the Dock camera is zoom 1). Tap low on the column, over the prop.
+const SPOT = { board: [18, 200], ines: [54, 200], airlock: [90, 200], qm: [126, 200], bunk: [162, 200] };
 const startContract = async () => {
-  await tap(...insideW(66, 255)); // HELM room
-  await page.waitForFunction(() => __drill.scene.getScene('DockUI').menuKind === 'helm', null, { timeout: 4000 });
-  await tapBtn('u.btns.contract_kessa4'); await wait(700);
+  await tap(...SPOT.board);         // Holt walks to the contract board, it opens on arrival
+  await page.waitForFunction(() => __drill.scene.getScene('DockUI').menuKind === 'board', null, { timeout: 4000 });
+  await tapBtn('u.btns.contract_kessa4');
+  // ?anim=0: straight into the run. Animations on: Holt walks to the airlock, rides up, then the descent.
+  await page.waitForFunction(() => __drill.scene.isActive('Game') || __drill.scene.isActive('Cutscene'), null, { timeout: 5000 }).catch(() => {});
+  await wait(150);
 };
 await tap(90, 160); await wait(800);
-check('tap-to-start boards the docked rig (home base)', await page.evaluate(() => __drill.scene.isActive('Dock') && __drill.scene.isActive('DockUI') && !__drill.scene.isActive('Game')));
+check('tap-to-start docks at the station concourse (home base)', await page.evaluate(() => __drill.scene.isActive('Dock') && __drill.scene.isActive('DockUI') && !__drill.scene.isActive('Game')));
 await startContract();
-check('game + UI scenes running after HELM -> ACCEPT CONTRACT', await page.evaluate(() => __drill.scene.isActive('Game') && __drill.scene.isActive('UI')));
+check('game + UI scenes running after CONTRACT BOARD -> ACCEPT CONTRACT', await page.evaluate(() => __drill.scene.isActive('Game') && __drill.scene.isActive('UI')));
 check('run starts with crew at the HELM (piloted)', await G('g.crew.station === "helm" && g.piloted'));
 ROOMS = await G('Object.fromEntries(g.ship.rooms.map(r => [r.id, { cx: r.cx, ceil: r.ceil, floorY: r.floorY }]))');
 
@@ -254,7 +259,7 @@ check('hull loss banks 1/3 of the haul (floor)', lostRun.banked === Math.floor(l
 check('escape pod launched (drill gone, pod sprite)', await G('!g.ship.drill.visible && g.children.list.some(c => c.texture && c.texture.key === "pod")'));
 await page.screenshot({ path: `${OUT}/04-game-over.png` });
 await tap(90, 249); await wait(1000);
-check('end screen -> BACK TO THE RIG docks at the station', await page.evaluate(() => __drill.scene.isActive('Dock') && !__drill.scene.isActive('Game') && !__drill.scene.isActive('UI')));
+check('end screen -> TO THE CONCOURSE docks at the station', await page.evaluate(() => __drill.scene.isActive('Dock') && !__drill.scene.isActive('Game') && !__drill.scene.isActive('UI')));
 await startContract();
 const after = await G('({ depth: s.depth, hull: s.hull, haul: s.haul, over: g.over, ui: __drill.scene.isActive("UI"), go: __drill.scene.isActive("GameOver"), helm: g.crew.station, piloted: g.piloted })');
 check('next contract: fresh run, crew back at helm, haul reset', !after.over && after.hull === 100 && after.haul < 5 && Math.abs(after.haul - after.depth) < 0.01 && after.depth < 5 && after.ui && !after.go && after.helm === 'helm' && after.piloted, JSON.stringify(after));
@@ -349,7 +354,7 @@ await page.screenshot({ path: `${OUT}/07-cash-out.png` });
 // ---- M2: back to the docked rig -----------------------------------------------------------
 const stockBefore = co.save.vendor.stock.join();
 await tap(90, 249); await wait(1000);
-check('full loop: cash out -> end screen -> docked rig', await page.evaluate(() => __drill.scene.isActive('Dock') && __drill.scene.isActive('DockUI') && !__drill.scene.isActive('Game') && !__drill.scene.isActive('GameOver')));
+check('full loop: cash out -> end screen -> concourse', await page.evaluate(() => __drill.scene.isActive('Dock') && __drill.scene.isActive('DockUI') && !__drill.scene.isActive('Game') && !__drill.scene.isActive('GameOver')));
 const sv1 = await page.evaluate(() => JSON.parse(localStorage.getItem('drill.save')));
 check('vendor stock refreshed after each contract (refresh count = runs)', sv1.vendor.refreshes === sv1.runs && sv1.vendor.rerolls === 0, `refreshes=${sv1.vendor.refreshes} runs=${sv1.runs}`);
 const TIER2000 = ['harness', 'lightframe', 'grinder', 'governor', 'overdrive', 'quickcap', 'plating', 'bypass'];
@@ -357,24 +362,49 @@ check('reaching 2000 m unlocks the 500-2000 m parts (and nothing deeper)', TIER2
 await wait(400);
 const banner = await D('u.banner ? u.banner.text : (u.lastBanner ? u.lastBanner.text : null)');
 check("dock shows 'NEW PARTS AVAILABLE' once, listing the new parts", banner && TIER2000.every((id) => banner.includes(PARTNAMES[id])) && (await page.evaluate(() => JSON.parse(localStorage.getItem('drill.save')).newUnlocks.length)) === 0, banner);
-check('Ines radio log kept for HELM replay', sv1.radio.some((r) => r.tag.includes('RELAY 1') && r.text.startsWith('RELAY ONE')) && sv1.radio.some((r) => r.tag.includes('CASH-OUT')), JSON.stringify(sv1.radio.map((r) => r.tag)));
-// navigation: Holt walks to each room/prop, the right menu opens on arrival
-const navTo = async (pt, kind, ms = 4000) => { await tap(...pt); await page.waitForFunction((k) => __drill.scene.getScene('DockUI').menuKind === k, kind, { timeout: ms }).catch(() => {}); return dockMenu(); };
+check('Ines radio log kept for replay', sv1.radio.some((r) => r.tag.includes('RELAY 1') && r.text.startsWith('RELAY ONE')) && sv1.radio.some((r) => r.tag.includes('CASH-OUT')), JSON.stringify(sv1.radio.map((r) => r.tag)));
+// ---- concourse: Holt walks to each spot (<= ~1 s), the right panel opens on arrival -------------
+const navTo = async (spot, kind, ms = 4000) => { await tap(...SPOT[spot]); await page.waitForFunction((k) => __drill.scene.getScene('DockUI').menuKind === k, kind, { timeout: ms }).catch(() => {}); return dockMenu(); };
 const closeMenu = async () => { await tapBtn('u.btns.close'); };
-check('tap ENG -> Holt walks there -> engine slot', (await navTo(insideW(56, 280), 'slot')) === 'slot' && (await D('u.menuArg')) === 'engine' && (await D('d.crew.station')) === 'engine');
+const lastWalk = () => D('d.walkLog.at(-1) || null');
+check('concourse: 5 labelled spots, Holt on the floor by the airlock, rig hanging drill-up in the bay above',
+  (await D('Object.keys(d.spots).join()')) === 'board,ines,airlock,qm,bunk' && (await D('d.at === "airlock" && d.holt.visible && d.holt.y === 238 && d.rig.y < 134 && d.rig.scaleY > 0')));
+const walks = [];
+for (const [spot, kind] of [['board', 'board'], ['ines', 'ines'], ['qm', 'vendor'], ['bunk', 'stats'], ['airlock', 'bay']]) {
+  const k = await navTo(spot, kind); const w = await lastWalk(); walks.push(w);
+  check(`tap ${spot.toUpperCase()} -> Holt walks there -> ${kind} panel opens (walk ${w && w.ms} ms)`, k === kind && w.to === spot && (await D(`d.at === "${spot}"`)) && w.ms <= 1050, JSON.stringify(w));
+  if (spot === 'board') { check('contract board lists the data-driven contracts', await D('!!u.btns.contract_kessa4 && u.menu.some(t => t.text === "KESSA-4")')); await page.screenshot({ path: `${OUT}/19-contract-board.png` }); }
+  if (spot === 'ines') { check("Ines's window: latest message + radio replay + story stub", await D('u.menu.some(t => t.text === "LATEST") && u.menu.some(t => t.text && t.text.startsWith("WINCHING YOU UP")) && u.menu.some(t => t.text && t.text.startsWith("RELAY ONE IS LIVE")) && u.menu.some(t => t.text === "(STORY: LATER MILESTONE)")')); await page.screenshot({ path: `${OUT}/20-ines-window.png` }); }
+  if (spot === 'bunk') {
+    await page.screenshot({ path: `${OUT}/11-stats.png` });
+    check("bunk: Holt's log shows runs, relays, credits earned, best", await D(`u.menu.some(t => t.text === "${sv1.totalEarned} CR") && u.menu.some(t => t.text === "2000M") && u.menu.some(t => t.text === "RELAYS REACHED")`));
+    await tapBtn('u.btns.codex');
+    check('bunk: CODEX SHELF opens the codex stub, BACK returns to the log', (await dockMenu()) === 'codex');
+    await page.screenshot({ path: `${OUT}/22-codex.png` });
+    await tapBtn('u.btns.back'); check('codex back -> log', (await dockMenu()) === 'stats');
+  }
+  if (spot === 'airlock') await page.screenshot({ path: `${OUT}/21-rig-bay.png` });
+  if (spot !== 'qm') await closeMenu(); else { await page.screenshot({ path: `${OUT}/09b-quartermaster.png` }); await tapBtn('u.btns.back'); }
+}
+// the longest walk: contract board (far left) <-> bunk (far right)
+await navTo('board', 'board'); await closeMenu();
+await navTo('bunk', 'stats'); const longW = await lastWalk(); await closeMenu();
+check('longest walk (board -> bunk, 144 px) takes <= ~1 s', longW.from === 'board' && longW.to === 'bunk' && longW.ms <= 1050, JSON.stringify(longW));
+console.log('WALKS', JSON.stringify([...walks, longW]));
+check('tap the rig in the bay -> Holt walks to the airlock -> rig bay', await (async () => { await tap(90, 90); await page.waitForFunction(() => __drill.scene.getScene('DockUI').menuKind === 'bay', null, { timeout: 3000 }).catch(() => {}); return (await dockMenu()) === 'bay' && (await D('d.at')) === 'airlock'; })());
+// rig bay hotspots: each part location opens its slot
+const HOTS = await D('Object.fromEntries(Object.entries(u.hot).map(([k, h]) => [k, h]))');
+check('rig bay: 6 hotspots (drill, engine, hull, tools, helm, kit), each at least 32x24 base px (thumb-sized)', Object.keys(HOTS).sort().join() === 'drill,engine,helm,hull,kit,tools' && Object.values(HOTS).every((h) => h.w >= 32 && h.h >= 24), JSON.stringify(HOTS));
+check('rig bay shows the equipped part names next to the hotspots', await D('u.menu.some(t => t.text === "SURVEY BIT") && u.menu.some(t => t.text === "K-9 ENGINE") && u.menu.some(t => t.text === "WORK BOOTS") && u.menu.some(t => t.text === "BASIC CONSOLE")'));
+for (const slot of ['drill', 'helm', 'hull', 'engine', 'tools', 'kit']) {
+  const h = HOTS[slot];
+  await tap(h.x + h.w / 2, h.y + h.h / 2); await wait(200);
+  check(`rig bay: tap the ${slot} location -> ${slot} swap list`, (await dockMenu()) === 'slot' && (await D('u.menuArg')) === slot);
+  await tapBtn('u.btns.back');
+}
+check('slot list BACK returns to the rig bay', (await dockMenu()) === 'bay');
 await closeMenu();
-check('tap the cot -> stats (Holt\'s log)', (await navTo(insideW(74.5, 291), 'stats')) === 'stats');
-await page.screenshot({ path: `${OUT}/11-stats.png` });
-check('stats show runs, relays, credits earned, best', await D(`u.menu.some(t => t.text === "${sv1.totalEarned} CR") && u.menu.some(t => t.text === "2000M") && u.menu.some(t => t.text === "RELAYS REACHED")`));
-await closeMenu();
-check('tap the DRL shelf -> codex stub', (await navTo(insideW(105, 253), 'codex')) === 'codex' && (await D('d.crew.station')) === 'codex');
-await closeMenu();
-check('tap TLS -> tools bench (Tools / Hull / Kit slots)', (await navTo(insideW(116, 280), 'tools')) === 'tools' && (await D('!!(u.btns.slot_tools && u.btns.slot_hull && u.btns.slot_kit)')));
-await closeMenu();
-check('tap HELM -> contract board + radio replay + helm slot', (await navTo(insideW(66, 255), 'helm')) === 'helm' && (await D('!!(u.btns.contract_kessa4 && u.btns.slot_helm) && u.menu.some(t => t.text && t.text.startsWith("RELAY ONE IS LIVE"))')));
-await closeMenu();
-check('tap the ladder hatch -> station concourse', (await navTo(insideW(90, 291), 'station')) === 'station' && (await D('d.crew.station')) === 'hatch');
-await tapBtn('u.btns.vendor');
+await navTo('qm', 'vendor');
 const vend = await D('({ kind: u.menuKind, offers: Object.keys(u.btns.offers) })');
 const PARTS = await page.evaluate(async () => (await import(new URL('src/data/parts.js', location.href).href)).PARTS.map((p) => ({ id: p.id, slot: p.slot, stock: !!p.stock, price: p.price, unlock: p.unlock })));
 const P_ = Object.fromEntries(PARTS.map((p) => [p.id, p]));
@@ -389,14 +419,16 @@ check('stock is randomized and never draws a locked part (200 draws)', draws.dis
 await tapBtn('u.btns.locked');
 check('Quartermaster LOCKED list shows what is left and how to unlock it', (await D('u.menuKind')) === 'locked' && (await D('u.lockedRows.slice().sort().join()')) === 'heavycharge,linkage,toolbelt,widecut'
   && (await D('u.menu.some(t => t.text === "REACH 3000M") && u.menu.some(t => t.text === "3 RELAYS (TOTAL)")')));
-await tapBtn('u.btns.back');
+await tapBtn('u.btns.back');   // locked -> stock
+await tapBtn('u.btns.back');   // stock -> concourse
+check('LOCKED back -> stock, Quartermaster BACK -> concourse', (await dockMenu()) === null);
 
 // ---- shortcuts: ?credits=5000 + forced stock, then reroll / buy / equip ------------------
 const STOCK = 'widecut,diamond,overdrive,coldloop,plating,ablative,heavycharge,patchfoam,scanner,governor,lightboots,harness';
 await page.goto(BASE + '?anim=0&unlock=all&credits=5000&stock=' + STOCK); await wait(1500);
 await tap(90, 160); await wait(800);
 check('?credits=5000 shortcut', (await D('JSON.parse(localStorage.getItem("drill.save")).credits')) === 5000 && (await D('u.creditText.text')) === '5000 CR');
-await navTo(insideW(90, 291), 'station'); await tapBtn('u.btns.vendor');
+await navTo('qm', 'vendor');
 check('?stock= shortcut sets the offers', (await D('Object.keys(u.btns.offers).sort().join()')) === STOCK.split(',').sort().join());
 await page.screenshot({ path: `${OUT}/09-vendor.png` });
 await tapBtn('u.btns.reroll');
@@ -404,7 +436,7 @@ const rr = await page.evaluate(() => JSON.parse(localStorage.getItem('drill.save
 check('reroll costs 100, next reroll 200, stock changes', rr.credits === 4900 && rr.vendor.rerolls === 1 && rr.vendor.stock.join() !== STOCK && (await D('u.btns.reroll.text.text')) === 'REROLL: 200', `credits=${rr.credits} next=${await D('u.btns.reroll.text.text')}`);
 // put the known stock back for deterministic buys
 await page.evaluate((st) => { const s = JSON.parse(localStorage.getItem('drill.save')); s.vendor.stock = st.split(','); localStorage.setItem('drill.save', JSON.stringify(s)); }, STOCK);
-await tapBtn('u.btns.back'); await tapBtn('u.btns.vendor');
+await tapBtn('u.btns.back'); await navTo('qm', 'vendor');
 // buy + equip LIGHT BOOTS in one tap from its detail card
 await tapBtn('u.btns.offers.lightboots');
 check('buy screen shows the upside AND downside before buying', (await D('u.menuKind')) === 'buy' && (await D('u.menu.some(t => t.text === "UPSIDE") && u.menu.some(t => t.text === "DOWNSIDE") && u.menu.some(t => t.text === "WALK SPEED +25%") && u.menu.some(t => t.text === "CLIMB SPEED -20%")')));
@@ -419,19 +451,23 @@ sv = await page.evaluate(() => JSON.parse(localStorage.getItem('drill.save')));
 check('BUY ONLY: owned but not equipped', sv.owned.includes('plating') && sv.owned.includes('widecut') && sv.loadout.hull === 'stockhull' && sv.loadout.drill === 'stockbit' && sv.credits === 4550 - 800 - 900, JSON.stringify({ c: sv.credits, l: sv.loadout }));
 const notStock = await page.evaluate(async () => (await import(new URL('src/systems/Save.js', location.href).href)).buyPart('bypass'));
 check('cannot buy a part that is not in stock', !notStock.ok && notStock.reason === 'NOT IN STOCK');
-await tapBtn('u.btns.back'); await tapBtn('u.btns.back'); // vendor -> station -> rig
-check('back to the rig closes the concourse', (await dockMenu()) === null);
-// TLS bench -> HULL slot -> equip HEAVY PLATING
-await navTo(insideW(116, 280), 'tools'); await tapBtn('u.btns.slot_hull');
+await tapBtn('u.btns.back'); // vendor -> concourse
+check('BACK closes the Quartermaster', (await dockMenu()) === null);
+// rig bay -> tap the hull plating -> equip HEAVY PLATING
+const tapHot = async (slot) => { const h = await D(`u.hot.${slot}`); await tap(h.x + h.w / 2, h.y + h.h / 2); await wait(200); };
+await navTo('airlock', 'bay'); await tapHot('hull');
 check('part swap screen lists owned hull parts with up/downsides', (await D('u.menuArg')) === 'hull' && (await D('!!(u.btns.parts.stockhull && u.btns.parts.plating) && u.menu.some(t => t.text === "+ +40 MAX HULL") && u.menu.some(t => t.text === "- ACCEL + BRAKING -35%")')));
 await tapBtn('u.btns.parts.plating');
 await page.screenshot({ path: `${OUT}/10-part-swap.png` });
 check('tap a part card -> equipped', (await page.evaluate(() => JSON.parse(localStorage.getItem('drill.save')).loadout.hull)) === 'plating' && (await D('u.menu.some(t => t.text === "EQUIPPED")')));
-await closeMenu();
-await navTo(insideW(116, 255), 'slot'); await tapBtn('u.btns.parts.widecut');
-check('DRL -> drill head swapped to WIDE-CUT', (await page.evaluate(() => JSON.parse(localStorage.getItem('drill.save')).loadout.drill)) === 'widecut');
-await closeMenu();
-await page.screenshot({ path: `${OUT}/08-docked-base.png` });
+await tapBtn('u.btns.back');
+check('back in the rig bay: the hull tag now reads HEAVY PLATING', (await dockMenu()) === 'bay' && (await D('u.hot.hull.part')) === 'plating' && (await D('u.menu.some(t => t.text === "HEAVY PLATING")')));
+await tapHot('drill'); await tapBtn('u.btns.parts.widecut');
+check('tap the drill nose -> drill head swapped to WIDE-CUT', (await page.evaluate(() => JSON.parse(localStorage.getItem('drill.save')).loadout.drill)) === 'widecut');
+await tapBtn('u.btns.back');
+await page.screenshot({ path: `${OUT}/21-rig-bay.png` });
+await closeMenu(); await wait(300);
+await page.screenshot({ path: `${OUT}/08-concourse.png` });
 await page.reload(); await wait(1500); await tap(90, 160); await wait(800);
 sv = await page.evaluate(() => JSON.parse(localStorage.getItem('drill.save')));
 check('owned parts + loadout persist across reloads', sv.loadout.kit === 'lightboots' && sv.loadout.hull === 'plating' && sv.loadout.drill === 'widecut' && sv.owned.length === 9);
@@ -486,7 +522,15 @@ check('grandfathered part can still be swapped in and out', gfEquip);
 
 // ---- transition cutscenes (animations on) -----------------------------------------------------
 const animLog = () => page.evaluate(() => window.__drillAnims || []);
-const ANIM_OK = (ms) => ms >= 4900 && ms <= 5900;   // ~5.2 s (tolerance for frame timing on slow CI)
+// frames for Cletus: freeze a scene the moment a condition holds, screenshot, resume
+const freezeWhen = async (cond, file, key = 'Cutscene') => {
+  // pause in the same frame the condition becomes true (a separate evaluate can be ~100 ms late)
+  await page.waitForFunction(({ c, k }) => { if ((new Function('return (' + c + ')()'))()) { __drill.scene.pause(k); return true; } return false; },
+    { c: cond.toString(), k: key }, { timeout: 8000, polling: 'raf' }).catch(() => page.evaluate((k) => __drill.scene.pause(k), key));
+  await wait(120); await page.screenshot({ path: `${OUT}/${file}` });
+  await page.evaluate((k) => __drill.scene.resume(k), key);
+};
+const ANIM_OK = (ms) => ms >= 4300 && ms <= 5300;   // cutscenes are 4.6 s (+ the concourse beat); tolerance for slow CI
 await page.goto(BASE + '?wipe=1'); await wait(1500);
 await tap(90, 160); await wait(800);
 await D('(u.openMenu("locked"), true)'); await wait(200);
@@ -499,14 +543,15 @@ check('fresh vendor stock: 6 offers, one per slot, all starters', fresh.vendor.s
 const camState = () => page.evaluate(() => { const c = __drill.scene.getScene('Cutscene'); const m = c.cameras.main;
   return { active: __drill.scene.isActive('Cutscene'), rot: m.rotation, zoom: m.zoom, uiRot: c.uiCam ? c.uiCam.rotation : null, surface: c.surface && c.surface.visible }; });
 await startContract();
-check('ACCEPT CONTRACT plays the descent cutscene', await page.evaluate(() => __drill.scene.isActive('Cutscene') && __drill.scene.getScene('Cutscene').kind === 'descent' && !__drill.scene.isActive('Game')));
+check('ACCEPT CONTRACT: Holt walks to the airlock and rides the lift up, then the descent plays', await page.evaluate(() => __drill.scene.isActive('Cutscene') && __drill.scene.getScene('Cutscene').kind === 'descent' && !__drill.scene.isActive('Game') && !__drill.scene.isActive('Dock')));
 // the bite turn: sample the camera while the rig sinks in
 const turnSeen = await page.evaluate(() => new Promise((res) => { let maxR = 0, uiMax = 0, zMax = 0; const c = __drill.scene.getScene('Cutscene');
   const tick = () => { if (!__drill.scene.isActive('Cutscene')) return res({ maxR, uiMax, zMax }); const m = c.cameras.main;
     if (c.surface.visible) { maxR = Math.max(maxR, m.rotation); zMax = Math.max(zMax, m.zoom); } uiMax = Math.max(uiMax, Math.abs(c.uiCam.rotation)); requestAnimationFrame(tick); }; tick(); }));
 await page.waitForFunction(() => __drill.scene.isActive('Game'), null, { timeout: 8000 }).catch(() => {});
 let al = (await animLog()).at(-1);
-check('descent ends in the run in ~5.2 s, not skipped', await page.evaluate(() => __drill.scene.isActive('Game') && __drill.scene.isActive('UI') && !__drill.scene.isActive('Cutscene')) && al.kind === 'descent' && !al.skipped && ANIM_OK(al.ms), JSON.stringify(al));
+check('boarding beat (board -> airlock walk + lift) took <= ~1.2 s', al.boardMs > 500 && al.boardMs <= 1300, `boardMs=${al.boardMs}`);
+check('descent ends in the run in ~4.6 s, not skipped', await page.evaluate(() => __drill.scene.isActive('Game') && __drill.scene.isActive('UI') && !__drill.scene.isActive('Cutscene')) && al.kind === 'descent' && !al.skipped && ANIM_OK(al.ms), JSON.stringify(al));
 check('descent: camera turns 180 deg at the surface (drill down -> run drill up) with a gentle zoom; UI camera never turns', turnSeen.maxR > 3.1 && turnSeen.zMax > 1.05 && turnSeen.zMax < 1.3 && turnSeen.uiMax === 0, JSON.stringify(turnSeen));
 check('run HUD/camera are not left rotated', await G('g.cameras.main.rotation === 0 && ui.cameras.main.rotation === 0'));
 await wait(300);
@@ -518,18 +563,23 @@ await page.waitForFunction(() => __drill.scene.isActive('Cutscene'), null, { tim
 const startCam = await camState();
 check('cash out -> ascent cutscene with the rig, opening on the run\'s drill-up view (camera at 180 deg)', await page.evaluate(() => __drill.scene.getScene('Cutscene').kind === 'ascent' && __drill.scene.getScene('Cutscene').vehicle === 'rig' && !__drill.scene.isActive('Game'))
   && startCam.surface && Math.abs(startCam.rot - Math.PI) < 0.35, JSON.stringify(startCam));
+// (untimed beat after the cutscene: Holt rides the airlock lift down; grab the frame)
+await freezeWhen(() => __drill.scene.isActive('Dock') && __drill.scene.getScene('Dock').lifting && __drill.scene.getScene('Dock').holt.y > 190 && __drill.scene.getScene('Dock').holt.y < 228, '24-holt-steps-out.png', 'Dock');
 await page.waitForFunction(() => __drill.scene.isActive('GameOver'), null, { timeout: 8000 }).catch(() => {});
 al = (await animLog()).at(-1);
-check('ascent ends docked with the summary on top in ~5.2 s', await page.evaluate(() => __drill.scene.isActive('Dock') && __drill.scene.isActive('GameOver') && !__drill.scene.isActive('Cutscene') && __drill.scene.getScene('GameOver').scene.settings.data.reason === 'cashout') && al.kind === 'ascent' && !al.skipped && ANIM_OK(al.ms), JSON.stringify(al));
+check('ascent ends on the concourse: Holt rode the lift down, summary on top, cutscene ~4.6 s', await page.evaluate(() => __drill.scene.isActive('Dock') && __drill.scene.isActive('GameOver') && !__drill.scene.isActive('Cutscene') && __drill.scene.getScene('GameOver').scene.settings.data.reason === 'cashout') && al.kind === 'ascent' && !al.skipped && ANIM_OK(al.ms)
+  && (await D('d.holt.visible && d.holt.y === 238 && !d.lifting && d.at === "airlock"')), JSON.stringify(al));
 check('dock camera is not rotated', await D('d.cameras.main.rotation === 0 && u.cameras.main.rotation === 0'));
+check('no NEW PARTS banner while Holt steps out or the summary is up', (await D('!u.banner && !u.lastBanner')));
 await tap(90, 249); await wait(400);
-check('summary -> BACK TO THE RIG reveals the docked base', await page.evaluate(() => __drill.scene.isActive('Dock') && __drill.scene.isActive('DockUI') && !__drill.scene.isActive('GameOver')));
+check('NEW PARTS banner appears once the summary is closed, and the toast sits below it', await D('!!u.banner && u.banner.text.includes("GRINDER HEAD") && (!u.toastText.visible || u.toastText.y > u.banner.bottom)'));
+check('summary -> TO THE CONCOURSE reveals the concourse', await page.evaluate(() => __drill.scene.isActive('Dock') && __drill.scene.isActive('DockUI') && !__drill.scene.isActive('GameOver')));
 // tap to skip: ignored in the 0.4 s grace window, works after it
 const nAnims = (await animLog()).length;
-await tap(...insideW(66, 255));
-await page.waitForFunction(() => __drill.scene.getScene('DockUI').menuKind === 'helm', null, { timeout: 4000 });
+await tap(...SPOT.board);
+await page.waitForFunction(() => __drill.scene.getScene('DockUI').menuKind === 'board', null, { timeout: 4000 });
 await tapBtn('u.btns.contract_kessa4');
-await page.waitForFunction(() => __drill.scene.isActive('Cutscene'), null, { timeout: 3000, polling: 'raf' }).catch(() => {});
+await page.waitForFunction(() => __drill.scene.isActive('Cutscene'), null, { timeout: 4000, polling: 'raf' }).catch(() => {});
 await tap(90, 160); const earlyAt = await page.evaluate(() => Math.round(performance.now() - __drill.scene.getScene('Cutscene').t0));
 await wait(300);
 check('a tap inside the 0.4 s grace window is ignored', earlyAt < 400 && (await page.evaluate(() => __drill.scene.isActive('Cutscene'))) && (await animLog()).length === nAnims, `tap at ${earlyAt} ms`);
@@ -549,12 +599,6 @@ al = (await animLog()).at(-1);
 check('tap skips the pod ascent: docked + RIG LOST summary', await page.evaluate(() => __drill.scene.isActive('Dock') && __drill.scene.getScene('GameOver').scene.settings.data.reason === 'lost') && al.skipped && al.ms >= 400 && al.ms < 1500, JSON.stringify(al));
 await tap(90, 249); await wait(300);
 // frames for Cletus (screenshots stall the renderer, so these runs aren't timed; mid-turn frames are paused)
-const freezeWhen = async (cond, file) => {
-  await page.waitForFunction(cond, null, { timeout: 8000, polling: 'raf' }).catch(() => {});
-  await page.evaluate(() => __drill.scene.pause('Cutscene'));
-  await wait(120); await page.screenshot({ path: `${OUT}/${file}` });
-  await page.evaluate(() => __drill.scene.resume('Cutscene'));
-};
 await D('(u.closeMenu(), true)');
 await startContract();
 await freezeWhen(() => { const c = __drill.scene.getScene('Cutscene'); return c.rig && c.rig.y > 120 && !c.spin; }, '15-descent.png');
@@ -566,7 +610,9 @@ await page.waitForFunction(() => __drill.scene.isActive('Cutscene'), null, { tim
 await freezeWhen(() => { const c = __drill.scene.getScene('Cutscene'); const r = c.cameras.main.rotation; return c.surface.visible && r > 1.3 && r < 1.9; }, '18-ascent-rotation.png');
 await freezeWhen(() => { const c = __drill.scene.getScene('Cutscene'); return c.surface.visible && c.cameras.main.rotation === 0 && c.vehicleSprite.y < 200; }, '13-launch.png');
 await freezeWhen(() => { const c = __drill.scene.getScene('Cutscene'); return c.clampL && c.clampL.x > 78 && c.cameras.main.rotation === 0; }, '14-docking.png');
+await freezeWhen(() => { const c = __drill.scene.getScene('Cutscene'); return c.clampedText && c.cameras.main.rotation > 3.13 && c.cameras.main.zoom > 2.2; }, '23-docking-end-frame.png');
 await page.waitForFunction(() => __drill.scene.isActive('GameOver'), null, { timeout: 8000 }).catch(() => {});
+await wait(400); await page.screenshot({ path: `${OUT}/25-summary-over-concourse.png` });
 check('screenshot runs also end docked with the summary', await page.evaluate(() => __drill.scene.isActive('Dock') && __drill.scene.isActive('GameOver')));
 
 // ---- save migration (v1 from M1, plus the pre-M1 best-depth key) ----------------------------

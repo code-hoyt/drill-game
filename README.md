@@ -1,6 +1,6 @@
-# Drill (working title): prototype v0.6 (M2 + unlocks and transition cutscenes)
+# Drill (working title): prototype v0.7 (M2 + unlocks, transition cutscenes, station concourse)
 
-An endless, portrait, pixel-art drilling game for phone browsers. You pilot a drill ship that bores **upward** through an alien planet and keep it alive by running your one crew member between stations. Your score is depth. Every 1000 m you clamp onto a relay and choose: push on for better pay, or cash out. Between contracts the rig docks at an orbital station: that docked interior is the home screen, where you swap parts and buy new ones. Design doc: [`docs/DESIGN.md`](docs/DESIGN.md).
+An endless, portrait, pixel-art drilling game for phone browsers. You pilot a drill ship that bores **upward** through an alien planet and keep it alive by running your one crew member between stations. Your score is depth. Every 1000 m you clamp onto a relay and choose: push on for better pay, or cash out. Between contracts the rig docks at an orbital station. The home screen is the station concourse: pick contracts, hear from Ines, buy parts, and swap them in the rig bay. Design doc: [`docs/DESIGN.md`](docs/DESIGN.md).
 
 Built with **Phaser 3.90** (vendored at `lib/phaser.min.js`). It uses plain ES modules, has **no build step and no external assets**, and can be served from any static host (GitHub Pages ready).
 
@@ -15,23 +15,32 @@ ES modules don't load over `file://`, so you need a server.
 
 ## How to play
 
-**Flow:** title → **docked rig** (home) → HELM: accept a contract → *descent cutscene* → run → relay breaks → cash out or hull loss → *ascent cutscene* → end-of-run summary over the docked rig → **back to the docked rig**.
+**Flow:** title → **station concourse** (home) → CONTRACT BOARD: accept a contract → Holt walks to the airlock and rides the lift up into the rig → *descent cutscene* → run → relay breaks → cash out or hull loss → *ascent cutscene* → Holt rides the lift down onto the concourse → end-of-run summary over the concourse → **the concourse**.
 
-**Transition cutscenes** (pixel art, built from the rig's own textures; **tap anywhere to skip**, after a 0.4 s grace so a stray tap at the start doesn't skip; "TAP TO SKIP" appears when skipping is live). The run and the docked interior show the rig **drill-up** (flipped for the phone); outside, on the surface and in space, it's **drill-down**. The camera turns 180° to bridge the two (only the cutscene's world camera turns; the captions and every HUD stay upright):
-* **Descent (5.2 s):** opens on the docked close-up (drill up, station below the hatch) and the camera turns out to the station view (drill down, 0.8 s). The clamps release ("UNDOCKED") and the rig drops away toward the rust planet, which grows beneath it. Cut to the surface at dusk: the rig drops nose-first on thrusters. The drill bites (chips, shake, spinning bit), and as the rig sinks into its hole the camera follows it and turns 180° with a gentle zoom (1.3 s). It lands in the run's view: drill up, rock above, ship where the run draws it. Then a short fade into the run.
-* **Ascent (5.2 s, after a slower in-run beat: 0.85 s fade on cash out, or the 1.6 s escape-pod ride on hull loss):** opens on the run's view (drill up, rock above). As the rig is winched out of the bore on the gantry cable (or the pod launches), the camera turns 180° (1.5 s) to the surface's drill-down view. Cut to space: it climbs to the station's docking port and the clamps engage ("CLAMPED"). Then the camera turns once more and closes in (0.7 s), matching the docked screen (drill up, station below). The run summary opens over the docked rig.
-* **The docked screen** matches this: the station is below the rig, its clamps grip the hull end, and the ladder hatch opens into the docking collar. The window at the drill end looks out at space and the planet.
+**Transition cutscenes** (pixel art, built from the rig's own textures; **tap anywhere to skip**, after a 0.4 s grace so a stray tap at the start doesn't skip; "TAP TO SKIP" appears when skipping is live). The run shows the rig **drill-up** (flipped for the phone), and so does the docking bay above the concourse. Outside, on the surface and in space, it's **drill-down**. The camera turns 180° to bridge the two (only the cutscene's world camera turns; the captions and every HUD stay upright):
+* **Descent (4.6 s, after the boarding beat: the walk to the airlock, up to 0.9 s, plus the 0.55 s lift):** opens on exactly the concourse's bay framing (rig drill-up, station below) and the camera turns out to the station view (drill down, 0.8 s). The clamps release ("UNDOCKED") and the rig drops away toward the rust planet, which grows beneath it. Cut to the surface at dusk: the rig drops nose-first on thrusters. The drill bites (chips, shake, spinning bit), and as the rig sinks into its hole the camera follows it and turns 180° with a gentle zoom (1.15 s). It lands in the run's view: drill up, rock above, ship where the run draws it. Then a short fade into the run.
+* **Ascent (4.6 s, after the in-run beat: 0.85 s fade on cash out, or the 1.6 s escape-pod ride on hull loss; then 0.55 s on the concourse):** opens on the run's view (drill up, rock above). As the rig is winched out of the bore on the gantry cable (or the pod launches), the camera turns 180° (1.5 s) to the surface's drill-down view. Cut to space: it climbs to the station's docking port and the clamps engage ("CLAMPED"). The camera turns once more and closes in (0.65 s), ending on exactly the concourse's framing of the rig in its bay. The concourse fades in, Holt rides the airlock lift down onto the floor, and the run summary opens over the concourse.
 * `?anim=0` turns them off (the old flow: summary over the run, and straight into the run from the contract board).
 
-**Docked rig (home base).** It's the same 2x2 interior. Tap a room or prop and Holt walks there, using the same pathing as in a run. The menu opens when he arrives:
+**Station concourse (home base).** The rig hangs drill-up in docking bay 3 at the top of the screen, gripped by its hull end. Under it is a small side-view concourse with five signed spots. Tap a spot (or its sign) and Holt walks there; its panel opens when he arrives, or at once if he's already there. He walks at 160 px/s, so the farthest pair (board ↔ bunk) takes 0.9 s, and neighbours take about 0.23 s:
 
-| Tap | Opens |
-|---|---|
-| **HELM** | Contract board (one Kessa-4 contract for now; M3 adds planets from `src/data/contracts.js`), the **HELM PART** slot, and **radio replay** of Ines's past messages (paged). |
-| **DRL** | Drill head slot. **The shelf** (top-left of DRL) opens the codex stub (M4). |
-| **ENG** | Engine slot. **The cot** by the ladder opens Holt's log: credits, total earned, best depth, contracts, cash-outs, rigs lost, relays reached, deepest relay, parts owned, and the current loadout. |
-| **TLS** | The tools bench, with 3 slots: Tools, Hull, Holt's kit. |
-| **Ladder hatch** (or the **STATION** button) | The station concourse: **Quartermaster** (the parts vendor), Survey office (M3 stub), and Ines's window (stub). |
+| Spot (left → right) | Prop | Opens |
+|---|---|---|
+| **CONTRACT BOARD** | wall screen with posted contracts | Mission select, built from `src/data/contracts.js` (one Kessa-4 contract for now; M3 adds planets). ACCEPT starts the boarding beat. |
+| **INES'S WINDOW** | dispatch booth, Ines behind the glass, a mug on the counter | Her latest message, the paged radio replay of older traffic, and a story stub for later. |
+| **AIRLOCK / RIG BAY** | the lift shaft up to the rig's docking collar | The **rig bay** parts screen (see below). Tapping the rig itself, or the **RIG BAY** button, does the same. |
+| **QUARTERMASTER** | shelves of parts, crates, the quartermaster bot at the counter | The parts vendor: rotating stock, reroll, LOCKED list, buy screen. |
+| **HOLT'S BUNK** | bunk bed, locker, codex shelf | Holt's log (stats, next unlock, loadout) with a **CODEX SHELF** button (stub until M4). |
+
+**Rig bay (garage-style parts screen).** The rig's exterior at 2x, drill up, in the bay. Pulsing corner brackets mark six hotspots, each with a tag showing the slot and the part fitted (green when it isn't the stock part):
+* the **drill nose**: drill head
+* the **cockpit porthole**, top-left: helm
+* the **plating**, top-right: hull
+* the **vents**, bottom-left: engine
+* the **tool hatch**, bottom-right: tools
+* **Holt's locker** by the airlock door below the rig: Holt's kit
+
+Each hotspot is at least 74×32 base px (about 160×70 screen px at 390×844). Tapping one opens that slot's swap list, with each owned part's upside and downside. BACK returns to the bay. Swapping only works while docked.
 
 
 | View | Controls |
@@ -158,7 +167,7 @@ src/
     TitleScene.js          title / best depth / tap to start
     GameScene.js           world + simulation loop, commands used by UI, game over trigger
     UIScene.js             HUD overlay: depth, bars, alerts, toasts, throttles (outside + helm), station panel, pilot bar
-    DockScene.js           docked home base: Dock (rig interior, Holt walks, props) + DockUI (HUD, menus: contracts, radio, slots, stats, codex, station, Quartermaster)
+    DockScene.js           home base: Dock (station concourse: docking bay + 5 spots, Holt walks, airlock lift) + DockUI (HUD, panels: contract board, Ines's window, rig bay parts screen + slot lists, Quartermaster, Holt's log + codex)
     RelayScene.js          relay break: Ines dispatch (typing/static), supply pick, repair, push on / cash out
     CutsceneScene.js       transition cutscenes: descent (station -> planet -> drill bites) and ascent (winch / pod -> station -> clamps), 180-degree camera turns, tap to skip after 0.4 s
     GameOverScene.js       end screen: cashed out / rig lost, earnings breakdown, back to the rig
@@ -181,7 +190,7 @@ src/
   ui/
     Button.js              touch button with tap + press-and-hold
 tests/e2e.mjs              Playwright phone-viewport test (see below)
-screenshots/               01-07 run + relay screens; 08 docked base, 09 Quartermaster, 10 part swap, 11 stats, 12 buy detail; 13 launch (winch out of the bore), 14 docking (clamps), 15 descent (drill bites), 16 locked parts, 17 descent mid-turn, 18 ascent mid-turn
+screenshots/               01-07 run + relay screens; 08 concourse, 09/09b Quartermaster, 10 part swap, 11 Holt's log, 12 buy detail; 13 launch (winch out of the bore), 14 docking (clamps), 15 descent (drill bites), 16 locked parts, 17 descent mid-turn, 18 ascent mid-turn, 19 contract board, 20 Ines's window, 21 rig bay, 22 codex, 23 docking end frame (bay framing), 24 Holt steps out (lift), 25 summary over the concourse
 docs/DESIGN.md             game design doc
 ```
 
@@ -235,13 +244,14 @@ docs/DESIGN.md             game design doc
 * After a reload, the title shows your credits.
 
 **M2 coverage**:
-* The flow: title → dock → HELM → ACCEPT CONTRACT → run, then end screen → BACK TO THE RIG.
-* Dock navigation: Holt walks to ENG, the cot, the DRL shelf, TLS, HELM and the hatch, and the right menu opens on arrival.
+* The flow: title → concourse → CONTRACT BOARD → ACCEPT CONTRACT → run, then end screen → TO THE CONCOURSE.
+* Concourse: 5 spots. Tapping each one walks Holt there and opens the right panel (board, Ines's window, Quartermaster, Holt's log, rig bay). Every walk is ≤ 1.05 s; measured 0.23–0.46 s between neighbours and 0.91 s board → bunk. Tapping the rig walks to the airlock. Codex opens from the bunk.
+* Rig bay: 6 thumb-sized hotspots, each opening its own slot list. Tags show the equipped parts and update after a swap. Equipping heavy plating (hull) and wide-cut (drill nose) from the bay persists.
 * Vendor stock: 12 offers, 2 per slot, never stock or owned parts; it's randomized across draws and refreshed per contract.
 * Shortcuts: `?credits=` and `?stock=` work.
 * Reroll costs 100 and the next costs 200.
 * Buying: the buy screen shows the upside and downside. BUY + EQUIP and BUY ONLY both spend credits and persist. A part that isn't in stock can't be bought.
-* Equipping works from the part swap screen and survives a reload.
+* Equipping survives a reload.
 * Part effects in a run:
   * Heavy plating: 140 max hull, acceleration and braking ×0.65.
   * Wide-cut: about 50 px/s at full speed, heat ×1.35, safe ram zone 28%.
@@ -255,7 +265,8 @@ docs/DESIGN.md             game design doc
 * Thresholds: 499 vs 500, 999 vs 1000, 2999 vs 3000 m, and 3 lifetime relays for the tool belt.
 * Grandfathering: a v2 save that owns Wide-cut and Heavy charge at best 600 m keeps them owned and equipped, and its stale stock is re-drawn from unlocked parts.
 * A fresh save has 12 locked parts and a 6-offer stock of starters.
-* Descent plays on ACCEPT and ends in the run; cash out plays the ascent and ends docked with the summary on top; BACK TO THE RIG reveals the dock. Each takes about 5.2 s (allowed 4.9–5.9 s). The camera reaches 180° with a gentle zoom (at most 1.3x), the ascent opens at 180° (the run's view), the UI camera never turns, and the run and dock cameras are left unrotated.
+* ACCEPT walks Holt to the airlock and up the lift (boarding ≤ 1.3 s), then the descent plays and ends in the run. Cash out plays the ascent, Holt rides the lift down, and the summary sits on top of the concourse; TO THE CONCOURSE closes it. Each cutscene takes about 4.6 s (allowed 4.3–5.3 s). The camera reaches 180° with a gentle zoom (at most 1.3x), the ascent opens at 180° (the run's view), the UI camera never turns, and the run and dock cameras are left unrotated.
+* The NEW PARTS banner waits until Holt has stepped out and the summary is closed. Toasts sit below it, never overlapping.
 * A tap inside the 0.4 s grace window is ignored; a tap after it skips (descent into the run; escape-pod ascent to the dock with the RIG LOST summary).
 * Tap-to-skip works on the descent (straight into the run) and on the escape-pod ascent (docked + RIG LOST summary).
 

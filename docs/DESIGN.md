@@ -95,7 +95,7 @@ Every 1000 m the contract calls for a **relay anchor**: a beacon bolted into the
 - **Hull loss [C]:** Holt ejects in the escape pod and keeps **1/3 of the haul**.
   - **[P]** The rig's crew cab *is* the escape pod, so his home survives.
   - **[P]** The company recovers the wrecked drill section, refits it, and takes the other 2/3 as "recovery and refit." The rig comes back whole for the next contract.
-- **[C] Transitions (built after M2, retimed to ~5.2 s):** short cutscenes, each about 5.2 s, tappable to skip after a 0.4 s grace. **[C] A 180° camera turn** bridges the run's drill-up view and the drill-down view outside. Descent: it turns as the rig sinks in after the bite. Ascent: it turns as the rig is winched out. A second, shorter turn links the station shot to the docked screen, which shows the rig drill-up with the station below the hatch. On the way back, the rig is winched out of the bore (or the pod launches), then a cut to space, where it rises to the station and the clamps engage. **The summary comes after docking**, shown over the docked rig. On contract start, the rig undocks, drops toward the planet, and the drill nose bites into the surface, landing in the run. They reuse the rig textures.
+- **[C] Transitions (built after M2, retimed):** short cutscenes, each about 4.6 s plus a short concourse beat (boarding or stepping out), tappable to skip after a 0.4 s grace. **[C] A 180° camera turn** bridges the run's drill-up view and the drill-down view outside. Descent: it turns as the rig sinks in after the bite. Ascent: it turns as the rig is winched out. A second, shorter turn ends on the concourse's docking-bay framing (rig drill-up, station below), and Holt steps out via the airlock lift. On the way back, the rig is winched out of the bore (or the pod launches), then a cut to space, where it rises to the station and the clamps engage. **The summary comes after docking**, shown over the station concourse. On contract start, the rig undocks, drops toward the planet, and the drill nose bites into the surface, landing in the run. They reuse the rig textures.
 - Depth reached is the score either way.
 - **Always kept:** best depth per planet, codex finds (transmitted the moment you recover them), and unlocked parts and planets.
 
@@ -225,24 +225,39 @@ It suits careful players, and it's a trap on fast planets.
    - contract bonus objectives
    - codex completion
 
-### 4.4 [P] Home base: docked aboard the rig
+### 4.4 Home base: the station concourse ([C] redesign, approved after M2)
 
-**[C]** Holt lives on his rig. Between contracts it docks at an orbital station.
+**[C]** Holt lives on his rig. Between contracts it docks at an orbital station (Kessa High).
 
-The home screen is **the rig's own 2x2 interior while docked**: calm, lights on, the station visible through the HELM porthole. You tap things in the rooms, and Holt walks there using the same pathing as in a run.
+**[C] The home screen is the station concourse, not the rig's interior.** The old docked-interior home reused the run's 2x2 rooms for unrelated menu jobs, which was confusing, so it's gone. When the rig docks, Holt steps out through the airlock into the station.
 
-**Rig rooms:**
-- **HELM:** the nav console opens the **contract board** (mission select). The radio replays Dispatch messages.
-- **DRL / ENG / TLS:** tap the station to see its slot and swap the equipped part. The TLS bench also holds the Hull and Holt's kit slots.
-- **Shelf in DRL:** the **codex**. Recovered finds appear here physically.
-- **Holt's fold-down cot by the ladder:** stats (runs, best depths, credits earned, rigs refitted).
+**Layout (portrait, one screen):**
+- **Docking bay 3, top:** the rig hangs drill-up, gripped by its hull end by two clamps over a docking collar. This is exactly how the ascent cutscene frames it after its closing turn, so the cutscene hands off with the rig in the same spot.
+- **Concourse, below:** a side-view corridor with five signed spots, left to right:
+  - **Contract board:** mission select, data-driven from `contracts.js`.
+  - **Ines's window:** dispatch. Her latest message, the radio replay, and a story stub.
+  - **Airlock:** a lift up to the rig. It opens the rig bay.
+  - **Quartermaster:** the vendor.
+  - **Holt's bunk and locker:** the log (stats) and the codex shelf (stub until M4).
+- **Below deck:** a short legend.
+- **Walking:** tap a spot and Holt walks there; the panel opens on arrival. Walking is fast (160 px/s, at most 0.9 s between any two spots) so it never feels like a chore.
+- **Holt's kit:** it doesn't change concourse walking (that's a run stat).
 
-**Airlock (the hatch in the bottom-deck floor, under the ladder) → station concourse.** This is a small second screen with vendor fronts:
-- **Quartermaster:** buy parts and new relay supplies for the pool.
-- **Survey office:** buy planet licences.
-- **Dispatch office:** Ines's window.
+**[C] Rig bay (garage).** From the airlock: the rig's exterior at 2x, drill up. You tap the real part locations:
+- drill nose → drill head
+- cockpit porthole → helm
+- plating → hull
+- vents → engine
+- tool hatch → tools
+- Holt's locker by the airlock → kit
 
-The rig interior slowly gains personal clutter as you progress. That's the melancholy home beat, and it shows progression without numbers.
+Tags show what's fitted, the hotspots are thumb-sized, and swapping only works while docked.
+
+**Transitions:**
+- **Contract start:** Holt walks to the airlock and rides up. The descent opens on the bay framing and turns out to the drill-down station view.
+- **Return:** the ascent ends on the bay framing. Holt rides the lift down, and the run summary opens over the concourse.
+
+**Later:** a survey office (planet licences, M3) can join the concourse as a sixth spot. The concourse can slowly gain personal clutter around the bunk as you progress. That's the melancholy home beat, and it shows progression without numbers.
 
 ## 5. Missions and planets
 
@@ -436,7 +451,7 @@ None of it is explained on screen; the codex and the radio fill it in.
 | Milestone | Scope | Playable at the end |
 |---|---|---|
 | **M1: Run structure and breaks** | Relay anchors (`RELAY_INTERVAL` = 1000), approach and anchoring, relay screen (free service, paid hull repair, pick 1 of 3 randomized stacking supplies, push on or cash out), haul and multiplier, the 1/3 hull-loss rule with the escape-pod sequence, end-of-run summary, placeholder dispatch text. | A full run loop on Kessa-4 with a real push-or-cash decision every few minutes. |
-| **M2: Loadout and docked home base** | Versioned save, credits, a 6-slot loadout with about 12 trade-off parts wired into the tuning values, the Quartermaster's rotating randomized stock (2 per slot, at least 1 option per slot, refresh per contract, doubling reroll cost), the docked rig interior as home screen (tap rooms, Holt walks there), the airlock to the station concourse (Quartermaster, Survey office, Dispatch office), the run → summary → docked rig loop. | You choose a loadout, run, and come home; parts change *how* you play, not how strong you are. |
+| **M2: Loadout and docked home base** | Versioned save, credits, a 6-slot loadout with about 12 trade-off parts wired into the tuning values, the Quartermaster's rotating randomized stock (2 per slot, at least 1 option per slot, refresh per contract, doubling reroll cost), the docked rig interior as home screen (tap rooms, Holt walks there), the airlock to the station concourse (Quartermaster, Survey office, Dispatch office), the run → summary → docked rig loop. *(Home screen since redesigned as the station concourse + rig bay, see 4.4.)* | You choose a loadout, run, and come home; parts change *how* you play, not how strong you are. |
 | **M3: Planets and mission select (3 planets)** | Planet/zone data format (move `TUNING` into planet definitions), zone transitions, 4 new hazards (void, ice debris, gas pocket, quake), the launch set (Kessa-4, Vael, Orun [C]), contract board, licences and unlocks, bonus objectives. | Pick between 3 distinct planets with 4 zones each; loadout fit matters. |
 | **M4: Story and personality** | Bark system with strain, Holt's idle animations, the text dispatch arc and triggers, finds plus codex shelf, Marrow seeds placed in launch-planet deep zones, first lore content pass. | The world talks back, the codex fills up, and the Ines arc and Marrow hints can be followed. |
 | **M5: Art, sound, polish** | Real pixel art (ship, Holt, per-planet tilesets), audio (engine hum by speed, grind, radio static, relay music), haptics, first-run tutorial, settings, pause, black-bar and safe-area fixes, low-end phone performance, "add to home screen." | Release-candidate feel for the launch set. An art/sound teammate bot likely pays off here. |

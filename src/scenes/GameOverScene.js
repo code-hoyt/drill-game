@@ -37,7 +37,7 @@ export class GameOverScene extends Phaser.Scene {
     lines.push(cur);
     lines.forEach((l, i) => t(18, 183 + i * 8, 6, l, 0xd8f4f8, 0));
 
-    this.restartBtn = new Button(this, 30, 238, 120, 22, 'BACK TO THE RIG', {
+    this.restartBtn = new Button(this, 30, 238, 120, 22, 'TO THE CONCOURSE', {
       size: 6, color: cash ? 0x2f6a3a : 0x7a3320, pressColor: cash ? 0x48a058 : 0xb5532f, depth: 10,
       onTap: () => this.restart(),
     });

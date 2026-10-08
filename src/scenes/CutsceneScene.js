@@ -1,23 +1,29 @@
-// Transition cutscenes (~5.2 s, tap to skip after a 0.4 s grace). Reuses the rig textures (ship_ext + drill).
+// Transition cutscenes (~4.6 s + a short concourse beat; tap to skip after a 0.4 s grace). Reuses the rig textures (ship_ext + drill).
 // Orientation: the run (and the docked interior) show the rig drill-UP, flipped for the phone. Outside
 // (the surface, space) it is drill-DOWN. The camera rotates 180 degrees to bridge the two:
 //   ascent : run view (drill up, rock above) -> camera turns as the rig is winched out of the bore (or the
 //            escape pod launches) -> cut to space, it rises to the station and the clamps engage ->
-//            camera turns again and closes in, matching the docked view (drill up, station below the hatch).
-//   descent: docked view -> camera turns out to the station (drill down) -> clamps release, the rig drops
+//            camera turns again and closes in on the exact framing of the concourse's docking bay (drill up,
+//            station below); the concourse takes over and Holt rides the airlock lift down.
+//   descent: (Holt boards via the lift) bay framing -> camera turns out to the station (drill down) -> clamps release, the rig drops
 //            toward the planet -> cut to the surface, the drill bites -> camera turns as it sinks in, landing
 //            in the run view.
 // Only the main camera rotates; "TAP TO SKIP" and captions live on a separate, unrotated UI camera.
 import { GAME_W, GAME_H } from '../config.js';
 import { FONT_KEY } from '../systems/PixelFont.js';
+import { CONCOURSE } from './DockScene.js';
 
 const SURFACE_Y = 204;
 const PORT_Y = 64;          // bottom of the station's docking port
 const RIG_TOP = 42;         // rig container: ship top is 42 px above centre once flipped (drill down)
 const RUN_CY = 100;         // rotated 180 deg, a camera centred RUN_CY below the rig puts it where the run draws it
-const DOCK_ZOOM = 2.2;      // close-up on the docked rig (the dock interior is a zoom-2 view)
+const SPACE_RIG = 0.45;    // rig scale in the space shots
+const DOCK_ZOOM = 1 / SPACE_RIG;  // rotated + zoomed so the docked rig lands exactly where the concourse draws it
+// camera centre that puts a space-shot rig (centre y) at the concourse's rig position, drill up
+const dockCentre = (rigY) => ({ x: 90, y: rigY - (GAME_H / 2 - CONCOURSE.RIG_Y) / DOCK_ZOOM });
 export const GRACE_MS = 400;
-export const ANIM_MS = 5200;
+export const ASCENT_MS = 4600;    // + the 0.55 s lift ride on the concourse = ~5.2 s
+export const DESCENT_MS = 4600;   // after the boarding beat on the concourse (walk to the airlock + lift)
 const PI = Math.PI;
 
 export class CutsceneScene extends Phaser.Scene {
@@ -167,6 +173,7 @@ export class CutsceneScene extends Phaser.Scene {
   }
 
   clamps(closed, ms) {
+    if (!ms) { this.clampL.x = closed ? 80 : 64; this.clampR.x = closed ? 100 : 116; this.portLight.setFillStyle(closed ? 0x8affa0 : 0xffc35c); return; }
     this.tweens.add({ targets: this.clampL, x: closed ? 80 : 64, duration: ms, ease: 'Back.easeOut' });
     this.tweens.add({ targets: this.clampR, x: closed ? 100 : 116, duration: ms, ease: 'Back.easeOut' });
     this.portLight.setFillStyle(closed ? 0x8affa0 : 0xffc35c);
@@ -216,20 +223,21 @@ export class CutsceneScene extends Phaser.Scene {
       this.spaceVehicle = sv;
       const top = pod ? 6 : RIG_TOP * 0.45;
       this.trail.startFollow(sv, 0, pod ? 8 : 20); this.trail.start();
-      this.tweens.add({ targets: sv, y: PORT_Y + top, duration: 2000, ease: 'Cubic.easeOut' });
+      this.tweens.add({ targets: sv, y: PORT_Y + top, duration: 1700, ease: 'Cubic.easeOut' });
     });
-    this.at(4000, () => {
+    this.at(3700, () => {
       this.trail.stop();
       this.clamps(true, 300);
       this.cameras.main.shake(200, 0.01);
       this.clampedText = this.caption('CLAMPED', 0x8affa0);
     });
     // second turn: close in on the docked rig so it matches the dock screen (drill up, station below)
-    this.at(4400, () => {
+    this.at(3850, () => {
       const sv = this.spaceVehicle;
-      this.turn({ from: 0, to: PI, zoomTo: DOCK_ZOOM, duration: 700, getFrom: () => ({ x: 90, y: GAME_H / 2 }), getTo: () => ({ x: 90, y: sv.y }) });
+      if (this.clampedText) this.tweens.add({ targets: this.clampedText, alpha: 0, duration: 300, delay: 250 });
+      this.turn({ from: 0, to: PI, zoomTo: DOCK_ZOOM, duration: 650, getFrom: () => ({ x: 90, y: GAME_H / 2 }), getTo: () => dockCentre(sv.y) });
     });
-    this.at(ANIM_MS, () => this.finish(false));
+    this.at(ASCENT_MS, () => this.finish(false));
   }
 
   // ---- descent: docked view -> (turn) undock -> fall -> bite -> (turn) run view (5.2 s) ------
@@ -240,23 +248,23 @@ export class CutsceneScene extends Phaser.Scene {
     this.space.add(sv);
     this.clamps(true, 0);
     // open on the docked close-up (drill up, station below), turn out to the station view
-    this.turn({ from: PI, to: 0, zoomFrom: DOCK_ZOOM, duration: 800, getFrom: () => ({ x: 90, y: sv.y }), getTo: () => ({ x: 90, y: GAME_H / 2 }) });
-    this.at(800, () => { this.clamps(false, 300); this.caption('UNDOCKED', 0xffc35c); });
-    this.at(1100, () => {
-      this.tweens.add({ targets: sv, y: 360, scaleX: 0.2, scaleY: -0.2, duration: 1000, ease: 'Quad.easeIn' });
-      this.tweens.add({ targets: this.planet, scale: 1.6, y: 600, duration: 1000, ease: 'Quad.easeIn' });
+    this.turn({ from: PI, to: 0, zoomFrom: DOCK_ZOOM, duration: 800, getFrom: () => dockCentre(PORT_Y + RIG_TOP * SPACE_RIG), getTo: () => ({ x: 90, y: GAME_H / 2 }) });
+    this.at(750, () => { this.clamps(false, 300); this.caption('UNDOCKED', 0xffc35c); });
+    this.at(1000, () => {
+      this.tweens.add({ targets: sv, y: 360, scaleX: -0.2, scaleY: -0.2, duration: 900, ease: 'Quad.easeIn' });
+      this.tweens.add({ targets: this.planet, scale: 1.6, y: 600, duration: 900, ease: 'Quad.easeIn' });
     });
-    this.at(1600, () => this.children.list.filter((c) => c.type === 'BitmapText' && c.text === 'UNDOCKED').forEach((c) => c.destroy()));
-    this.at(2100, () => {
+    this.at(1500, () => this.children.list.filter((c) => c.type === 'BitmapText' && c.text === 'UNDOCKED').forEach((c) => c.destroy()));
+    this.at(1900, () => {
       this.cut(false);
       const rig = this.makeRig(1);
       rig.y = -50;
       this.surface.add(rig);
       this.rig = rig;
       this.trail.startFollow(rig, 0, 30); this.trail.start();
-      this.tweens.add({ targets: rig, y: SURFACE_Y - 40, duration: 1400, ease: 'Quad.easeOut' });
+      this.tweens.add({ targets: rig, y: SURFACE_Y - 40, duration: 1250, ease: 'Quad.easeOut' });
     });
-    this.at(3500, () => {
+    this.at(3150, () => {
       // the nose bites: spin the drill, chips fly, the rig sinks into the rock
       this.trail.stop();
       this.chips.setPosition(90, SURFACE_Y); this.chips.start();
@@ -264,26 +272,26 @@ export class CutsceneScene extends Phaser.Scene {
       let f = 0;
       this.spin = this.time.addEvent({ delay: 60, loop: true, callback: () => { f = (f + 1) % 3; this.drillImg.setTexture('drill' + f); } });
       const rig = this.rig;
-      this.tweens.add({ targets: rig, y: 300, duration: 1500, ease: 'Sine.easeIn',
+      this.tweens.add({ targets: rig, y: 300, duration: 1300, ease: 'Sine.easeIn',
         onUpdate: () => this.drawHole(rig.y + 30 - SURFACE_Y) });
     });
     // the turn: follow the rig down and rotate into the run's drill-up view (rock above)
-    this.at(3700, () => {
+    this.at(3300, () => {
       const rig = this.rig;
-      this.turn({ from: 0, to: PI, bump: 0.15, duration: 1300, getFrom: () => ({ x: 90, y: GAME_H / 2 }), getTo: () => ({ x: 90, y: rig.y + RUN_CY }) });
+      this.turn({ from: 0, to: PI, bump: 0.15, duration: 1150, getFrom: () => ({ x: 90, y: GAME_H / 2 }), getTo: () => ({ x: 90, y: rig.y + RUN_CY }) });
     });
-    this.at(4600, () => this.chips.stop());
-    this.at(5000, () => { this.cameras.main.fadeOut(180, 0, 0, 0); this.uiCam.fadeOut(180, 0, 0, 0); });
-    this.at(ANIM_MS, () => this.finish(false));
+    this.at(4150, () => this.chips.stop());
+    this.at(4420, () => { this.cameras.main.fadeOut(170, 0, 0, 0); this.uiCam.fadeOut(170, 0, 0, 0); });
+    this.at(DESCENT_MS, () => this.finish(false));
   }
 
   finish(skipped) {
     if (this.done) return;
     this.done = true;
     const ms = Math.round(performance.now() - this.t0);
-    (window.__drillAnims = window.__drillAnims || []).push({ kind: this.kind, vehicle: this.vehicle, ms, skipped });
     const d = this.data_;
-    if (this.kind === 'ascent') this.scene.start('Dock', { summary: d.summary, welcome: 'DOCKED. NEW STOCK AT THE QUARTERMASTER' });
+    (window.__drillAnims = window.__drillAnims || []).push({ kind: this.kind, vehicle: this.vehicle, ms, skipped, boardMs: d.boardMs || 0 });
+    if (this.kind === 'ascent') this.scene.start('Dock', { summary: d.summary, intro: true, welcome: 'DOCKED. NEW STOCK AT THE QUARTERMASTER' });
     else this.scene.start('Game', { planet: d.planet });
   }
 }
