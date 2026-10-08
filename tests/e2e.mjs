@@ -84,45 +84,85 @@ check('inside helm - lowers throttle', near(await thr(), 0.8), 'throttle=' + awa
 await tap(...H_TRACK(0.5)); await wait(100);
 check('inside helm slider sets throttle', near(await thr(), 0.5), 'throttle=' + await thr());
 
-// ---- 2x2 layout: all 12 station-to-station trips are equal ------------------------------
+// ---- 2x2 layout: per-route pathing ---------------------------------------------------
+// Same-deck trips walk straight across (no climbing); cross-deck trips use one direct climb.
 // Euler circuit over every ordered pair of rooms, starting and ending at the helm.
 const ids = ['helm', 'drill', 'engine', 'tools'];
 const edges = Object.fromEntries(ids.map((a) => [a, ids.filter((b) => b !== a)]));
 const circuit = []; const stack = ['helm'];
 while (stack.length) { const v = stack[stack.length - 1]; if (edges[v].length) stack.push(edges[v].shift()); else circuit.push(stack.pop()); }
 circuit.reverse();
-const planned = await G(`(() => { const C = g.crew.constructor, out = {}; for (const a of g.ship.rooms) for (const b of g.ship.rooms) if (a !== b)
-  out[a.id + '>' + b.id] = C.pathLength(a.standX, a.floorY, C.plan(g.ship, a.standX, a.floorY, b.id)); return out; })()`);
-const lens = Object.values(planned);
-check('12 planned trips, all equal path length', lens.length === 12 && lens.every((l) => l === lens[0]), `length=${lens[0]}px  ${JSON.stringify(planned)}`);
+const DECK = { helm: 'top', drill: 'top', engine: 'bottom', tools: 'bottom' };
+const FLOORS = await G('Object.values(g.ship.rooms.reduce((m, r) => (m[r.deck] = r.floorY, m), {}))');
+const planned = await G(`(() => { const C = g.crew.constructor, out = {}; for (const a of g.ship.rooms) for (const b of g.ship.rooms) if (a !== b) {
+  const pts = C.plan(g.ship, a.standX, a.floorY, b.id); let x = a.standX, y = a.floorY; const segs = [];
+  for (const p of pts) { segs.push({ dx: p.x - x, dy: p.y - y }); x = p.x; y = p.y; }
+  out[a.id + '>' + b.id] = { pts: pts.map(p => [p.x, p.y]), segs, len: C.pathLength(a.standX, a.floorY, pts) }; } return out; })()`);
+const planOk = Object.entries(planned).map(([k, v]) => {
+  const [a, b] = k.split('>');
+  const climbs = v.segs.filter((sg) => sg.dy !== 0);
+  const allOnFloors = v.pts.every(([, y]) => FLOORS.includes(y)); // no waypoint mid-ladder
+  const ok = DECK[a] === DECK[b]
+    ? climbs.length === 0 && v.pts.length === 1 && v.len === 32
+    : climbs.length === 1 && Math.abs(climbs[0].dy) === Math.abs(FLOORS[0] - FLOORS[1]) && climbs[0].dx === 0 && allOnFloors && v.len === 60;
+  return { k, ok, len: v.len };
+});
+check('same-deck plans: one straight walk, no climbing (32px)', planOk.filter((p) => DECK[p.k.split('>')[0]] === DECK[p.k.split('>')[1]]).every((p) => p.ok),
+  planOk.filter((p) => DECK[p.k.split('>')[0]] === DECK[p.k.split('>')[1]]).map((p) => p.k + '=' + p.len).join(' '));
+check('cross-deck plans: exactly one direct floor-to-floor climb, no mid stop (60px)', planOk.filter((p) => DECK[p.k.split('>')[0]] !== DECK[p.k.split('>')[1]]).every((p) => p.ok),
+  planOk.filter((p) => DECK[p.k.split('>')[0]] !== DECK[p.k.split('>')[1]]).map((p) => p.k + '=' + p.len).join(' '));
+
 await G('(s.throttle = 0, true)');
 const trips = [];
 for (let i = 1; i < circuit.length; i++) {
   await tapRoom(circuit[i]);
   await waitFor(`g.crew.station === "${circuit[i]}"`, 3000);
   const t = await G('g.crew.lastTrip');
-  trips.push({ ...t, ok: t && t.from === circuit[i - 1] && t.to === circuit[i] });
+  trips.push({ ...t, ok: t && t.from === circuit[i - 1] && t.to === circuit[i], same: DECK[circuit[i - 1]] === DECK[circuit[i]] });
   await wait(60);
 }
 const pairs = new Set(trips.map((t) => t.from + '>' + t.to));
-const ms = trips.map((t) => t.ms), lensWalked = trips.map((t) => t.length);
 check('walked all 12 ordered trips by tapping rooms', trips.length === 12 && pairs.size === 12 && trips.every((t) => t.ok), [...pairs].join(' '));
-check('every walked trip had the same path length', lensWalked.every((l) => l === lensWalked[0]), 'length=' + lensWalked[0]);
-const mn = Math.min(...ms), mx = Math.max(...ms);
-check('every trip takes ~0.6-1.0 s and times are roughly equal', mn >= 600 && mx <= 1000 && mx - mn <= 120, `min=${Math.round(mn)}ms max=${Math.round(mx)}ms`);
+const same = trips.filter((t) => t.same), cross = trips.filter((t) => !t.same);
+check('walked same-deck trips: no climbing at all', same.length === 4 && same.every((t) => t.climb === 0 && Math.abs(t.walk - 32) < 0.1), JSON.stringify(same.map((t) => [t.from + '>' + t.to, t.walk, t.climb])));
+check('walked cross-deck trips: one 28px climb + 32px walk', cross.length === 8 && cross.every((t) => Math.abs(t.climb - 28) < 0.1 && Math.abs(t.walk - 32) < 0.1), JSON.stringify(cross.map((t) => [t.from + '>' + t.to, t.walk, t.climb])));
+const rng = (a) => [Math.round(Math.min(...a.map((t) => t.ms))), Math.round(Math.max(...a.map((t) => t.ms)))];
+const [sMin, sMax] = rng(same), [cMin, cMax] = rng(cross);
+check('same-deck trip time ~0.6-0.8 s', sMin >= 600 && sMax <= 800, `${sMin}-${sMax}ms`);
+check('cross-deck trip time <= ~1.1 s', cMax <= 1120 && cMin > sMax, `${cMin}-${cMax}ms`);
+console.log(`TRIP TIMES  same-deck ${sMin}-${sMax}ms  cross-deck ${cMin}-${cMax}ms`);
 check('crew back at helm after the circuit', await G('g.crew.station === "helm" && g.piloted'));
 
-// retargeting mid-walk
-await tapRoom('engine'); await wait(150);
-await tapRoom('tools'); await wait(30);
-const re = await G('({ path: g.crew.path.map(p => [Math.round(p.x), Math.round(p.y)]), target: g.crew.target, x: g.crew.sprite.x, y: g.crew.sprite.y })');
-const viaJunction = re.path.some(([x, y]) => x === 90 && y === 282);
-check('retarget mid-walk re-plans via the hub junction', re.target === 'tools' && viaJunction && re.path.at(-1)[0] === 106, JSON.stringify(re));
-await waitFor('g.crew.station === "tools"', 3000);
-check('retargeted crew arrives at the new room', await G('g.crew.station === "tools"'));
-await tapRoom('engine'); await wait(80);  // leaving tools walkway...
-await tapRoom('tools'); await wait(30);   // ...change of mind: walk straight back
-check('retarget back to the room just left walks straight back', await G('g.crew.path.length === 1 && g.crew.target === "tools"'));
+// retargeting
+const waitClimbing = () => page.waitForFunction(() => { const c = __drill.scene.getScene('Game').crew; return c.climbing && c.sprite.y > 270 && c.sprite.y < 294; }, null, { polling: 'raf', timeout: 3000 });
+const crewState = () => G('({ path: g.crew.path.map(p => [Math.round(p.x), Math.round(p.y)]), target: g.crew.target, x: +g.crew.sprite.x.toFixed(1), y: +g.crew.sprite.y.toFixed(1) })');
+// a) mid-climb down, retarget to a top-deck room -> reverse straight up, then walk out
+await tapRoom('tools'); await waitClimbing();
+await tapRoom('drill'); await wait(20);
+let re = await crewState();
+check('mid-climb retarget to the deck he left: reverses straight up', re.target === 'drill' && JSON.stringify(re.path.slice(-2)) === '[[90,268],[106,268]]' && re.path.length <= 2, JSON.stringify(re));
+await waitFor('g.crew.station === "drill"', 3000);
+check('...and arrives at DRL', await G('g.crew.station === "drill"'));
+// b) mid-climb down, retarget to the other bottom room -> continue down, walk out
+await tapRoom('tools'); await waitClimbing();
+await tapRoom('engine'); await wait(20);
+re = await crewState();
+check('mid-climb retarget to the deck ahead: finishes the climb, walks out', re.target === 'engine' && JSON.stringify(re.path.slice(-2)) === '[[90,296],[74,296]]' && re.path.length <= 2, JSON.stringify(re));
+await waitFor('g.crew.station === "engine"', 3000);
+check('...and arrives at ENG', await G('g.crew.station === "engine"'));
+// c) mid-walk across the bottom deck, retarget to a top room -> back/over to the ladder, one climb
+await tapRoom('tools'); await wait(150);
+await tapRoom('helm'); await wait(20);
+re = await crewState();
+check('mid-walk retarget to other deck: ladder then one direct climb', re.target === 'helm' && JSON.stringify(re.path) === '[[90,296],[90,268],[74,268]]', JSON.stringify(re));
+await waitFor('g.crew.station === "helm"', 3000);
+// d) same-deck change of mind walks straight back
+await tapRoom('drill'); await wait(120);
+await tapRoom('helm'); await wait(20);
+check('mid-walk retarget back on the same deck walks straight back', await G('g.crew.path.length === 1 && g.crew.target === "helm" && g.crew.path[0].y === 268'));
+await waitFor('g.crew.station === "helm"', 2000);
+// get to tools so the next block (which starts with tapRoom('helm')) is unchanged
+await tapRoom('tools'); await waitFor('g.crew.station === "tools"', 3000);
 await waitFor('g.crew.station === "tools"', 2000);
 await tapRoom('helm'); await waitFor('g.crew.station === "helm"', 3000);
 await G('(g.setThrottle(0.5), true)');

@@ -1,8 +1,8 @@
-// The single crew member. Moves FTL-style along a fixed network:
-//   stand spot <-> hub door (same deck)  (horizontal, CREW_WALK_SPEED)
-//   hub door   <-> junction <-> hub door (vertical ladder, CREW_CLIMB_SPEED)
-// Every station-to-station route passes through the junction, so all trips
-// have the same length. Retargeting mid-walk re-plans from the current spot.
+// The single crew member. Moves FTL-style:
+//   same deck  -> walk straight across the floor (over the ladder grate), no climbing
+//   other deck -> walk to the ladder, climb directly floor-to-floor, walk out
+// Retargeting re-plans from the current spot; on the ladder he continues or reverses
+// straight to the deck he now needs.
 import { TUNING as T, LAYOUT as L } from '../config.js';
 
 export class Crew {
@@ -25,18 +25,18 @@ export class Crew {
 
   get walking() { return this.station === null; }
 
-  /** Waypoints from (x, y) to a room's stand spot, always via the hub junction. */
+  /** Waypoints from (x, y) to a room's stand spot. */
   static plan(ship, x, y, roomId) {
     const B = ship.room(roomId);
     const hubX = L.HUB.cx;
-    const cur = ship.roomAt(x, y);
-    if (cur && cur.id === roomId) return [{ x: B.standX, y: B.floorY }]; // already on that room's walkway
-    const pts = [];
-    if (cur) pts.push({ x: hubX, y });                                    // walk to the hub door on this deck
-    pts.push({ x: hubX, y: L.HUB.junctionY });                           // ladder to the junction
-    pts.push({ x: hubX, y: B.floorY });                                  // ladder to the target deck
-    pts.push({ x: B.standX, y: B.floorY });                              // walk out to the station
-    return pts;
+    const deckFloors = Object.values(L.DECKS).map((d) => d.floor);
+    const floor = deckFloors.find((f) => Math.abs(f - y) < 0.01);
+    if (floor === undefined) {
+      // on the ladder: climb (or reverse) straight to the target deck, then walk out
+      return [{ x: hubX, y: B.floorY }, { x: B.standX, y: B.floorY }];
+    }
+    if (floor === B.floorY) return [{ x: B.standX, y: B.floorY }];       // same deck: straight across
+    return [{ x: hubX, y: floor }, { x: hubX, y: B.floorY }, { x: B.standX, y: B.floorY }]; // via one direct climb
   }
 
   static pathLength(x, y, pts) {
@@ -53,6 +53,7 @@ export class Crew {
     this.path = Crew.plan(this.ship, this.sprite.x, this.sprite.y, roomId);
     this.tripLength = Crew.pathLength(this.sprite.x, this.sprite.y, this.path);
     this.tripStart = this.scene.time.now;
+    this.tripWalk = 0; this.tripClimb = 0;
     this.station = null;
     this.working = false;
   }
@@ -71,11 +72,13 @@ export class Crew {
         this.climbing = vertical;
         if (!vertical && dx !== 0) this.sprite.setFlipX(dx < 0);
         if (dist <= speed * time) {
+          if (vertical) this.tripClimb += dist; else this.tripWalk += dist;
           this.sprite.setPosition(p.x, p.y);
           time -= dist / speed;
           this.path.shift();
         } else {
           const step = speed * time;
+          if (vertical) this.tripClimb += step; else this.tripWalk += step;
           this.sprite.x += Math.sign(dx) * Math.min(step, Math.abs(dx));
           this.sprite.y += Math.sign(dy) * Math.min(step, Math.abs(dy));
           time = 0;
@@ -86,7 +89,8 @@ export class Crew {
         this.station = this.target;
         this.climbing = false;
         this.sprite.setFlipX(r.faceLeft);
-        this.lastTrip = { from: this.tripFrom, to: this.target, ms: this.scene.time.now - this.tripStart, length: this.tripLength };
+        this.lastTrip = { from: this.tripFrom, to: this.target, ms: this.scene.time.now - this.tripStart, length: this.tripLength,
+          walk: Math.round(this.tripWalk * 100) / 100, climb: Math.round(this.tripClimb * 100) / 100 };
         this.sprite.setTexture('crew_idle');
         return;
       }

@@ -65,10 +65,10 @@ export const TUNING = {
   HARD_SPEED_CAP: 0.7,
 
   // --- Crew / views -------------------------------------------------------
-  // Every trip is room -> hub -> room: 2 x STAND_OFFSET px of walking + 2 x HUB_DROP px of
-  // ladder = 32 px walk + 28 px climb => 32/72 + 28/64 = ~0.88 s per station-to-station trip.
-  CREW_WALK_SPEED: 72,     // world px / s on deck floors
-  CREW_CLIMB_SPEED: 64,    // world px / s on the hub ladder
+  // Same-deck trip: 32 px straight across the deck (over the ladder grate) = 32/48 = ~0.67 s.
+  // Cross-deck trip: 16 px to the ladder + 28 px direct climb + 16 px out = 32/48 + 28/70 = ~1.07 s.
+  CREW_WALK_SPEED: 48,     // world px / s on deck floors
+  CREW_CLIMB_SPEED: 70,    // world px / s on the hub ladder
   START_ROOM: 'helm',      // where the crew member stands when a run starts
   PILOT_REQUIRED: true,    // throttle only responds while the crew is at the HELM
   LOCK_TOAST_COOLDOWN: 900,// ms between "NO PILOT" toasts when tapping a locked throttle
@@ -78,15 +78,15 @@ export const TUNING = {
 // World layout (world units = base pixels; the world is one screen wide).
 //
 // The ship is a 2-deck, 2x2 grid of rooms around a central hub column with a
-// ladder. The hub JUNCTION sits halfway between the two deck floors, and every
-// trip goes  stand spot -> hub door (same deck) -> junction -> hub door -> stand spot,
-// so all 12 station-to-station trips have exactly the same length.
+// ladder. Same-deck trips walk straight across the deck (a grate covers the
+// ladder shaft on the top deck); cross-deck trips walk to the ladder, climb
+// directly floor-to-floor, then walk out.
 //
 //          /\  drill nose
 //   +------+--+------+
 //   | HELM |  | DRL  |   top deck   (nearest the drill)
-//   |------|##|------|   ## = ladder, junction at mid-height
-//   | ENG  |  | TLS  |   bottom deck
+//   |------|==|------|   == = grate over the ladder shaft, ## = ladder
+//   | ENG  |##| TLS  |   bottom deck
 //   +------+--+------+
 export const LAYOUT = {
   SHIP_X: 47, SHIP_W: 86, SHIP_TOP: 240, SHIP_BOTTOM: 302,
@@ -97,7 +97,7 @@ export const LAYOUT = {
     bottom: { ceil: 271, floor: 296 },
   },
   ROOM_W: 33,              // each room; rooms are separated from the hub by 2px walls
-  HUB: { x: 84, w: 12, cx: 90, junctionY: 282 }, // junctionY = midpoint of the two floors
+  HUB: { x: 84, w: 12, cx: 90 }, // ladder shaft column (ladder at cx)
   STAND_OFFSET: 16,        // horizontal distance hub centre -> every crew stand spot
   PATH_MIN_X: 62, PATH_MAX_X: 118, // boulder spawn column (in front of drill)
   ROOMS: [

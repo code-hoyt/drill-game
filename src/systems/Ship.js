@@ -28,9 +28,6 @@ export class Ship {
     g.fillStyle(0x6b6f84, 1).fillRect(H.cx - 4, D.top.ceil, 1, D.bottom.floor - D.top.ceil)
       .fillRect(H.cx + 3, D.top.ceil, 1, D.bottom.floor - D.top.ceil);
     for (let y = D.top.ceil + 2; y < D.bottom.floor; y += 3) g.fillStyle(0x8d91a6, 1).fillRect(H.cx - 3, y, 6, 1);
-    // junction landing (the shared midpoint every trip passes through)
-    g.fillStyle(0xffd23f, 1).fillRect(H.x, H.junctionY, 3, 1).fillRect(H.x + H.w - 3, H.junctionY, 3, 1);
-    g.fillStyle(0xffd23f, 0.35).fillRect(H.x, H.junctionY - 1, H.w, 1);
     // walls between rooms and hub, with a doorway at each floor
     for (const d of [D.top, D.bottom]) {
       for (const wx of [H.x - 2, H.x + H.w]) {
@@ -42,7 +39,12 @@ export class Ship {
     const slab = (x, y, ww) => { g.fillStyle(0x8d91a6, 1).fillRect(x, y, ww, 1); g.fillStyle(0x34374a, 1).fillRect(x, y + 1, ww, 2); };
     slab(ix, D.top.floor, H.x - ix);
     slab(H.x + H.w, D.top.floor, ix + iw - H.x - H.w);
-    g.fillStyle(0xffd23f, 1).fillRect(H.x, D.top.floor, 2, 1).fillRect(H.x + H.w - 2, D.top.floor, 2, 1); // hatch lips
+    // grate deck plate over the ladder shaft, so same-deck walks cross a real floor
+    const gy = D.top.floor;
+    g.fillStyle(0x6b6f84, 1).fillRect(H.x, gy, H.w, 1);                               // grate top edge
+    for (let x = H.x; x < H.x + H.w; x++) g.fillStyle(x % 2 ? 0x8d91a6 : 0x23252f, 1).fillRect(x, gy + 1, 1, 1);
+    g.fillStyle(0x34374a, 1).fillRect(H.x, gy + 2, H.w, 1);
+    g.fillStyle(0xffd23f, 1).fillRect(H.x, gy, 2, 1).fillRect(H.x + H.w - 2, gy, 2, 1); // hazard trim at the hatch edges
     slab(ix, D.bottom.floor, iw);
     this.interior = g;
 
@@ -95,13 +97,6 @@ export class Ship {
   }
 
   room(id) { return this.rooms.find((r) => r.id === id); }
-
-  /** Room whose horizontal walkway contains (x, y), or null if on the hub ladder. */
-  roomAt(x, y) {
-    if (Math.abs(x - L.HUB.cx) < 0.01) return null;
-    const side = x < L.HUB.cx ? 'left' : 'right';
-    return this.rooms.find((r) => r.side === side && Math.abs(r.floorY - y) < 0.01) || null;
-  }
 
   setInside(inside, ms) {
     this.scene.tweens.add({ targets: [this.exterior], alpha: inside ? 0 : 1, duration: ms, ease: 'Sine.easeInOut' });

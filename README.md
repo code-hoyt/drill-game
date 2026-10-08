@@ -1,4 +1,4 @@
-# Drill (working title): prototype v0.3
+# Drill (working title): prototype v0.3.1
 
 An endless, portrait, pixel-art drilling game for phone browsers. You pilot a drill ship that bores **upward** through an alien planet and keep it alive by running your one crew member between stations. Your score is depth.
 
@@ -36,13 +36,15 @@ Optional desktop keys: `W/S` or arrow keys for throttle (only when piloted), `Sp
           /\        drill nose
    +------+--+------+
    | HELM |  | DRL  |   top deck (nearest the drill)
-   |------|##|------|   ## = hub ladder; yellow marks = junction at mid-height
-   | ENG  |  | TLS  |   bottom deck
+   |------|==|------|   == grate deck plate over the ladder shaft
+   | ENG  |##| TLS  |   bottom deck   (## = ladder)
    +------+--+------+
   ```
-  * Every move follows one network: walk from the stand spot to the hub door on that deck, take the ladder to the **junction** halfway between the decks, take the ladder to the target deck, then walk out to the station. Trips between two rooms on the same deck also dip through the junction.
-  * Every stand spot is the same distance from the hub (`STAND_OFFSET` = 16 px) and both floors are the same distance from the junction (14 px). So **all 12 station-to-station trips are exactly 60 px**: 32 px walking at `CREW_WALK_SPEED` 72 plus 28 px climbing at `CREW_CLIMB_SPEED` 64, about **0.88 s**.
-  * Tapping a new room mid-walk re-plans from where the crew is, still via the junction. If you tap the room the crew is just walking out of, they turn around and walk straight back.
+  * **Same-deck trips** (HELM↔DRL, ENG↔TLS) walk straight across the floor, over the grate on the top deck, with no climbing: 32 px at `CREW_WALK_SPEED` 48, about **0.68 s**.
+  * **Cross-deck trips** (all other pairs) walk 16 px to the ladder, climb directly floor to floor (28 px at `CREW_CLIMB_SPEED` 70, with no stop), then walk 16 px out: 60 px, about **1.07 s**. The diagonal trips (e.g. HELM↔TLS) take the same time as the straight-down ones (HELM↔ENG), because every stand spot is `STAND_OFFSET` = 16 px from the ladder.
+  * **Retargeting** re-plans from where the crew is:
+    * On a deck, same-deck targets mean walking straight there (including turning straight back); other-deck targets mean walking to the ladder and climbing once.
+    * On the ladder, the crew continues or reverses straight to the deck the new target is on, then walks out.
 * **Speed / depth**: real speed eases toward the throttle (quick to brake, slower to accelerate). The rock scrolls down past the ship, and depth = px scrolled / `PX_PER_METER`.
 * **Engine heat (ENG, hold VENT)**: builds with `speed² × difficulty`, has passive cooling, and is doubled in hard rock. Random **coolant leaks** add a heat spike on a timer, so crawling isn't free. At 100% the engine is capped at 40% speed and the hull takes damage every second.
 * **Drill bit wear (DRL, hold FIX DRILL BIT)**: builds per metre drilled, tripled in hard rock, and goes up with grinding and ramming. At 100% speed is capped at 50% and the hull takes damage while moving.
@@ -107,18 +109,18 @@ screenshots/               outside piloted / outside no pilot / inside at helm /
 | `OBSTACLE_GAP_START` → `MIN` over `GAP_DEPTH` | 90 → 22 m over 1500 m | boulder spacing |
 | `HARD_*` | start 120 m, 35% per 60 m, heat×2, wear×3, cap 0.7 | hard rock bands |
 | `HEAT/WEAR_ALERT`, `HULL_ALERT` | 70 / 70 / 35 | alert thresholds |
-| `CREW_WALK_SPEED` | 72 | crew speed on deck floors (world px/s) |
-| `CREW_CLIMB_SPEED` | 64 | crew speed on the hub ladder; together these give about 0.88 s per trip |
+| `CREW_WALK_SPEED` | 48 | crew speed on deck floors (world px/s); same-deck trip about 0.68 s |
+| `CREW_CLIMB_SPEED` | 70 | crew speed on the hub ladder; cross-deck trip about 1.07 s |
 | `START_ROOM` | `'helm'` | where the crew starts each run |
 | `PILOT_REQUIRED` | true | throttle only works with the crew at the helm |
 | `LOCK_TOAST_COOLDOWN` | 900 | ms between "NO PILOT" toasts when you tap a locked throttle |
 | `VIEW_PAN_MS` | 650 | camera transition |
 
-`LAYOUT` holds the ship geometry: an 86×62 px hull with a 24 px drill nose (tip at y 218), deck ceilings and floors (`DECKS`), `ROOM_W` 33, the hub column and junction (`HUB`), and `STAND_OFFSET`. It also holds the two camera targets: `OUTSIDE_CAM` at zoom 1, and `INSIDE_CAM` at **integer zoom 2**, which fits the whole ship between the HUD and the station panel so every pixel is the same size. `ROOM_GEOM` (derived) gives each room's x, floor, station and stand spot, and is shared by the ship, the crew, and the exterior art.
+`LAYOUT` holds the ship geometry: an 86×62 px hull with a 24 px drill nose (tip at y 218), deck ceilings and floors (`DECKS`), `ROOM_W` 33, the hub/ladder column (`HUB`), and `STAND_OFFSET`. It also holds the two camera targets: `OUTSIDE_CAM` at zoom 1, and `INSIDE_CAM` at **integer zoom 2**, which fits the whole ship between the HUD and the station panel so every pixel is the same size. `ROOM_GEOM` (derived) gives each room's x, floor, station and stand spot, and is shared by the ship, the crew, and the exterior art.
 
 ## Testing
 
-`tests/e2e.mjs` drives the game in headless Chromium at a 390×844 phone viewport with touch emulation. It uses real taps and touch-holds for both throttles, the view toggle, room taps, station actions, the locked throttle, and the GO TO HELM shortcut. It also checks that all 12 planned trips have equal length, walks every ordered trip by tapping rooms (equal length, timed at 0.6–1.0 s), tests mid-walk retargeting, confirms the ship fits the 2x inside view, and checks that `!` bubbles sit over the correct rooms. Debug pokes (via `window.__drill`) are used only to set up states quickly.
+`tests/e2e.mjs` drives the game in headless Chromium at a 390×844 phone viewport with touch emulation. It uses real taps and touch-holds for both throttles, the view toggle, room taps, station actions, the locked throttle, and the GO TO HELM shortcut. It also checks the route for each trip type: same-deck plans are a single straight walk, and cross-deck plans are exactly one direct floor-to-floor climb with no mid-ladder stop. It walks all 12 ordered trips by tapping rooms and checks the measured walk and climb distances and times (same-deck 0.6–0.8 s, cross-deck at most about 1.1 s). It also tests retargeting mid-climb (reverse, or continue) and mid-walk, confirms the ship fits the 2x inside view, and checks that `!` bubbles sit over the correct rooms. Debug pokes (via `window.__drill`) are used only to set up states quickly.
 
 ```bash
 npm i playwright && npx playwright install chromium   # in any folder with node_modules
