@@ -8,8 +8,8 @@ import { Crew } from '../systems/Crew.js';
 import { ViewController } from '../systems/ViewController.js';
 import { FONT_KEY } from '../systems/PixelFont.js';
 import { drawBoosts } from '../data/boosts.js';
-import { RELAY_PING } from '../data/dispatch.js';
-import { bankRun } from '../systems/Save.js';
+import { RELAY_PING, relayMessage, CASHOUT_LINE, POD_LINE } from '../data/dispatch.js';
+import { bankRun, loadSave, logRadio, setRunActive } from '../systems/Save.js';
 
 // Hold-actions per station. The HELM has none: its action area is the throttle itself.
 export const STATION_ACTIONS = { engine: ['vent'], helm: [], drill: ['repair'], tools: ['patch', 'blast'] };
@@ -17,12 +17,19 @@ export const STATION_ACTIONS = { engine: ['vent'], helm: [], drill: ['repair'], 
 export class GameScene extends Phaser.Scene {
   constructor() { super('Game'); }
 
-  create() {
+  create(data = {}) {
     this.cameras.main.setBackgroundColor('#140e19');
-    this.state = new ShipSystems();
+    this.planet = data.planet || 'kessa4';
+    const save = loadSave();
+    this.contractNo = save.runs + 1;
+    this.state = new ShipSystems(save.loadout);   // equipped parts are locked in for the run
+    setRunActive(true);
+    this.events.once('shutdown', () => setRunActive(false));
     this.terrain = new Terrain(this);
     this.ship = new Ship(this, (id) => this.onRoomTap(id), () => this.view.set('inside'));
     this.crew = new Crew(this, this.ship, T.START_ROOM);
+    this.crew.walkMul = this.state.mods.walkMul; this.crew.climbMul = this.state.mods.climbMul;
+    this.governorTripped = false;
     this.obstacles = new Obstacles(this, this.state);
     this.view = new ViewController(this, this.ship);
     this.hold = null;        // action currently held by the player
@@ -75,6 +82,7 @@ export class GameScene extends Phaser.Scene {
     this.offers = drawBoosts(T.BOOST_CHOICES, Math.random, this.forceOffers);
     this.cameras.main.shake(200, 0.008);
     this.toast(`RELAY ${this.relayNumber} ANCHORED`, 0x7fe0ff);
+    logRadio(`C${this.contractNo} RELAY ${this.relayNumber}`, relayMessage(this.relayNumber));
     this.time.delayedCall(450, () => { if (!this.over) this.scene.launch('Relay'); });
   }
 
@@ -111,12 +119,14 @@ export class GameScene extends Phaser.Scene {
   endRun({ reason, haul, bonus = 0, recovery = 0, banked, relays }) {
     this.over = true;
     this.hold = null;
+    setRunActive(false);
     this.state.throttle = 0; this.state.speed = 0;
     const depth = Math.floor(this.state.depth);
     const prevBest = loadBest();
     const newBest = depth > prevBest;
     if (newBest) saveBest(depth);
-    const save = bankRun({ banked, reason, relays });
+    const save = bankRun({ banked, reason, relays, depth, planet: this.planet });
+    logRadio(`C${this.contractNo} ${reason === 'cashout' ? 'CASH-OUT' : 'POD'}`, reason === 'cashout' ? CASHOUT_LINE : POD_LINE);
     this.lastRun = { reason, depth, best: Math.max(depth, prevBest), newBest, haul, bonus, recovery, banked, credits: save.credits, relays };
     this.scene.stop('Relay');
     if (reason === 'cashout') {
@@ -177,7 +187,7 @@ export class GameScene extends Phaser.Scene {
 
   // ---- commands (called by the UI scene) ----------------------------------
   /** True while the crew member is standing at the helm (not walking). */
-  get piloted() { return !T.PILOT_REQUIRED || (this.crew && this.crew.station === 'helm'); }
+  get piloted() { return !T.PILOT_REQUIRED || (this.crew && (this.state.mods.pilotRooms || ['helm']).includes(this.crew.station)); }
   /** Crew is on the way to the helm. */
   get pilotEnRoute() { return !this.piloted && this.crew.walking && this.crew.target === 'helm'; }
 
@@ -210,7 +220,7 @@ export class GameScene extends Phaser.Scene {
     kb.on('keydown-SPACE', () => this.toggleView());
     ['ONE', 'TWO', 'THREE', 'FOUR'].forEach((k, i) => kb.on('keydown-' + k, () => L.ROOMS[i] && this.onRoomTap(L.ROOMS[i].id)));
     kb.on('keydown-E', () => { const a = STATION_ACTIONS[this.crew.station]; if (a) this.setHold(a[0]); });
-    kb.on('keydown-Q', () => { if (this.crew.station === 'tools') this.setHold('blast'); });
+    kb.on('keydown-Q', () => { if (this.crew.station === 'tools' && !this.state.mods.noBlast) this.setHold('blast'); });
     kb.on('keyup-E', () => this.setHold(null));
     kb.on('keyup-Q', () => this.setHold(null));
   }
@@ -254,9 +264,14 @@ export class GameScene extends Phaser.Scene {
     this.crew.working = !!canWork;
     if (canWork) {
       if (this.hold === 'blast') {
-        if (this.obstacles.target()) {
+        if (this.obstacles.target() && !s.mods.noBlast) {
           this.blastCharge += dt;
-          if (this.blastCharge >= this.blastTime) { this.obstacles.blast(); this.blastCharge = 0; this.toast('ROCK CLEARED', 0x8affa0); }
+          if (this.blastCharge >= this.blastTime) {
+            const n = s.mods.blastAll ? this.obstacles.blastAll() : (this.obstacles.blast() ? 1 : 0);
+            if (s.mods.blastHeat) s.heat = Math.min(T.HEAT_MAX, s.heat + s.mods.blastHeat);
+            this.blastCharge = 0;
+            this.toast(n > 1 ? `${n} ROCKS CLEARED` : 'ROCK CLEARED', 0x8affa0);
+          }
         } else { this.blastCharge = 0; this.crew.working = false; }
       } else {
         s.work(this.hold, dt);
@@ -277,6 +292,7 @@ export class GameScene extends Phaser.Scene {
     this.edgeToast('hull', s.hull <= T.HULL_ALERT, 'HULL CRITICAL', 0xff4a7a);
     this.edgeToast('hard', s.inHard, 'HARD ROCK: SLOW + HOT', 0x9ad0ff);
     const piloted = this.piloted;
+    this.updateGovernor(piloted);
     if (piloted !== this.wasPiloted) {
       this.toast(piloted ? 'PILOT AT HELM: THROTTLE ON' : `NO PILOT: SPEED LOCKED ${Math.round(s.throttle * 100)}%`, piloted ? 0x8affa0 : 0xffc35c);
       this.wasPiloted = piloted;
@@ -291,7 +307,7 @@ export class GameScene extends Phaser.Scene {
     const s = this.state;
     return {
       engine: s.heat >= T.HEAT_ALERT,
-      helm: this.obstacles.anyAhead() && s.throttle > T.RAM_SAFE_SPEED, // boulder ahead, going too fast
+      helm: this.obstacles.anyAhead() && s.throttle > s.safeThrottle + 1e-6, // boulder ahead, going too fast
       pilot: !this.piloted,
       drill: s.wear >= T.WEAR_ALERT,
       tools: s.hull <= T.HULL_ALERT || this.obstacles.anyAhead(),
@@ -299,6 +315,20 @@ export class GameScene extends Phaser.Scene {
       rock: this.obstacles.anyAhead(),
       hard: s.inHard || this.terrain.hardAhead(),
     };
+  }
+
+  /** Dead-man governor (helm part): no pilot + anything close ahead -> drop to safe speed.
+   *  It stays tripped (and the throttle stays down) until Holt is back at the helm. */
+  updateGovernor(piloted) {
+    const s = this.state;
+    if (!s.mods.governor) return;
+    if (piloted) { if (this.governorTripped) { this.governorTripped = false; this.toast('GOVERNOR RESET', 0x8affa0); } return; }
+    const ahead = this.obstacles.close() || this.terrain.hardAhead();
+    if (ahead && s.throttle > s.safeThrottle + 1e-6) {
+      s.throttle = Math.floor(s.safeThrottle * 10 + 1e-6) / 10;
+      if (!this.governorTripped) this.toast('GOVERNOR TRIPPED: SAFE SPEED', 0xffc35c);
+      this.governorTripped = true;
+    }
   }
 
   edgeToast(key, on, text, color) {

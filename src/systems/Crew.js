@@ -22,6 +22,8 @@ export class Crew {
     this.tripLength = 0;
     this.tripFrom = startRoom;
     this.speedMul = 1;          // relay supplies (boots) raise this
+    this.walkMul = 1;           // Holt's kit parts
+    this.climbMul = 1;
   }
 
   get walking() { return this.station === null; }
@@ -68,7 +70,7 @@ export class Crew {
         const p = this.path[0];
         const dx = p.x - this.sprite.x, dy = p.y - this.sprite.y;
         const vertical = Math.abs(dy) > Math.abs(dx);
-        const speed = (vertical ? T.CREW_CLIMB_SPEED : T.CREW_WALK_SPEED) * this.speedMul;
+        const speed = (vertical ? T.CREW_CLIMB_SPEED * this.climbMul : T.CREW_WALK_SPEED * this.walkMul) * this.speedMul;
         const dist = Math.abs(dx) + Math.abs(dy);
         this.climbing = vertical;
         if (!vertical && dx !== 0) this.sprite.setFlipX(dx < 0);

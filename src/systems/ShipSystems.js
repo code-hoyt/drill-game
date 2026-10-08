@@ -1,11 +1,12 @@
 // Pure gameplay numbers: speed, depth, heat, bit wear, hull. No rendering.
 import { TUNING as T } from '../config.js';
+import { applyParts } from '../data/parts.js';
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const approach = (v, target, step) => (v < target ? Math.min(target, v + step) : Math.max(target, v - step));
 
 export class ShipSystems {
-  constructor() {
+  constructor(loadout = null) {
     this.throttle = T.START_THROTTLE; // what the player asked for (0..1)
     this.speed = 0;                   // actual speed (0..1), eases toward throttle
     this.distance = 0;                // px drilled
@@ -21,10 +22,24 @@ export class ShipSystems {
     this.relays = 0;                  // relays passed (pushed on from)
     this.anchored = false;            // clamped in at a relay: simulation paused
     this.boosts = [];                 // ids of relay supplies picked this run
-    // Run modifiers from relay supplies (multiplicative unless noted).
+    // Run modifiers: loadout parts (applied once, here) + relay supplies (stacked at relays).
+    // Multipliers multiply; maxHullBonus/spareBits add; the rest are flags/overrides.
     this.mods = { heatMul: 1, wearMul: 1, ventMul: 1, repairMul: 1, patchMul: 1, blastTimeMul: 1,
-      warnMul: 1, crewSpeedMul: 1, ramMul: 1, maxHullBonus: 0, spareBits: 0 };
+      warnMul: 1, crewSpeedMul: 1, ramMul: 1, maxHullBonus: 0, spareBits: 0,
+      // parts (M2)
+      maxSpeedMul: 1, accelMul: 1, decelMul: 1, coolMul: 1, spikeMul: 1, grindWearMul: 1, workMul: 1,
+      walkMul: 1, climbMul: 1, overheatDmgMul: 1, overheatCap: null, ramSafe: null, blastAll: false,
+      noBlast: false, blastHeat: 0, governor: false, pilotRooms: null };
+    if (loadout) applyParts(this.mods, loadout);
+    this.loadout = loadout;
+    this.hull = this.maxHull;
   }
+
+  /** Actual speed as a fraction of the *stock* top speed (parts change top speed). */
+  get realSpeed() { return this.speed * this.mods.maxSpeedMul; }
+  /** Highest throttle setting that grinds boulders instead of ramming them. */
+  get safeThrottle() { return Math.min(1, (this.mods.ramSafe ?? T.RAM_SAFE_SPEED) / this.mods.maxSpeedMul); }
+  get ramming() { return this.speed > this.safeThrottle + 1e-6; }
 
   get maxHull() { return T.HULL_MAX + this.mods.maxHullBonus; }
   get payMult() { return 1 + T.PAY_MULT_STEP * this.relays; }
@@ -38,7 +53,7 @@ export class ShipSystems {
 
   get speedCap() {
     let c = 1;
-    if (this.overheated) c = Math.min(c, T.OVERHEAT_SPEED_CAP);
+    if (this.overheated) c = Math.min(c, this.mods.overheatCap ?? T.OVERHEAT_SPEED_CAP);
     if (this.worn) c = Math.min(c, T.WORN_SPEED_CAP);
     if (this.inHard) c = Math.min(c, T.HARD_SPEED_CAP);
     return c;
@@ -51,9 +66,9 @@ export class ShipSystems {
     const events = [];
     if (this.anchored) return { advancePx: 0, events };
     const target = Math.min(this.throttle, this.speedCap);
-    this.speed = approach(this.speed, target, (target > this.speed ? T.ACCEL : T.DECEL) * dt);
+    this.speed = approach(this.speed, target, (target > this.speed ? T.ACCEL * this.mods.accelMul : T.DECEL * this.mods.decelMul) * dt);
 
-    let advancePx = this.blocked ? 0 : this.speed * T.MAX_SPEED_PX * dt;
+    let advancePx = this.blocked ? 0 : this.speed * T.MAX_SPEED_PX * this.mods.maxSpeedMul * dt;
     // never overshoot the next relay anchor
     const relayPx = this.nextRelayAt * T.PX_PER_METER;
     if (this.distance + advancePx >= relayPx) { advancePx = Math.max(0, relayPx - this.distance); events.push('relay'); }
@@ -63,7 +78,9 @@ export class ShipSystems {
     const diff = this.difficulty;
     const heatMul = this.inHard ? T.HARD_HEAT_MULT : 1;
     const wearMul = this.inHard ? T.HARD_WEAR_MULT : 1;
-    this.heat += (T.HEAT_RATE * this.speed * this.speed * diff * heatMul * this.mods.heatMul - T.HEAT_COOL) * dt;
+    // heat follows the *real* speed, so a faster bit runs hotter at full throttle
+    const rs = this.realSpeed;
+    this.heat += (T.HEAT_RATE * rs * rs * diff * heatMul * this.mods.heatMul - T.HEAT_COOL * this.mods.coolMul) * dt;
     this.wear += (advancePx / T.PX_PER_METER) * T.WEAR_PER_METER * diff * wearMul * this.mods.wearMul;
     if (this.wear >= T.WEAR_MAX && this.mods.spareBits > 0) { this.wear = 0; this.mods.spareBits -= 1; events.push('sparebit'); }
 
@@ -71,14 +88,14 @@ export class ShipSystems {
     if (this.depth > T.SPIKE_START_DEPTH) {
       this.spikeTimer -= dt;
       if (this.spikeTimer <= 0) {
-        this.heat += T.SPIKE_AMOUNT;
+        this.heat += T.SPIKE_AMOUNT * this.mods.spikeMul;
         this.spikeTimer = this._nextSpike();
         events.push('spike');
       }
     }
 
     let dmg = 0;
-    if (this.overheated) dmg += T.OVERHEAT_DAMAGE;
+    if (this.overheated) dmg += T.OVERHEAT_DAMAGE * this.mods.overheatDmgMul;
     if (this.worn && this.speed > 0.05) dmg += T.WORN_DAMAGE;
     this.damage(dmg * dt);
 
@@ -95,9 +112,10 @@ export class ShipSystems {
 
   /** Station work, called every frame while the player holds the action. */
   work(action, dt) {
-    if (action === 'vent') this.heat = clamp(this.heat - T.VENT_RATE * this.mods.ventMul * dt, 0, T.HEAT_MAX);
-    else if (action === 'repair') this.wear = clamp(this.wear - T.REPAIR_RATE * this.mods.repairMul * dt, 0, T.WEAR_MAX);
-    else if (action === 'patch') this.hull = clamp(this.hull + T.PATCH_RATE * this.mods.patchMul * dt, 0, this.maxHull);
+    const w = this.mods.workMul;
+    if (action === 'vent') this.heat = clamp(this.heat - T.VENT_RATE * this.mods.ventMul * w * dt, 0, T.HEAT_MAX);
+    else if (action === 'repair') this.wear = clamp(this.wear - T.REPAIR_RATE * this.mods.repairMul * w * dt, 0, T.WEAR_MAX);
+    else if (action === 'patch') this.hull = clamp(this.hull + T.PATCH_RATE * this.mods.patchMul * w * dt, 0, this.maxHull);
   }
 
   // ---- relays ---------------------------------------------------------------

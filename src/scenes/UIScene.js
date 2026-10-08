@@ -163,7 +163,7 @@ export class UIScene extends Phaser.Scene {
     this.pilotBtn.setVisible(!piloted && !g.pilotEnRoute);
     this.pilotBtn.setProgress(!piloted && time - g.lockedPing < 1200 && Math.floor(time / 150) % 2 === 0 ? 1 : 0);
     this.pilotText.setVisible(piloted || g.pilotEnRoute);
-    if (piloted) this.pilotText.setText('PILOT AT HELM').setTint(0x8affa0);
+    if (piloted) this.pilotText.setText(g.crew.station === 'helm' ? 'PILOT AT HELM' : 'PILOT AT DRL (LINKAGE)').setTint(0x8affa0);
     else if (g.pilotEnRoute) this.pilotText.setText('PILOT EN ROUTE...').setTint(0xffc35c);
     const spd = `SPD ${Math.round(s.throttle * 100)}%`;
     this.speedText.setText(spd).setTint(piloted ? 0xffffff : 0x9aa0b8);
@@ -177,12 +177,12 @@ export class UIScene extends Phaser.Scene {
   drawVThrottle(s, piloted, time) {
     const t = this.vGfx.clear(), { y, w, h } = VTRACK;
     const x = VTRACK.x + this.shakeX(time);
-    const safeH = Math.round(h * T.RAM_SAFE_SPEED);
+    const safeH = Math.round(h * s.safeThrottle);
     const fillH = Math.round(h * s.throttle);
     t.fillStyle(0x0b0b10, 1).fillRect(x - 1, y - 1, w + 2, h + 2);
     t.fillStyle(piloted ? 0x1f3a26 : 0x1c1f22, 1).fillRect(x, y + h - safeH, w, safeH);   // safe-to-ram zone
     t.fillStyle(piloted ? 0x3a1f22 : 0x221c1e, 1).fillRect(x, y, w, h - safeH);           // danger zone
-    const fillCol = !piloted ? 0x6a6c78 : s.throttle <= T.RAM_SAFE_SPEED ? 0x4ad66d : 0xff8a3d;
+    const fillCol = !piloted ? 0x6a6c78 : s.throttle <= s.safeThrottle + 1e-6 ? 0x4ad66d : 0xff8a3d;
     t.fillStyle(fillCol, piloted ? 0.75 : 0.5).fillRect(x + 3, y + h - fillH, w - 6, fillH);
     for (let i = 1; i < 10; i++) t.fillStyle(0x000000, 0.5).fillRect(x, y + Math.round(h * i / 10), 3, 1);
     const sy = y + h - Math.round(h * s.speed);                 // actual speed tick
@@ -204,12 +204,12 @@ export class UIScene extends Phaser.Scene {
   drawHThrottle(s, time) {
     const t = this.hGfx.clear(), { y, w, h } = HTRACK;
     const x = HTRACK.x + this.shakeX(time);
-    const safeW = Math.round(w * T.RAM_SAFE_SPEED);
+    const safeW = Math.round(w * s.safeThrottle);
     const fillW = Math.round(w * s.throttle);
     t.fillStyle(0x0b0b10, 1).fillRect(x - 1, y - 1, w + 2, h + 2);
     t.fillStyle(0x1f3a26, 1).fillRect(x, y, safeW, h);
     t.fillStyle(0x3a1f22, 1).fillRect(x + safeW, y, w - safeW, h);
-    t.fillStyle(s.throttle <= T.RAM_SAFE_SPEED ? 0x4ad66d : 0xff8a3d, 0.75).fillRect(x, y + 3, fillW, h - 6);
+    t.fillStyle(s.throttle <= s.safeThrottle + 1e-6 ? 0x4ad66d : 0xff8a3d, 0.75).fillRect(x, y + 3, fillW, h - 6);
     for (let i = 1; i < 10; i++) t.fillStyle(0x000000, 0.5).fillRect(x + Math.round(w * i / 10), y + h - 3, 1, 3);
     t.fillStyle(0xffffff, 1).fillRect(x + Math.round(w * s.speed), y + h, 1, 3); // actual speed tick
     const hx = x + fillW;
@@ -230,7 +230,7 @@ export class UIScene extends Phaser.Scene {
       this.stationText.setText(`WALKING TO ${ROOM_NAMES[c.target]}...`).setTint(0xc8c8d8);
       show([]);
     } else if (station === 'helm') {
-      this.stationText.setText(`HELM   SPEED ${Math.round(s.throttle * 100)}%`).setTint(s.throttle > T.RAM_SAFE_SPEED ? 0xffc35c : 0x8affa0);
+      this.stationText.setText(`HELM   SPEED ${Math.round(s.throttle * 100)}%`).setTint(s.throttle > s.safeThrottle + 1e-6 ? 0xffc35c : 0x8affa0);
       this.hintText.setText('DRAG TO SET SPEED. GREEN = SAFE');
       show([]);
       this.drawHThrottle(s, time);
@@ -247,7 +247,7 @@ export class UIScene extends Phaser.Scene {
       this.stationText.setText(`TOOLS   HULL ${Math.round(s.hull)}%  ROCKS ${rocks}`).setTint(s.hull <= T.HULL_ALERT ? 0xff4a7a : 0xffffff);
       show(['patch', 'blast']);
       this.actionBtns.patch.setEnabled(s.hull < s.maxHull);
-      this.actionBtns.blast.setEnabled(!!g.obstacles.target());
+      this.actionBtns.blast.setEnabled(!s.mods.noBlast && !!g.obstacles.target()).setLabel(s.mods.noBlast ? 'NO BLAST (FOAM)' : 'HOLD: BLAST');
       this.actionBtns.blast.setProgress(g.blastCharge / g.blastTime);
     }
     // release a hold whose button just got disabled/hidden

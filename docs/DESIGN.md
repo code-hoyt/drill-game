@@ -146,7 +146,7 @@ Every 1000 m the contract calls for a **relay anchor**: a beacon bolted into the
 - The stock is a few parts per slot (proposed: 2 per slot, so 12 items) drawn from the *unlocked* pool. Credits buy unlocks that widen the pool, and stock offers then come from that wider pool.
 - At least one non-stock option per slot whenever the pool allows, so no slot is ever a dead end.
 - The stock refreshes after every contract (cash-out or hull loss), so a bad run still turns the shop over.
-- **Reroll:** you can pay credits to reroll the stock once per dock. The cost doubles per reroll (100 → 200 → 400), as a release valve rather than a way to shop for exact parts.
+- **Reroll:** you can pay credits to reroll the stock. The cost doubles with each reroll during one dock (100 → 200 → 400) and resets when the stock refreshes after a contract. It's a release valve, not a way to shop for exact parts. *(M2 reading of "once per dock" plus "doubles": repeat rerolls are allowed but get expensive fast.)*
 - **Hold:** you can reserve 1 offered part across one refresh for a small fee, so you can save up for it. This is optional and can be cut if the shop feels fiddly.
 - Owned parts stay owned. Randomness only affects what you can *add*, never what you lose.
 - Relay boosts follow the same idea within a run: 3 distinct random offers per relay. Duplicates are allowed *across* relays, since boosts stack.
@@ -168,6 +168,15 @@ Every 1000 m the contract calls for a **relay anchor**: a beacon bolted into the
 | Helm | **Dead-man governor** | with no pilot, cuts the throttle to safe speed when a boulder is close | see below |
 | Holt's kit | **Climbing harness** | climb speed +50% | walk speed −15% |
 | Holt's kit | **Light boots** | walk speed +25% | climb speed −20% |
+
+**[C] Built in M2:** 18 sidegrades, 3 per slot, so the 2-per-slot stock actually rotates. They are the 13 parts above, plus:
+- Bypass valve (engine): overheated cap 70%, overheat damage ×2.
+- Light frame (hull): accel and braking +35%, −25 max hull.
+- Quick capacitor (tools): 0.5 s blast, +15 heat per blast.
+- Cable linkage (helm): pilot from HELM or DRL, top speed −15%.
+- Tool belt (kit): station work +25%, climb −25%.
+
+Prices run 350–900 credits. A relay-1 cash-out is about 1,100. Not built yet: finds and voids on the Long scanner, and the Heavy charge destroying finds (both wait for M4 finds), plus the vendor **hold** option. The README lists the full table.
 
 **The dead-man governor** is a mechanical spring limiter: "Approved under Clause 4(b): no decision-making components." Its costs:
 - It **trips on everything**, including harmless rock and finds.
@@ -207,7 +216,7 @@ The home screen is **the rig's own 2x2 interior while docked**: calm, lights on,
 - **Shelf in DRL:** the **codex**. Recovered finds appear here physically.
 - **Holt's fold-down cot by the ladder:** stats (runs, best depths, credits earned, rigs refitted).
 
-**Airlock (the hub hatch) → station concourse.** This is a small second screen with vendor fronts:
+**Airlock (the hatch in the bottom-deck floor, under the ladder) → station concourse.** This is a small second screen with vendor fronts:
 - **Quartermaster:** buy parts and new relay supplies for the pool.
 - **Survey office:** buy planet licences.
 - **Dispatch office:** Ines's window.

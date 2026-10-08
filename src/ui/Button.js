@@ -32,8 +32,10 @@ export class Button {
     };
     this.zone.on('pointerup', release);
     this.zone.on('pointerout', release);
+    this._release = release;
+    this._gameout = () => release();
     scene.input.on('pointerup', release);
-    scene.input.on('gameout', () => release());
+    scene.input.on('gameout', this._gameout);
     this.draw();
   }
 
@@ -56,7 +58,16 @@ export class Button {
     return this;
   }
 
+  destroy() {
+    if (this.dead) return;
+    this.dead = true;
+    this.scene.input.off('pointerup', this._release);
+    this.scene.input.off('gameout', this._gameout);
+    this.gfx.destroy(); this.text.destroy(); this.zone.destroy();
+  }
+
   draw() {
+    if (this.dead) return;
     const g = this.gfx, { x, y, w, h } = this;
     g.clear();
     g.fillStyle(0x0b0b10, 1).fillRect(x, y, w, h);

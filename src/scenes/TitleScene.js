@@ -12,7 +12,7 @@ export class TitleScene extends Phaser.Scene {
     const t = (y, s, str, tint = 0xffffff) => this.add.bitmapText(GAME_W / 2, y, FONT_KEY, str, s).setOrigin(0.5).setTint(tint);
     t(60, 24, 'DRILL', 0xffb347);
     t(88, 6, 'AN ENDLESS DIG INTO AN ALIEN WORLD', 0xb8b0c8);
-    const best = loadBest();
+    const best = Math.max(loadBest(), loadSave().best.kessa4 || 0);
     t(112, 6, best ? `BEST DEPTH ${best}M` : 'NO RECORD YET', 0x4fd1c5);
     const save = loadSave();
     t(122, 6, `CREDITS ${save.credits} CR`, 0xffd23f);
@@ -22,8 +22,8 @@ export class TitleScene extends Phaser.Scene {
     t(290, 6, 'SPEED ONLY CHANGES AT THE HELM', 0x9aa0b8);
     t(299, 6, 'RELAY EVERY 1000M: PUSH ON OR CASH OUT', 0x9aa0b8);
     this.tweens.add({ targets: this.start, alpha: 0.2, duration: 500, yoyo: true, repeat: -1 });
-    this.input.once('pointerdown', () => this.scene.start('Game'));
-    this.input.keyboard?.once('keydown', () => this.scene.start('Game'));
+    this.input.once('pointerdown', () => this.scene.start('Dock'));
+    this.input.keyboard?.once('keydown', () => this.scene.start('Dock'));
   }
   update(_, dt) { this.bg.tilePositionY -= dt * 0.01; }
 }

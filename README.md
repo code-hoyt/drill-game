@@ -1,6 +1,6 @@
-# Drill (working title): prototype v0.4 (M1: run structure + relays)
+# Drill (working title): prototype v0.5 (M2: loadout + docked home base)
 
-An endless, portrait, pixel-art drilling game for phone browsers. You pilot a drill ship that bores **upward** through an alien planet and keep it alive by running your one crew member between stations. Your score is depth. Every 1000 m you clamp onto a relay and choose: push on for better pay, or cash out. Design doc: [`docs/DESIGN.md`](docs/DESIGN.md).
+An endless, portrait, pixel-art drilling game for phone browsers. You pilot a drill ship that bores **upward** through an alien planet and keep it alive by running your one crew member between stations. Your score is depth. Every 1000 m you clamp onto a relay and choose: push on for better pay, or cash out. Between contracts the rig docks at an orbital station: that docked interior is the home screen, where you swap parts and buy new ones. Design doc: [`docs/DESIGN.md`](docs/DESIGN.md).
 
 Built with **Phaser 3.90** (vendored at `lib/phaser.min.js`). It uses plain ES modules, has **no build step and no external assets**, and can be served from any static host (GitHub Pages ready).
 
@@ -15,6 +15,19 @@ ES modules don't load over `file://`, so you need a server.
 
 ## How to play
 
+**Flow:** title → **docked rig** (home) → HELM: accept a contract → run → relay breaks → end screen → **back to the docked rig**.
+
+**Docked rig (home base).** It's the same 2x2 interior. Tap a room or prop and Holt walks there, using the same pathing as in a run. The menu opens when he arrives:
+
+| Tap | Opens |
+|---|---|
+| **HELM** | Contract board (one Kessa-4 contract for now; M3 adds planets from `src/data/contracts.js`), the **HELM PART** slot, and **radio replay** of Ines's past messages (paged). |
+| **DRL** | Drill head slot. **The shelf** (top-left of DRL) opens the codex stub (M4). |
+| **ENG** | Engine slot. **The cot** by the ladder opens Holt's log: credits, total earned, best depth, contracts, cash-outs, rigs lost, relays reached, deepest relay, parts owned, and the current loadout. |
+| **TLS** | The tools bench, with 3 slots: Tools, Hull, Holt's kit. |
+| **Ladder hatch** (or the **STATION** button) | The station concourse: **Quartermaster** (the parts vendor), Survey office (M3 stub), and Ines's window (stub). |
+
+
 | View | Controls |
 |---|---|
 | **Outside** (drill face) | Throttle slider on the right (drag/tap), or the `+` / `-` buttons. **This only works while someone is at the HELM.** The green part of the track is "safe to hit a boulder" speed. Tap the ship or **INSIDE** to go in. |
@@ -23,7 +36,7 @@ ES modules don't load over `file://`, so you need a server.
 
 Optional desktop keys: `W/S` or arrow keys for throttle (only when piloted), `Space` to toggle the view, `1/2/3/4` to pick a room (HELM/DRL/ENG/TLS), `E` (hold) for the primary action, `Q` (hold) to blast, `R`/`Enter` to restart.
 
-**Debug/playtest URL params:** `?depth=950` starts the run at 950 m (relay 1 is 50 m ahead). `?boosts=plate,coolant,charge` fixes the relay supply offers (ids in `src/data/boosts.js`). In the console, `__drill.scene.getScene('Game').debugJump(1980)` jumps mid-run and keeps the haul.
+**Debug/playtest URL params:** `?credits=5000` sets your credits. `?own=all` (or `?own=widecut,plating`) owns parts. `?stock=id,id,...` forces the Quartermaster's stock. `?wipe=1` clears the save. `?depth=950` starts the run at 950 m (relay 1 is 50 m ahead). `?boosts=plate,coolant,charge` fixes the relay supply offers (ids in `src/data/boosts.js`). In the console, `__drill.scene.getScene('Game').debugJump(1980)` jumps mid-run and keeps the haul.
 
 ## Mechanics
 
@@ -70,7 +83,47 @@ Optional desktop keys: `W/S` or arrow keys for throttle (only when piloted), `Sp
 * **Relay supplies** (`src/data/boosts.js`, 3 distinct offered per relay; repeats are possible across relays): COOLANT CANISTER (vent +30%), SPARE BIT (auto-swaps when the bit hits 100%), CHARGE PACK (blast 2× faster), PLATE KIT (+15 max hull and +15 now), SCANNER TUNE-UP (boulder warnings 50% earlier), GOOD BOOTS (walk/climb +15%), HEAT SINK (heat −15%), HARDENED TEETH (wear −15%), PATCH COMPOUND (patch +40%), SHOCK STRUTS (ram damage −20%).
 * **Hull loss**: the rig is lost. The crew cab ejects as an escape pod and rides the bore back, and you bank `floor(haul / 3)`.
 * **End screen**: CASHED OUT or RIG LOST. It shows depth, best depth (`localStorage['drill.bestDepth']`), relays reached, the breakdown (haul, +10% bonus or −2/3 lost, banked, total credits), Ines's sign-off, and **NEW CONTRACT**.
-* **Save**: banked credits and run stats persist in `localStorage['drill.save']` (versioned JSON: `credits, runs, cashouts, rigsLost, relaysReached`). The title screen shows your credits. M2 will spend them.
+* **Loadout (6 slots, one part each)**: drill head, engine, hull, tools, helm, Holt's kit.
+  * Every slot starts with its stock part, which is the M1 balance. Every other part is a **sidegrade with a real downside**.
+  * Parts are bought once and kept. You can swap them **only while docked**: the run locks in the loadout at contract start, and `equipPart` refuses while a run is active.
+  * Effects fold into the same `mods` object as relay supplies (`src/data/parts.js` → `applyParts`).
+  * Top speed is a real speed. Heat follows the *real* speed squared, and the safe-ram limit is a real speed too. So a faster bit runs hotter and has a narrower green zone on the throttle, while a slower bit gets a wider one.
+
+| Slot | Part | Price | Upside | Downside |
+|---|---|---|---|---|
+| Drill head | Survey bit (stock) | – | balanced | – |
+| | Wide-cut bit | 900 | top speed +25% | heat +35%; safe ram zone shrinks (35% → 28% throttle) |
+| | Diamond-core bit | 700 | bit wear −40% | top speed −15% |
+| | Grinder head | 600 | safe ram speed 0.35 → 0.50 | grind wear +40%; top speed −10% |
+| Engine | K-9 engine (stock) | – | balanced | – |
+| | Overdrive turbine | 650 | acceleration +60% | coolant leaks hit 2× harder |
+| | Cold-loop engine | 600 | passive cooling ×2 | acceleration −30% |
+| | Bypass valve | 550 | overheated speed cap 40% → 70% | overheat hull damage ×2 |
+| Hull | Standard plate (stock) | – | 100 hull | – |
+| | Heavy plating | 800 | +40 max hull | acceleration and braking −35% |
+| | Ablative skin | 700 | ram damage −40% | patching 50% slower |
+| | Light frame | 500 | acceleration and braking +35% | −25 max hull |
+| Tools | Bench kit (stock) | – | patch + 1.2 s blast | – |
+| | Heavy charge | 750 | one blast clears every boulder in view | 3 s charge |
+| | Patch foam | 550 | patch rate +80% | no blasting at all |
+| | Quick capacitor | 600 | blast charges in 0.5 s | each blast adds +15 heat |
+| Helm | Basic console (stock) | – | standard warnings | – |
+| | Long scanner | 600 | boulder warnings 2× earlier | heat +15% |
+| | Dead-man governor | 450 | with no pilot and rock close ahead (boulder or hard band), drops the throttle to safe speed | trips on any rock; stays at safe speed until Holt is back at the helm |
+| | Cable linkage | 700 | throttle works from HELM **or DRL** | top speed −15% |
+| Holt's kit | Work boots (stock) | – | standard | – |
+| | Climbing harness | 350 | climb speed +50% | walk speed −15% |
+| | Light boots | 350 | walk speed +25% | climb speed −20% |
+| | Tool belt | 450 | vent, fix and patch 25% faster | climb speed −25% |
+
+* **Quartermaster (rotating stock)**:
+  * It offers **2 parts per slot (12 total)**, drawn at random from the *unlocked*, *unowned*, non-stock pool. If a slot's pool is short, it shows what's left. A sold-out slot means you own everything for it.
+  * The stock **refreshes after every contract**, whether you cash out or lose the rig.
+  * **Reroll** costs 100 → 200 → 400… (doubling) and resets when the stock refreshes. A reroll always changes something when the pool allows.
+  * Tap an offer to see its full upside, downside, what it replaces, and the price. Then choose **BUY + EQUIP** (one tap) or **BUY ONLY**.
+* **Save** (`localStorage['drill.save']`, v2):
+  * Contents: credits, total earned, runs, cash-outs, rigs lost, relays reached, deepest relay, best depth per planet, owned parts, loadout, vendor stock and reroll count, and Ines's radio log (last 40).
+  * **Migration**: a v1 save (M1) keeps its credits and stats, and the old `drill.bestDepth` key is folded into `best.kessa4`. No save is ever wiped by an upgrade.
 
 ## File structure
 
@@ -85,13 +138,16 @@ src/
     TitleScene.js          title / best depth / tap to start
     GameScene.js           world + simulation loop, commands used by UI, game over trigger
     UIScene.js             HUD overlay: depth, bars, alerts, toasts, throttles (outside + helm), station panel, pilot bar
+    DockScene.js           docked home base: Dock (rig interior, Holt walks, props) + DockUI (HUD, menus: contracts, radio, slots, stats, codex, station, Quartermaster)
     RelayScene.js          relay break: Ines dispatch (typing/static), supply pick, repair, push on / cash out
     GameOverScene.js       end screen: cashed out / rig lost, earnings breakdown, new contract
   data/
     boosts.js              relay supplies + drawBoosts()
+    parts.js               6 slots, 24 parts (6 stock + 18 sidegrades), applyParts()
+    contracts.js           planets/contracts for the HELM board (M3 extends)
     dispatch.js            Ines's relay messages (1-4 + fallbacks), ping, sign-offs
   systems/
-    Save.js                localStorage meta save (credits, stats)
+    Save.js                localStorage save v2 + migration, vendor stock/reroll/buy, equip (blocked mid-run), radio log, URL shortcuts
     ShipSystems.js         pure numbers: speed, depth, heat, wear, hull, leaks (no rendering)
     Terrain.js             scrolling rock/tunnel tiles, depth tint, hard-rock bands
     Obstacles.js           boulder spawn/scroll, ram / grind / blast
@@ -103,7 +159,7 @@ src/
   ui/
     Button.js              touch button with tap + press-and-hold
 tests/e2e.mjs              Playwright phone-viewport test (see below)
-screenshots/               outside piloted / no pilot / inside at helm / rig lost / relay supply pick / relay break / cashed out
+screenshots/               01-07 run + relay screens; 08 docked base, 09 Quartermaster, 10 part swap, 11 stats, 12 buy detail
 docs/DESIGN.md             game design doc
 ```
 
@@ -155,6 +211,21 @@ docs/DESIGN.md             game design doc
 * CASH OUT banks `floor(haul × 1.1)` into `drill.save` and sets the new best (2000 m).
 * Hull loss banks `floor(haul / 3)` and launches the escape pod.
 * After a reload, the title shows your credits.
+
+**M2 coverage**:
+* The flow: title → dock → HELM → ACCEPT CONTRACT → run, then end screen → BACK TO THE RIG.
+* Dock navigation: Holt walks to ENG, the cot, the DRL shelf, TLS, HELM and the hatch, and the right menu opens on arrival.
+* Vendor stock: 12 offers, 2 per slot, never stock or owned parts; it's randomized across draws and refreshed per contract.
+* Shortcuts: `?credits=` and `?stock=` work.
+* Reroll costs 100 and the next costs 200.
+* Buying: the buy screen shows the upside and downside. BUY + EQUIP and BUY ONLY both spend credits and persist. A part that isn't in stock can't be bought.
+* Equipping works from the part swap screen and survives a reload.
+* Part effects in a run:
+  * Heavy plating: 140 max hull, acceleration and braking ×0.65.
+  * Wide-cut: about 50 px/s at full speed, heat ×1.35, safe ram zone 28%.
+  * Light boots: same-deck walk 0.55 s, slower climbs.
+* Swapping is blocked mid-run and allowed again once docked.
+* Migration: a v1 save plus the old best-depth key become v2 with credits, stats and best intact.
 
 Debug pokes (via `window.__drill`) are used only to set up states quickly.
 

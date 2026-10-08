@@ -56,8 +56,8 @@ export class Obstacles {
       if (bottom >= L.DRILL_TIP_Y) {
         o.sprite.y = L.DRILL_TIP_Y - o.size.r;
         o.contact = true;
-        if (s.speed > T.RAM_SAFE_SPEED) {
-          const dmg = (T.RAM_DAMAGE_BASE + T.RAM_DAMAGE_SPEED * s.speed) * o.size.mult * s.mods.ramMul;
+        if (s.ramming) {
+          const dmg = (T.RAM_DAMAGE_BASE + T.RAM_DAMAGE_SPEED * s.realSpeed) * o.size.mult * s.mods.ramMul;
           s.damage(dmg);
           s.wear = Math.min(T.WEAR_MAX, s.wear + T.RAM_WEAR);
           s.speed *= 0.3; // jolt
@@ -69,7 +69,7 @@ export class Obstacles {
         blocked = true;
         if (s.speed > 0.02) {
           o.hp -= T.GRIND_RATE * dt * (0.6 + s.speed);
-          s.wear = Math.min(T.WEAR_MAX, s.wear + T.GRIND_WEAR * dt);
+          s.wear = Math.min(T.WEAR_MAX, s.wear + T.GRIND_WEAR * s.mods.grindWearMul * dt);
           o.sprite.x += Math.sin(time * 0.08) * 0.3;
           if (Math.random() < 0.4) this.debris.explode(1, o.sprite.x, L.DRILL_TIP_Y - 2);
           if (o.hp <= 0) { this.destroy(o, true); blocked = false; continue; }
@@ -77,7 +77,7 @@ export class Obstacles {
       }
       // warning bubble when approaching too fast
       const dist = L.DRILL_TIP_Y - bottom;
-      const danger = dist < T.WARN_DISTANCE * s.mods.warnMul && s.speed > T.RAM_SAFE_SPEED && o.sprite.y > 0;
+      const danger = dist < T.WARN_DISTANCE * s.mods.warnMul && s.ramming && o.sprite.y > 0;
       o.warn.setPosition(o.sprite.x + o.size.r + 5, o.sprite.y - 4).setVisible(danger && Math.floor(time / 200) % 2 === 0);
     }
     return { blocked, rammed };
@@ -92,6 +92,21 @@ export class Obstacles {
 
   /** Is anything on screen ahead? (alert icon) */
   anyAhead() { return this.list.some((o) => o.sprite.y > 0); }
+
+  /** Boulders within warning range of the drill tip (dead-man governor). */
+  close() { return this.list.some((o) => o.sprite.y > 0 && L.DRILL_TIP_Y - o.sprite.y < T.WARN_DISTANCE * this.sys.mods.warnMul); }
+
+  /** Heavy charge: clears every boulder on screen. Returns the count. */
+  blastAll() {
+    const hit = this.list.filter((o) => o.sprite.y > 10);
+    this.laser.clear();
+    for (const o of hit) {
+      this.laser.lineStyle(2, 0xfff27a, 1).lineBetween(90, L.DRILL_TIP_Y, o.sprite.x, o.sprite.y);
+      this.destroy(o, true);
+    }
+    this.scene.time.delayedCall(160, () => this.laser.clear());
+    return hit.length;
+  }
 
   blast() {
     const o = this.target();
