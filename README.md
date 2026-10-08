@@ -17,9 +17,10 @@ ES modules don't load over `file://`, so you need a server.
 
 **Flow:** title → **docked rig** (home) → HELM: accept a contract → *descent cutscene* → run → relay breaks → cash out or hull loss → *ascent cutscene* → end-of-run summary over the docked rig → **back to the docked rig**.
 
-**Transition cutscenes** (pixel art, built from the rig's own textures; **tap anywhere to skip**):
-* **Descent (2.6 s):** clamps release and the rig drops away from the orbital station toward the rust planet, which grows beneath it. Cut to the surface at dusk: the rig drops nose-first with thruster exhaust, the drill bites into the rock (chips, shake, spinning bit), and it sinks into its hole. Then the run starts.
-* **Ascent (2.6 s, after a short in-run beat: 0.5 s fade on cash out, or 1.0 s pod ejection on hull loss):** at the surface, the rig is winched out of the bore hole on the gantry cable. If the hull was lost, the escape pod launches out instead. Cut to space: it climbs to the station's docking port and the clamps engage ("CLAMPED"). Then the run summary opens over the docked rig.
+**Transition cutscenes** (pixel art, built from the rig's own textures; **tap anywhere to skip**, after a 0.4 s grace so a stray tap at the start doesn't skip; "TAP TO SKIP" appears when skipping is live). The run and the docked interior show the rig **drill-up** (flipped for the phone); outside, on the surface and in space, it's **drill-down**. The camera turns 180° to bridge the two (only the cutscene's world camera turns; the captions and every HUD stay upright):
+* **Descent (5.2 s):** opens on the docked close-up (drill up, station below the hatch) and the camera turns out to the station view (drill down, 0.8 s). The clamps release ("UNDOCKED") and the rig drops away toward the rust planet, which grows beneath it. Cut to the surface at dusk: the rig drops nose-first on thrusters. The drill bites (chips, shake, spinning bit), and as the rig sinks into its hole the camera follows it and turns 180° with a gentle zoom (1.3 s). It lands in the run's view: drill up, rock above, ship where the run draws it. Then a short fade into the run.
+* **Ascent (5.2 s, after a slower in-run beat: 0.85 s fade on cash out, or the 1.6 s escape-pod ride on hull loss):** opens on the run's view (drill up, rock above). As the rig is winched out of the bore on the gantry cable (or the pod launches), the camera turns 180° (1.5 s) to the surface's drill-down view. Cut to space: it climbs to the station's docking port and the clamps engage ("CLAMPED"). Then the camera turns once more and closes in (0.7 s), matching the docked screen (drill up, station below). The run summary opens over the docked rig.
+* **The docked screen** matches this: the station is below the rig, its clamps grip the hull end, and the ladder hatch opens into the docking collar. The window at the drill end looks out at space and the planet.
 * `?anim=0` turns them off (the old flow: summary over the run, and straight into the run from the contract board).
 
 **Docked rig (home base).** It's the same 2x2 interior. Tap a room or prop and Holt walks there, using the same pathing as in a run. The menu opens when he arrives:
@@ -159,7 +160,7 @@ src/
     UIScene.js             HUD overlay: depth, bars, alerts, toasts, throttles (outside + helm), station panel, pilot bar
     DockScene.js           docked home base: Dock (rig interior, Holt walks, props) + DockUI (HUD, menus: contracts, radio, slots, stats, codex, station, Quartermaster)
     RelayScene.js          relay break: Ines dispatch (typing/static), supply pick, repair, push on / cash out
-    CutsceneScene.js       transition cutscenes: descent (station -> planet -> drill bites) and ascent (winch / pod -> station -> clamps), tap to skip
+    CutsceneScene.js       transition cutscenes: descent (station -> planet -> drill bites) and ascent (winch / pod -> station -> clamps), 180-degree camera turns, tap to skip after 0.4 s
     GameOverScene.js       end screen: cashed out / rig lost, earnings breakdown, back to the rig
   data/
     boosts.js              relay supplies + drawBoosts()
@@ -180,7 +181,7 @@ src/
   ui/
     Button.js              touch button with tap + press-and-hold
 tests/e2e.mjs              Playwright phone-viewport test (see below)
-screenshots/               01-07 run + relay screens; 08 docked base, 09 Quartermaster, 10 part swap, 11 stats, 12 buy detail; 13 launch (winch out of the bore), 14 docking (clamps), 15 descent (drill bites), 16 locked parts
+screenshots/               01-07 run + relay screens; 08 docked base, 09 Quartermaster, 10 part swap, 11 stats, 12 buy detail; 13 launch (winch out of the bore), 14 docking (clamps), 15 descent (drill bites), 16 locked parts, 17 descent mid-turn, 18 ascent mid-turn
 docs/DESIGN.md             game design doc
 ```
 
@@ -254,7 +255,8 @@ docs/DESIGN.md             game design doc
 * Thresholds: 499 vs 500, 999 vs 1000, 2999 vs 3000 m, and 3 lifetime relays for the tool belt.
 * Grandfathering: a v2 save that owns Wide-cut and Heavy charge at best 600 m keeps them owned and equipped, and its stale stock is re-drawn from unlocked parts.
 * A fresh save has 12 locked parts and a 6-offer stock of starters.
-* Descent plays on ACCEPT and ends in the run; cash out plays the ascent and ends docked with the summary on top; BACK TO THE RIG reveals the dock. Each takes under 3.1 s (measured 2.6 s).
+* Descent plays on ACCEPT and ends in the run; cash out plays the ascent and ends docked with the summary on top; BACK TO THE RIG reveals the dock. Each takes about 5.2 s (allowed 4.9–5.9 s). The camera reaches 180° with a gentle zoom (at most 1.3x), the ascent opens at 180° (the run's view), the UI camera never turns, and the run and dock cameras are left unrotated.
+* A tap inside the 0.4 s grace window is ignored; a tap after it skips (descent into the run; escape-pod ascent to the dock with the RIG LOST summary).
 * Tap-to-skip works on the descent (straight into the run) and on the escape-pod ascent (docked + RIG LOST summary).
 
 Debug pokes (via `window.__drill`) are used only to set up states quickly.

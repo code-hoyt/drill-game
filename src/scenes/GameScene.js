@@ -138,11 +138,11 @@ export class GameScene extends Phaser.Scene {
       this.scene.start('Cutscene', { kind: 'ascent', vehicle: reason === 'cashout' ? 'rig' : 'pod', summary: this.lastRun });
     };
     if (reason === 'cashout') {
-      this.cameras.main.fadeOut(ANIM ? 450 : 700, 0, 0, 0);
-      this.time.delayedCall(ANIM ? 500 : 750, next);
+      this.cameras.main.fadeOut(ANIM ? 800 : 700, 0, 0, 0);
+      this.time.delayedCall(ANIM ? 850 : 750, next);
     } else {
       this.escapePod();
-      this.time.delayedCall(ANIM ? 1000 : 1500, next);
+      this.time.delayedCall(ANIM ? 1600 : 1500, next); // the pod clears the screen at ~1.45 s
     }
   }
 

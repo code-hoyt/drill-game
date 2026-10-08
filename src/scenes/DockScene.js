@@ -27,19 +27,27 @@ export class DockScene extends Phaser.Scene {
 
   create(data = {}) {
     this.cameras.main.setBackgroundColor('#0a0c14');
-    // calm station backdrop: dim blue bay wall, a star window above the rig, docking clamps
+    // Orientation matches the docking cutscene after its closing turn: the interior is shown drill-UP
+    // (as in the run), so the station sits BELOW the rig, clamped to its hull end where the ladder
+    // hatch opens into the docking collar. The window at the drill end looks out into space.
     this.bg = this.add.tileSprite(0, 0, GAME_W, 400, 'rock').setOrigin(0).setTint(0x34405a).setAlpha(0.5);
     const g = this.add.graphics().setDepth(1);
     g.fillStyle(0x05060c, 1).fillRect(52, 198, 76, 34);
     g.lineStyle(1, 0x3a4a6a, 1).strokeRect(52.5, 198.5, 75, 33);
     for (let i = 0; i < 22; i++) g.fillStyle(0xffffff, 0.3 + (i % 4) * 0.18).fillRect(54 + (i * 29) % 72, 200 + (i * 11) % 30, 1, 1);
-    g.fillStyle(0x2c6f8a, 0.8).fillRect(88, 214, 6, 3).fillRect(84, 215, 14, 1); // the station's ring, far off
-    for (const x of [62, 116]) { // docking clamps holding the rig
-      g.fillStyle(0x4b4f63, 1).fillRect(x, 232, 4, 9);
-      for (let y = 232; y < 241; y += 2) g.fillStyle(0xffd23f, 1).fillRect(x, y, 4, 1);
+    g.fillStyle(0x8a4a32, 1).fillCircle(112, 236, 14); // Kessa-4's limb, far off
+    g.fillStyle(0x05060c, 1).fillRect(52, 232, 76, 8);
+    g.lineStyle(1, 0x3a4a6a, 1).lineBetween(52, 232.5, 128, 232.5);
+    // the station, below: hull band, docking collar under the hatch, clamps gripping the rig's hull end
+    g.fillStyle(0x3a3f55, 1).fillRect(0, 309, GAME_W, 12);
+    g.fillStyle(0x4b4f63, 1).fillRect(0, 309, GAME_W, 1);
+    for (let x = 4; x < GAME_W; x += 10) g.fillStyle(0xfff2a8, 0.7).fillRect(x, 313, 3, 1);
+    g.fillStyle(0x23263a, 1).fillRect(80, 302, 20, 7);              // docking collar
+    g.fillStyle(0x8affa0, 1).fillRect(88, 305, 4, 1);               // collar light: sealed
+    for (const x of [58, 118]) {                                    // docking clamps (engaged)
+      g.fillStyle(0x4b4f63, 1).fillRect(x, 300, 4, 9);
+      for (let y = 300; y < 309; y += 2) g.fillStyle(0xffd23f, 1).fillRect(x, y, 4, 1);
     }
-    g.fillStyle(0x23263a, 1).fillRect(40, 303, 100, 3); // bay floor
-    for (let x = 44; x < 140; x += 12) g.fillStyle(0x7fe0ff, 0.6).fillRect(x, 304, 2, 1);
 
     this.ship = new Ship(this, (id) => this.onRoomTap(id), () => {});
     this.crew = new Crew(this, this.ship, 'helm');

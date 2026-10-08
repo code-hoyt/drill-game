@@ -486,6 +486,7 @@ check('grandfathered part can still be swapped in and out', gfEquip);
 
 // ---- transition cutscenes (animations on) -----------------------------------------------------
 const animLog = () => page.evaluate(() => window.__drillAnims || []);
+const ANIM_OK = (ms) => ms >= 4900 && ms <= 5900;   // ~5.2 s (tolerance for frame timing on slow CI)
 await page.goto(BASE + '?wipe=1'); await wait(1500);
 await tap(90, 160); await wait(800);
 await D('(u.openMenu("locked"), true)'); await wait(200);
@@ -494,50 +495,78 @@ await page.screenshot({ path: `${OUT}/16-locked-parts.png` });
 await D('(u.closeMenu(), true)');
 const fresh = await page.evaluate(() => JSON.parse(localStorage.getItem('drill.save')));
 check('fresh vendor stock: 6 offers, one per slot, all starters', fresh.vendor.stock.length === 6 && fresh.vendor.stock.every((id) => !P_[id].unlock), fresh.vendor.stock.join());
+// camera state of the cutscene (rotation in radians; only the main camera turns)
+const camState = () => page.evaluate(() => { const c = __drill.scene.getScene('Cutscene'); const m = c.cameras.main;
+  return { active: __drill.scene.isActive('Cutscene'), rot: m.rotation, zoom: m.zoom, uiRot: c.uiCam ? c.uiCam.rotation : null, surface: c.surface && c.surface.visible }; });
 await startContract();
 check('ACCEPT CONTRACT plays the descent cutscene', await page.evaluate(() => __drill.scene.isActive('Cutscene') && __drill.scene.getScene('Cutscene').kind === 'descent' && !__drill.scene.isActive('Game')));
-await page.waitForFunction(() => __drill.scene.isActive('Game'), null, { timeout: 6000 }).catch(() => {});
+// the bite turn: sample the camera while the rig sinks in
+const turnSeen = await page.evaluate(() => new Promise((res) => { let maxR = 0, uiMax = 0, zMax = 0; const c = __drill.scene.getScene('Cutscene');
+  const tick = () => { if (!__drill.scene.isActive('Cutscene')) return res({ maxR, uiMax, zMax }); const m = c.cameras.main;
+    if (c.surface.visible) { maxR = Math.max(maxR, m.rotation); zMax = Math.max(zMax, m.zoom); } uiMax = Math.max(uiMax, Math.abs(c.uiCam.rotation)); requestAnimationFrame(tick); }; tick(); }));
+await page.waitForFunction(() => __drill.scene.isActive('Game'), null, { timeout: 8000 }).catch(() => {});
 let al = (await animLog()).at(-1);
-check('descent ends in the run, under ~3 s, not skipped', await page.evaluate(() => __drill.scene.isActive('Game') && __drill.scene.isActive('UI') && !__drill.scene.isActive('Cutscene')) && al.kind === 'descent' && !al.skipped && al.ms < 3100, JSON.stringify(al));
+check('descent ends in the run in ~5.2 s, not skipped', await page.evaluate(() => __drill.scene.isActive('Game') && __drill.scene.isActive('UI') && !__drill.scene.isActive('Cutscene')) && al.kind === 'descent' && !al.skipped && ANIM_OK(al.ms), JSON.stringify(al));
+check('descent: camera turns 180 deg at the surface (drill down -> run drill up) with a gentle zoom; UI camera never turns', turnSeen.maxR > 3.1 && turnSeen.zMax > 1.05 && turnSeen.zMax < 1.3 && turnSeen.uiMax === 0, JSON.stringify(turnSeen));
+check('run HUD/camera are not left rotated', await G('g.cameras.main.rotation === 0 && ui.cameras.main.rotation === 0'));
 await wait(300);
 await G('(g.debugJump(992), g.setThrottle(1), true)');
 await page.waitForFunction(() => __drill.scene.isActive('Relay'), null, { timeout: 10000 }).catch(() => {});
 await R('r.skipTyping()'); await wait(200); await tap(90, 137); await wait(700);
 await tap(132, 277);   // CASH OUT
 await page.waitForFunction(() => __drill.scene.isActive('Cutscene'), null, { timeout: 4000 }).catch(() => {});
-check('cash out -> ascent cutscene with the rig', await page.evaluate(() => __drill.scene.getScene('Cutscene').kind === 'ascent' && __drill.scene.getScene('Cutscene').vehicle === 'rig' && !__drill.scene.isActive('Game')));
-await page.waitForFunction(() => __drill.scene.isActive('GameOver'), null, { timeout: 6000 }).catch(() => {});
+const startCam = await camState();
+check('cash out -> ascent cutscene with the rig, opening on the run\'s drill-up view (camera at 180 deg)', await page.evaluate(() => __drill.scene.getScene('Cutscene').kind === 'ascent' && __drill.scene.getScene('Cutscene').vehicle === 'rig' && !__drill.scene.isActive('Game'))
+  && startCam.surface && Math.abs(startCam.rot - Math.PI) < 0.35, JSON.stringify(startCam));
+await page.waitForFunction(() => __drill.scene.isActive('GameOver'), null, { timeout: 8000 }).catch(() => {});
 al = (await animLog()).at(-1);
-check('ascent ends docked with the summary on top, under ~3 s', await page.evaluate(() => __drill.scene.isActive('Dock') && __drill.scene.isActive('GameOver') && !__drill.scene.isActive('Cutscene') && __drill.scene.getScene('GameOver').scene.settings.data.reason === 'cashout') && al.kind === 'ascent' && !al.skipped && al.ms < 3100, JSON.stringify(al));
+check('ascent ends docked with the summary on top in ~5.2 s', await page.evaluate(() => __drill.scene.isActive('Dock') && __drill.scene.isActive('GameOver') && !__drill.scene.isActive('Cutscene') && __drill.scene.getScene('GameOver').scene.settings.data.reason === 'cashout') && al.kind === 'ascent' && !al.skipped && ANIM_OK(al.ms), JSON.stringify(al));
+check('dock camera is not rotated', await D('d.cameras.main.rotation === 0 && u.cameras.main.rotation === 0'));
 await tap(90, 249); await wait(400);
 check('summary -> BACK TO THE RIG reveals the docked base', await page.evaluate(() => __drill.scene.isActive('Dock') && __drill.scene.isActive('DockUI') && !__drill.scene.isActive('GameOver')));
-// tap to skip, both directions (escape pod on the way back)
-await startContract();
+// tap to skip: ignored in the 0.4 s grace window, works after it
+const nAnims = (await animLog()).length;
+await tap(...insideW(66, 255));
+await page.waitForFunction(() => __drill.scene.getScene('DockUI').menuKind === 'helm', null, { timeout: 4000 });
+await tapBtn('u.btns.contract_kessa4');
+await page.waitForFunction(() => __drill.scene.isActive('Cutscene'), null, { timeout: 3000, polling: 'raf' }).catch(() => {});
+await tap(90, 160); const earlyAt = await page.evaluate(() => Math.round(performance.now() - __drill.scene.getScene('Cutscene').t0));
+await wait(300);
+check('a tap inside the 0.4 s grace window is ignored', earlyAt < 400 && (await page.evaluate(() => __drill.scene.isActive('Cutscene'))) && (await animLog()).length === nAnims, `tap at ${earlyAt} ms`);
+await page.waitForFunction(() => performance.now() - __drill.scene.getScene('Cutscene').t0 > 700, null, { timeout: 3000 }).catch(() => {});
 await tap(90, 160); const skipT0 = Date.now();
 await page.waitForFunction(() => __drill.scene.isActive('Game'), null, { timeout: 2000 }).catch(() => {});
 al = (await animLog()).at(-1);
-check('tap skips the descent straight into the run', await page.evaluate(() => __drill.scene.isActive('Game')) && al.skipped && al.ms < 1500 && Date.now() - skipT0 < 1000, JSON.stringify({ ...al, tapToRun: Date.now() - skipT0 }));
+check('after the grace window a tap skips the descent straight into the run', await page.evaluate(() => __drill.scene.isActive('Game')) && al.skipped && al.ms >= 400 && al.ms < 1500 && Date.now() - skipT0 < 1000, JSON.stringify({ ...al, tapToRun: Date.now() - skipT0 }));
 await wait(300);
 await G('(s.damage(9999), true)');
 await page.waitForFunction(() => __drill.scene.isActive('Cutscene'), null, { timeout: 4000 }).catch(() => {});
 check('hull loss -> ascent cutscene with the escape pod', await page.evaluate(() => __drill.scene.getScene('Cutscene').vehicle === 'pod'));
+await page.waitForFunction(() => performance.now() - __drill.scene.getScene('Cutscene').t0 > 600, null, { timeout: 3000 }).catch(() => {});
 await tap(90, 160);
 await page.waitForFunction(() => __drill.scene.isActive('GameOver'), null, { timeout: 2000 }).catch(() => {});
 al = (await animLog()).at(-1);
-check('tap skips the ascent: docked + RIG LOST summary', await page.evaluate(() => __drill.scene.isActive('Dock') && __drill.scene.getScene('GameOver').scene.settings.data.reason === 'lost') && al.skipped && al.ms < 600, JSON.stringify(al));
+check('tap skips the pod ascent: docked + RIG LOST summary', await page.evaluate(() => __drill.scene.isActive('Dock') && __drill.scene.getScene('GameOver').scene.settings.data.reason === 'lost') && al.skipped && al.ms >= 400 && al.ms < 1500, JSON.stringify(al));
 await tap(90, 249); await wait(300);
-// frames for Cletus (timing is skewed by screenshots, so these runs aren't timed)
+// frames for Cletus (screenshots stall the renderer, so these runs aren't timed; mid-turn frames are paused)
+const freezeWhen = async (cond, file) => {
+  await page.waitForFunction(cond, null, { timeout: 8000, polling: 'raf' }).catch(() => {});
+  await page.evaluate(() => __drill.scene.pause('Cutscene'));
+  await wait(120); await page.screenshot({ path: `${OUT}/${file}` });
+  await page.evaluate(() => __drill.scene.resume('Cutscene'));
+};
 await D('(u.closeMenu(), true)');
-await startContract(); await wait(1500);
-await page.screenshot({ path: `${OUT}/15-descent.png` });
-await page.waitForFunction(() => __drill.scene.isActive('Game'), null, { timeout: 6000 }).catch(() => {});
+await startContract();
+await freezeWhen(() => { const c = __drill.scene.getScene('Cutscene'); return c.rig && c.rig.y > 120 && !c.spin; }, '15-descent.png');
+await freezeWhen(() => { const c = __drill.scene.getScene('Cutscene'); const r = c.cameras.main.rotation; return c.surface.visible && c.spin && r > 1.3 && r < 1.9; }, '17-descent-rotation.png');
+await page.waitForFunction(() => __drill.scene.isActive('Game'), null, { timeout: 8000 }).catch(() => {});
 await wait(300);
 await G('(s.haul = 400, g.cashOut(), true)');
 await page.waitForFunction(() => __drill.scene.isActive('Cutscene'), null, { timeout: 4000 }).catch(() => {});
-await wait(600); await page.screenshot({ path: `${OUT}/13-launch.png` });
-await page.waitForFunction(() => { const c = __drill.scene.getScene('Cutscene'); return c.clampL && c.clampL.x > 78; }, null, { timeout: 4000, polling: 'raf' }).catch(() => {});
-await wait(150); await page.screenshot({ path: `${OUT}/14-docking.png` });
-await page.waitForFunction(() => __drill.scene.isActive('GameOver'), null, { timeout: 6000 }).catch(() => {});
+await freezeWhen(() => { const c = __drill.scene.getScene('Cutscene'); const r = c.cameras.main.rotation; return c.surface.visible && r > 1.3 && r < 1.9; }, '18-ascent-rotation.png');
+await freezeWhen(() => { const c = __drill.scene.getScene('Cutscene'); return c.surface.visible && c.cameras.main.rotation === 0 && c.vehicleSprite.y < 200; }, '13-launch.png');
+await freezeWhen(() => { const c = __drill.scene.getScene('Cutscene'); return c.clampL && c.clampL.x > 78 && c.cameras.main.rotation === 0; }, '14-docking.png');
+await page.waitForFunction(() => __drill.scene.isActive('GameOver'), null, { timeout: 8000 }).catch(() => {});
 check('screenshot runs also end docked with the summary', await page.evaluate(() => __drill.scene.isActive('Dock') && __drill.scene.isActive('GameOver')));
 
 // ---- save migration (v1 from M1, plus the pre-M1 best-depth key) ----------------------------
