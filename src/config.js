@@ -116,6 +116,42 @@ export const ORE = {
   WEIGHTS: [{ small: 0.6, rich: 0.32, fine: 0.08 }, { small: 0.45, rich: 0.38, fine: 0.17 }, { small: 0.35, rich: 0.4, fine: 0.25 }],
 };
 
+// ---- Side pockets + the SIPHON seat ([C] Cletus) -----------------------------------------------
+// Glowing liquid pockets in the LEFT or RIGHT bore wall. Full stop with the pocket level with the hose
+// port on that side of the hull (the alignment window), then Holt sits at the SIPHON seat (keel pod,
+// down the ladder from the hub) and holds PUMP: the tank fills, the pocket drains. Line PRESSURE builds
+// the longer you hold (faster on volatile pockets) and falls when you let go; at 100 the line bursts:
+// part of what's left in the pocket is lost and the pump is locked out for a few seconds (no hull hit:
+// a full stop stays safe, the gamble only costs liquid and time). The tank is sold at the next relay
+// (it's part of the haul; on hull loss it counts toward the 1/3 you keep). Full tank: you can't pump.
+export const SIPHON = {
+  START_DEPTH: 110,         // first pocket can line up after this (m)
+  GAP: [160, 260],          // metres between pockets (x GAP_LEG_MUL^leg)
+  GAP_LEG_MUL: 0.9,
+  SPAWN_Y: -40,             // spawned above the screen: ~82 m of warning before it reaches the port
+  PORT_Y: 284,              // hose ports on both hull sides, bottom-deck level: line the pocket up here
+  POCKET_X: { left: 30, right: 150 },   // pocket centre, in the bore wall beside the hull
+  WINDOW_AHEAD: 4, WINDOW_PAST: 3,      // alignment window (m) around the port
+  CLEAR_M: 25,              // no ore-vein stop within 25 m of a pocket stop (and no boulders arriving there)
+  TANK: 100,                // litres (x tankMul from the SIPHON slot part)
+  PUMP_RATE: 20,            // litres / s while holding PUMP (x pumpMul)
+  PRESS_RATE: 18,           // pressure / s while pumping, x type.press x pressMul ...
+  PRESS_ESC: 0.25,          // ... x (1 + PRESS_ESC x seconds held without a break): sustained pumping escalates
+  PRESS_FALL: 30,           // pressure lost / s when you let go
+  PRESS_WARN: 75,           // warning toast as pressure crosses this
+  BURST_AT: 100,
+  BURST_LOSS: 0.3,          // a burst loses 30% of what's left in the pocket
+  BURST_LOCKOUT_S: 3,       // ... and locks the pump for 3 s (pressure drops to PRESS_AFTER_BURST)
+  PRESS_AFTER_BURST: 40,
+  // vol = litres in the pocket; value = credits for all of it at x1.0 pay (x the segment multiplier)
+  TYPES: {
+    small:    { name: 'SMALL',    vol: 40, value: 60,  press: 1,    tint: 0x4fe0c0 },
+    rich:     { name: 'RICH',     vol: 70, value: 150, press: 1.15, tint: 0x6a9cff },
+    volatile: { name: 'VOLATILE', vol: 50, value: 260, press: 2.2,  tint: 0xff5ad0 },
+  },
+  WEIGHTS: [{ small: 0.6, rich: 0.32, volatile: 0.08 }, { small: 0.45, rich: 0.4, volatile: 0.15 }, { small: 0.35, rich: 0.4, volatile: 0.25 }],
+};
+
 // ---- Full stop is safe ([C]) ------------------------------------------------------------------
 // Actual speed 0 (throttle at 0, a jam stall, a surge shutdown): everything relaxes. No new events
 // (the event timer pauses), fires don't spread or burn the hull, a pending surge's countdown pauses,
@@ -178,6 +214,8 @@ export const ANIM_TIMING = {
 //   |------|==|------|   == = grate over the ladder shaft, ## = ladder
 //   | ENG  |##| TLS  |   bottom deck
 //   +------+--+------+
+//        |SIP|##  |       keel pod: the SIPHON seat, down the ladder through a grate in the bottom deck
+//        +---------+
 export const LAYOUT = {
   SHIP_X: 47, SHIP_W: 86, SHIP_TOP: 240, SHIP_BOTTOM: 302,
   DRILL_TIP_Y: 218,        // obstacles touching this y collide with the drill
@@ -196,8 +234,10 @@ export const LAYOUT = {
     { id: 'engine', label: 'ENG',  name: 'ENGINE', deck: 'bottom', side: 'left',  bg: '#3a2629' },
     { id: 'tools',  label: 'TLS',  name: 'TOOLS',  deck: 'bottom', side: 'right', bg: '#283a29' },
   ],
+  // keel pod under the hub (the ship is 86 of the 90 px the 2x inside view can show, so a side pod won't fit)
+  POD: { x: 66, w: 48, top: 299, ceil: 300, floor: 315, standX: 100, stationX: 107 },
   OUTSIDE_CAM: { x: 90, y: 160, zoom: 1 },
-  INSIDE_CAM:  { x: 90, y: 267, zoom: 2 },  // integer zoom: the 86px-wide ship fills 172 of 180px
+  INSIDE_CAM:  { x: 90, y: 281, zoom: 2 },  // integer zoom: the 86px-wide ship fills 172 of 180px; y fits drill tip .. keel pod
 };
 
 /** Derived room geometry (shared by Ship, Crew and Textures). */
@@ -212,7 +252,11 @@ export const ROOM_GEOM = LAYOUT.ROOMS.map((r) => {
     standX: LAYOUT.HUB.cx + (left ? -1 : 1) * LAYOUT.STAND_OFFSET,
     faceLeft: left, // the station is on the outer side of the room
   };
-});
+}).concat([(() => {
+  const P = LAYOUT.POD;
+  return { id: 'siphon', label: 'SIP', name: 'SIPHON', deck: 'pod', side: 'right', pod: true, bg: '#1d3236',
+    x: P.x + 1, w: P.w - 2, ceil: P.ceil, floorY: P.floor, cx: P.x + P.w / 2, stationX: P.stationX, standX: P.standX, faceLeft: false };
+})()]);
 
 export const STORAGE_KEY = 'drill.bestDepth';
 

@@ -5,7 +5,7 @@ import { loadBest } from '../config.js';
 import { PARTS, SLOTS, partById, DEFAULT_LOADOUT, unlockMet } from '../data/parts.js';
 
 const KEY = 'drill.save';
-export const VERSION = 3;
+export const VERSION = 4;   // v4: + SIPHON slot (stock HAND PUMP owned + equipped on migration)
 export const VENDOR_PER_SLOT = 2;
 export const REROLL_BASE = 100;   // 100 -> 200 -> 400 ... per dock (resets when the stock refreshes)
 const RADIO_MAX = 40;
@@ -42,14 +42,14 @@ export function migrate(raw) {
     for (const k of ['credits', 'runs', 'cashouts', 'rigsLost', 'relaysReached']) s[k] = Number(raw[k]) || 0;
     s.totalEarned = s.credits; // v1 didn't track lifetime earnings; banked credits are the best floor
     s.migratedFrom = 1;
-  } else if (from === 2 || from === VERSION) {
+  } else if (from === 2 || from === 3 || from === VERSION) {
     Object.assign(s, raw);
     s.loadout = { ...DEFAULT_LOADOUT(), ...(raw.loadout || {}) };
     s.vendor = { ...DEFAULTS().vendor, ...(raw.vendor || {}) };
     s.owned = [...new Set([...DEFAULTS().owned, ...(raw.owned || []).filter((id) => partById(id))])];
     s.unlocked = (raw.unlocked || []).filter((id) => partById(id));
     s.newUnlocks = raw.newUnlocks || [];
-    if (from === 2) s.migratedFrom = s.migratedFrom || 2;
+    if (from === 2 || from === 3) s.migratedFrom = s.migratedFrom || from;
   }
   s.v = VERSION;
   // best depth lived in its own key before M2; keep the higher of both
@@ -62,6 +62,8 @@ export function migrate(raw) {
     // an old stock that offered now-locked parts is re-drawn from the unlocked pool (keeps the per-slot guarantee)
     const kept = s.vendor.stock.filter((id) => partById(id) && isUnlocked(s, partById(id)));
     s.vendor.stock = kept.length && kept.length === s.vendor.stock.length ? kept : rollStock(s);
+    // pre-v4 stock has no SIPHON offers: add the new slot's draw (if any siphon part is unlocked yet)
+    if (!s.vendor.stock.some((id) => partById(id).slot === 'siphon')) s.vendor.stock.push(...rollStock(s).filter((id) => partById(id).slot === 'siphon'));
   }
   return s;
 }

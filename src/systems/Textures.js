@@ -1,5 +1,5 @@
 // All placeholder art is generated here at boot: no external assets.
-import { LAYOUT as L, ROOM_GEOM } from '../config.js';
+import { LAYOUT as L, ROOM_GEOM, SIPHON } from '../config.js';
 
 function rng(seed) { // mulberry32
   return () => {
@@ -58,6 +58,7 @@ const ICON_SYMBOLS = {
   ore:  ['..#..', '.###.', '#####', '.###.', '..#..'],
   fire: ['..#..', '.##..', '.###.', '##.##', '.###.'],
   jam:  ['#...#', '.#.#.', '..#..', '.#.#.', '#...#'],
+  liq:  ['..#..', '.###.', '#####', '#####', '.###.'],
   surge: ['..##.', '.##..', '#####', '..##.', '.##..'],
 };
 
@@ -160,6 +161,21 @@ export function createTextures(scene) {
     // hatch over TOOLS (bottom-right)
     const tls = room('tools');
     px(tls.x + 12, tls.ceil + 3, '#7a3320', 14, 20); px(tls.x + 13, tls.ceil + 4, '#c96a42', 12, 18); px(tls.x + 22, tls.ceil + 12, '#3d1e15', 2, 2);
+    // hose ports on both flanks (bottom-deck level): the siphon hose runs out of these to a wall pocket
+    const py = SIPHON.PORT_Y - L.SHIP_TOP;
+    for (const x of [0, w - 3]) { px(x, py - 3, '#1b1c25', 3, 7); px(x + (x ? 0 : 1), py - 2, '#8d91a6', 2, 5); px(x + (x ? 0 : 1), py - 1, '#2a9a8a', 2, 3); }
+  });
+  // keel pod exterior (the SIPHON seat's blister under the hub)
+  canvas(scene, 'pod_ext', L.POD.w, 19, (ctx, px) => {
+    const w = L.POD.w;
+    px(0, 0, '#2b1712', w, 19); px(1, 1, '#b5532f', w - 2, 16); px(1, 1, '#d77a4f', w - 2, 1); px(1, 15, '#5a2416', w - 2, 2);
+    for (let x = 5; x < w - 3; x += 9) px(x, 4, '#e3936a');
+    px(w / 2 - 6, 6, '#2b1712', 12, 6); px(w / 2 - 5, 7, '#2a9a8a', 10, 4); px(w / 2 - 4, 7, '#7ff0e0', 3, 1);   // tank window
+  });
+  // SIPHON seat: pump with a pressure gauge and a hose reel (8x11)
+  canvas(scene, 'st_siphon', 8, 11, (ctx, px) => {
+    px(1, 0, '#2a2a33', 7, 6); px(2, 1, '#d8dbe8', 5, 4); px(4, 2, '#c0202a', 1, 2); px(3, 3, '#2a2a33', 3, 1);   // gauge
+    px(2, 6, '#2a9a8a', 6, 5); px(3, 7, '#7ff0e0', 1, 3); px(0, 8, '#555a6e', 2, 1);                              // pump body + hose
   });
 
   // Stations (12x14)
@@ -194,7 +210,7 @@ export function createTextures(scene) {
   Object.entries(CREW).forEach(([k, rows]) => pixelMap(scene, k, rows, CREW_PAL));
 
   // Alert icons for HUD (11x11) and world bubble
-  const iconColors = { heat: '#d9412b', bit: '#d98a2b', hull: '#c42b55', rock: '#8a5ad9', hard: '#3a6ad9', ore: '#b8901a', fire: '#e0561a', jam: '#56627e', surge: '#b0369a' };
+  const iconColors = { heat: '#d9412b', bit: '#d98a2b', hull: '#c42b55', rock: '#8a5ad9', hard: '#3a6ad9', ore: '#b8901a', fire: '#e0561a', jam: '#56627e', surge: '#b0369a', liq: '#1f8a7c' };
   Object.entries(ICON_SYMBOLS).forEach(([k, sym]) => {
     canvas(scene, 'ic_' + k, 11, 11, (ctx, px) => {
       px(1, 0, '#111', 9, 11); px(0, 1, '#111', 11, 9);

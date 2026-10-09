@@ -1,7 +1,7 @@
 // HUD overlay (unaffected by the game camera's pan/zoom): depth, gauges,
 // alert icons, toasts, throttle (outside view + HELM station inside),
 // station actions (inside view), pilot status bar (both views).
-import { GAME_W, GAME_H, TUNING as T, LAYOUT as L, ORE, EVENTS as E, loadBest } from '../config.js';
+import { GAME_W, GAME_H, TUNING as T, LAYOUT as L, ROOM_GEOM, ORE, SIPHON, EVENTS as E, loadBest } from '../config.js';
 import { FONT_KEY } from '../systems/PixelFont.js';
 import { Button } from '../ui/Button.js';
 
@@ -9,7 +9,7 @@ const VTRACK = { x: 160, y: 134, w: 14, h: 138 }; // outside view: vertical slid
 const HTRACK = { x: 34, y: 260, w: 112, h: 12 };  // inside view at HELM: horizontal slider
 const PANEL_Y = 232;                               // inside station panel top
 const BAR_Y = 303;                                 // bottom status bar (both views)
-const ROOM_NAMES = Object.fromEntries(L.ROOMS.map((r) => [r.id, r.name]));
+const ROOM_NAMES = Object.fromEntries(ROOM_GEOM.map((r) => [r.id, r.name]));
 
 export class UIScene extends Phaser.Scene {
   constructor() { super('UI'); }
@@ -31,7 +31,7 @@ export class UIScene extends Phaser.Scene {
     txt(106, 3, 'HULL', 6, 0x9aa0b8); txt(106, 10, 'HEAT', 6, 0x9aa0b8); txt(106, 17, 'BIT', 6, 0x9aa0b8);
 
     // --- alert icons ------------------------------------------------------------
-    this.icons = ['fire', 'surge', 'jam', 'hull', 'heat', 'bit', 'rock', 'hard', 'ore'].map((k) => ({ k, img: this.add.image(0, 28, 'ic_' + k).setOrigin(0).setVisible(false) }));
+    this.icons = ['fire', 'surge', 'jam', 'hull', 'heat', 'bit', 'rock', 'hard', 'ore', 'liq'].map((k) => ({ k, img: this.add.image(0, 28, 'ic_' + k).setOrigin(0).setVisible(false) }));
 
     // --- vein chip (top right): where the vein is vs the drill tip --------------------------
     this.chipBg = this.add.graphics();
@@ -59,6 +59,9 @@ export class UIScene extends Phaser.Scene {
     this.toggleBtn = new Button(this, 2, BAR_Y + 2, 44, 14, 'INSIDE', { onTap: () => this.g.toggleView(), color: 0x7a3320, pressColor: 0xb5532f });
     this.pilotBtn = new Button(this, 49, BAR_Y + 2, 84, 14, 'NO PILOT: GO TO HELM', { onTap: () => this.g.sendPilot(), color: 0x8a2f24, pressColor: 0xc4503a });
     this.pilotText = txt(91, BAR_Y + 6, '', 6).setOrigin(0.5, 0);
+    // stopped beside a side pocket and Holt isn't at the siphon seat: one tap sends him down
+    this.siphonBtn = new Button(this, 49, BAR_Y + 2, 84, 14, 'GO TO SIPHON', { onTap: () => this.g.onRoomTap('siphon'), color: 0x1f6a64, pressColor: 0x2fa096 });
+    this.siphonBtn.setVisible(false);
     this.speedText = txt(177, BAR_Y + 6, '', 6).setOrigin(1, 0);
     this.speedLock = this.add.image(0, BAR_Y + 5, 'lock').setOrigin(1, 0);
 
@@ -91,11 +94,14 @@ export class UIScene extends Phaser.Scene {
       freebit: new Button(this, 8, AY, 104, 22, 'HOLD: FREE BIT', { ...hold('freebit'), color: 0x56627e, pressColor: 0x7a8ab0 }),
       repair2: new Button(this, 116, AY, 56, 22, 'FIX BIT', { ...hold('repair'), color: 0x2f5a8a, pressColor: 0x4a84c4 }),
       extinguish: new Button(this, 8, AY, 164, 22, 'HOLD: EXTINGUISH', { ...hold('extinguish'), color: 0xa0401a, pressColor: 0xe0602a }),
+      pump:   new Button(this, 8, AY, 164, 22, 'HOLD: PUMP', { ...hold('pump'), color: 0x1f6a64, pressColor: 0x2fa096 }),
     };
     for (const [k, b] of Object.entries(this.actionBtns)) b.action = k === 'repair2' ? 'repair' : k;
     this.veinBars = this.add.graphics();
     this.barLabels = [txt(6, PANEL_Y + 13, 'ORE', 6, 0xffd23f), txt(90, PANEL_Y + 13, 'RISK', 6, 0xff4a4a)];
     this.barLabels.forEach((o) => o.setVisible(false));
+    this.pumpLabels = [txt(6, PANEL_Y + 13, 'TANK', 6, 0x4fe0c0), txt(90, PANEL_Y + 13, 'PRESS', 6, 0xff8a5c)];
+    this.pumpLabels.forEach((o) => o.setVisible(false));
     // HELM action area: horizontal throttle with -/+ buttons
     this.hMinus = new Button(this, 6, AY, 24, 22, '-', { size: 12, onTap: () => this.g.nudgeThrottle(-T.THROTTLE_STEP) });
     this.hPlus = new Button(this, 150, AY, 24, 22, '+', { size: 12, onTap: () => this.g.nudgeThrottle(T.THROTTLE_STEP) });
@@ -126,7 +132,7 @@ export class UIScene extends Phaser.Scene {
     this.vGfx.setVisible(!inside);
     inside ? this.vZone.disableInteractive() : this.vZone.setInteractive();
     [this.panel, this.panelLine, this.stationText, this.hintText].forEach((o) => o.setVisible(inside));
-    if (!inside) { Object.values(this.actionBtns).forEach((b) => b.setVisible(false)); this.showHelmControls(false); this.veinBars.clear(); this.barLabels.forEach((o) => o.setVisible(false)); }
+    if (!inside) { Object.values(this.actionBtns).forEach((b) => b.setVisible(false)); this.showHelmControls(false); this.veinBars.clear(); this.barLabels.forEach((o) => o.setVisible(false)); this.pumpLabels.forEach((o) => o.setVisible(false)); }
   }
 
   showSurge(v) {
@@ -147,6 +153,30 @@ export class UIScene extends Phaser.Scene {
     }
     if (V.inWindow(v)) return [Math.floor(time / 200) % 2 ? 'STOP ZONE: BRAKE!' : `${n} VEIN: STOP!`, Math.floor(time / 200) % 2 ? 0xffffff : 0x8affa0];
     return [`${n} VEIN ${Math.max(0, Math.round(d))}M`, v.def.tint];
+  }
+
+  /** Pocket chip: where the next side pocket is vs the hose port (and pumping status once stopped). */
+  pocketChip(g, s, time) {
+    const P = g.pockets, p = P.current;
+    if (!p) return null;
+    const d = P.dist(p), n = p.def.name;
+    if (p.state === 'stopped') {
+      if (P.lockT > 0) return [`LINE BURST ${Math.ceil(P.lockT)}S`, 0xff4a4a];
+      if (s.tankFull) return ['TANK FULL: SKIP IT', 0xffc35c];
+      if (P.pumping) return [`PUMPING ${Math.round((1 - p.vol / p.def.vol) * 100)}%`, p.def.tint];
+      return ['STOPPED AT POCKET', 0x8affa0];
+    }
+    if (s.tankFull) return ['TANK FULL: SKIP IT', 0x9aa0b8];
+    if (P.inWindow(p)) return [Math.floor(time / 200) % 2 ? 'ALIGN: BRAKE!' : `${n} POCKET: STOP!`, Math.floor(time / 200) % 2 ? 0xffffff : 0x8affa0];
+    return [`${n} POCKET ${p.side === 'left' ? 'L' : 'R'} ${Math.max(0, Math.round(d))}M`, p.def.tint];
+  }
+
+  /** One chip: whichever stop (vein or pocket) is current/closer. */
+  stopChip(g, s, time) {
+    const v = g.veins.current, p = g.pockets.current;
+    const dv = v ? (v.state === 'stopped' ? -99 : g.veins.dist(v)) : Infinity;
+    const dp = p ? (p.state === 'stopped' ? -99 : g.pockets.dist(p)) : Infinity;
+    return p && dp < dv ? this.pocketChip(g, s, time) : this.veinChip(g, s, time);
   }
 
   showHelmControls(v) {
@@ -180,7 +210,7 @@ export class UIScene extends Phaser.Scene {
 
     // alerts
     const a = g.alerts();
-    const active = { hull: a.hull, heat: s.heat >= T.HEAT_ALERT, bit: s.wear >= T.WEAR_ALERT, rock: a.rock, hard: a.hard, ore: a.ore, fire: a.fire, jam: a.jam, surge: a.surge };
+    const active = { liq: a.liq, hull: a.hull, heat: s.heat >= T.HEAT_ALERT, bit: s.wear >= T.WEAR_ALERT, rock: a.rock, hard: a.hard, ore: a.ore, fire: a.fire, jam: a.jam, surge: a.surge };
     let x = 4;
     const blink = Math.floor(time / 300) % 2 === 0, ck = g.calmK || 0;   // full stop: alarms dim and stop blinking
     for (const ic of this.icons) {
@@ -190,7 +220,7 @@ export class UIScene extends Phaser.Scene {
     }
 
     // vein chip
-    const chip = this.veinChip(g, s, time);
+    const chip = this.stopChip(g, s, time);
     this.chipBg.clear(); this.chipText.setVisible(!!chip);
     if (chip) {
       this.chipText.setText(chip[0]).setTint(chip[1]);
@@ -223,9 +253,12 @@ export class UIScene extends Phaser.Scene {
     }
 
     // bottom bar: pilot status + speed
-    this.pilotBtn.setVisible(!piloted && !g.pilotEnRoute);
+    const sip = g.siphonCall;
+    this.siphonBtn.setVisible(sip);
+    this.siphonBtn.setProgress(sip && Math.floor(time / 300) % 2 === 0 ? 1 : 0);
+    this.pilotBtn.setVisible(!sip && !piloted && !g.pilotEnRoute);
     this.pilotBtn.setProgress(!piloted && time - g.lockedPing < 1200 && Math.floor(time / 150) % 2 === 0 ? 1 : 0);
-    this.pilotText.setVisible(piloted || g.pilotEnRoute);
+    this.pilotText.setVisible(!sip && (piloted || g.pilotEnRoute));
     if (piloted) this.pilotText.setText(g.crew.station === 'helm' ? 'PILOT AT HELM' : 'PILOT AT DRL (LINKAGE)').setTint(0x8affa0);
     else if (g.pilotEnRoute) this.pilotText.setText('PILOT EN ROUTE...').setTint(0xffc35c);
     const spd = s.calm ? 'ALL STOP' : `SPD ${Math.round(s.throttle * 100)}%`;
@@ -290,7 +323,8 @@ export class UIScene extends Phaser.Scene {
     const fire = station && g.director.fires[station];
     this.showHelmControls(station === 'helm' && !fire);
     this.hintText.setText('TAP A ROOM TO WALK THERE').setTint(0x7a7f96).setVisible(true);
-    this.veinBars.clear(); this.barLabels.forEach((o) => o.setVisible(false));
+    this.veinBars.clear(); this.barLabels.forEach((o) => o.setVisible(false)); this.pumpLabels.forEach((o) => o.setVisible(false));
+    const pk = g.pockets, pocket = pk.current, pStop = pk.stopped;
     const vein = g.veins.current, stopped = g.veins.stopped;
     if (!station) {
       this.stationText.setText(`WALKING TO ${ROOM_NAMES[c.target]}...`).setTint(0xc8c8d8);
@@ -306,6 +340,9 @@ export class UIScene extends Phaser.Scene {
       if (j) this.hintText.setText(`JAMMED: ROCK 0% THEN ${Math.round(E.JAM_ROCK_HIGH * 100)}%+  ${j.rocks}/${E.JAM_ROCKS}`).setTint(0xffc35c);
       else if (s.shutdownT > 0) this.hintText.setText(`ENGINE OFF: RESTART IN ${Math.ceil(s.shutdownT)}S`).setTint(0x7fe0ff);
       else if (stopped) this.hintText.setText(stopped.taken >= 1 ? 'VEIN DONE. SPEED UP' : 'STOPPED AT VEIN. GO TO DRL').setTint(0x8affa0);
+      else if (pStop && pStop.vol > 0.01 && !s.tankFull) this.hintText.setText('POCKET ALIGNED. GO TO SIPHON').setTint(0x8affa0);
+      else if (pocket && !s.tankFull && pk.dist(pocket) < 45 && (!vein || pk.dist(pocket) < g.veins.dist(vein)))
+        this.hintText.setText(pk.inWindow(pocket) ? 'POCKET AT THE PORT: SPEED 0!' : `POCKET ${Math.max(0, Math.round(pk.dist(pocket)))}M: STOP BESIDE IT`).setTint(pocket.def.tint);
       else if (vein && g.veins.dist(vein) < 45) this.hintText.setText(g.veins.inWindow(vein) ? 'IN THE STOP ZONE: SPEED 0!' : `VEIN ${Math.max(0, Math.round(g.veins.dist(vein)))}M: STOP IN THE ZONE`).setTint(0xffd23f);
       else this.hintText.setText('DRAG TO SET SPEED. GREEN = SAFE');
       show([]);
@@ -346,8 +383,28 @@ export class UIScene extends Phaser.Scene {
       this.actionBtns.blast.setEnabled(!s.mods.noBlast && !!g.obstacles.target()).setLabel(s.mods.noBlast ? 'NO BLAST (FOAM)' : 'HOLD: BLAST');
       this.actionBtns.blast.setProgress(g.blastCharge / g.blastTime);
     }
+    else if (station === 'siphon') {
+      const cap = s.tankCap;
+      this.stationText.setText(`SIPHON   TANK ${Math.round(s.tank)}/${Math.round(cap)}L`).setTint(s.tankFull ? 0xffc35c : 0x7ff0e0);
+      this.hintText.setVisible(false);
+      this.drawPumpBars(s, pk, time);
+      show(['pump']);
+      const can = g.availableActions().includes('pump');
+      const lbl = pk.lockT > 0 ? `LINE BURST: ${Math.ceil(pk.lockT)}S` : s.tankFull ? 'TANK FULL' : !pStop ? (pocket && pk.dist(pocket) < 45 ? `POCKET ${Math.max(0, Math.round(pk.dist(pocket)))}M: STOP` : 'NO POCKET ALIGNED') : pStop.vol <= 0.01 ? 'POCKET DRAINED' : 'HOLD: PUMP';
+      this.actionBtns.pump.setLabel(lbl).setEnabled(can).setProgress(pStop ? 1 - pStop.vol / pStop.def.vol : 0);
+    }
     // release a hold whose button just got disabled/hidden
     if (g.hold && !Object.values(this.actionBtns).some((b) => b.action === g.hold && b.enabled && b.visible)) g.setHold(null);
+  }
+
+  /** TANK (fill) and PRESS (line pressure) bars in the siphon panel. */
+  drawPumpBars(s, pk, time) {
+    const b = this.veinBars, y = PANEL_Y + 13;
+    b.fillStyle(0x16302c, 1).fillRect(26, y + 1, 58, 5).fillStyle(s.tankFull ? 0xffc35c : 0x4fe0c0, 1).fillRect(26, y + 1, Math.round(58 * Math.min(1, s.tank / s.tankCap)), 5);
+    const r = Math.min(1, pk.pressure / SIPHON.BURST_AT), hot = pk.pressure >= SIPHON.PRESS_WARN;
+    b.fillStyle(0x3a1a1a, 1).fillRect(118, y + 1, 54, 5).fillStyle(hot && Math.floor(time / 120) % 2 ? 0xffffff : hot ? 0xff4a4a : 0xff8a5c, 1).fillRect(118, y + 1, Math.round(54 * r), 5);
+    b.fillStyle(0xffffff, 0.6).fillRect(118 + Math.round(54 * SIPHON.PRESS_WARN / SIPHON.BURST_AT), y, 1, 7);   // warn mark
+    this.pumpLabels.forEach((o) => o.setVisible(true));
   }
 
   /** ORE (taken) and RISK (instability) bars in the drill panel while stopped at a vein. */

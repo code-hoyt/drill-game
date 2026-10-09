@@ -32,7 +32,7 @@ export class Crew {
   static plan(ship, x, y, roomId) {
     const B = ship.room(roomId);
     const hubX = L.HUB.cx;
-    const deckFloors = Object.values(L.DECKS).map((d) => d.floor);
+    const deckFloors = [...Object.values(L.DECKS).map((d) => d.floor), L.POD.floor];   // + the keel pod
     const floor = deckFloors.find((f) => Math.abs(f - y) < 0.01);
     if (floor === undefined) {
       // on the ladder: climb (or reverse) straight to the target deck, then walk out

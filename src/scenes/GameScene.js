@@ -1,6 +1,7 @@
 // The world: terrain, boulders, the ship and its crew. Owns the simulation.
-import { TUNING as T, LAYOUT as L, ORE, EVENTS as E, CALM, loadBest, saveBest } from '../config.js';
+import { TUNING as T, LAYOUT as L, ORE, EVENTS as E, CALM, SIPHON, loadBest, saveBest } from '../config.js';
 import { Veins } from '../systems/Veins.js';
+import { Pockets } from '../systems/Pockets.js';
 import { EventDirector } from '../systems/Events.js';
 import { ShipSystems } from '../systems/ShipSystems.js';
 import { Terrain } from '../systems/Terrain.js';
@@ -16,7 +17,8 @@ import { ANIM } from '../systems/Settings.js';
 
 // Hold-actions per station. The HELM has none: its action area is the throttle itself.
 // DRL also runs EXTRACT (stopped at a vein) and FREE THE BIT (jam); any burning room offers EXTINGUISH only.
-export const STATION_ACTIONS = { engine: ['vent'], helm: [], drill: ['repair', 'extract', 'freebit'], tools: ['patch', 'blast'] };
+// SIPHON (keel pod): PUMP, stopped with a side pocket lined up with a hose port.
+export const STATION_ACTIONS = { engine: ['vent'], helm: [], drill: ['repair', 'extract', 'freebit'], tools: ['patch', 'blast'], siphon: ['pump'] };
 
 export class GameScene extends Phaser.Scene {
   constructor() { super('Game'); }
@@ -65,9 +67,12 @@ export class GameScene extends Phaser.Scene {
       lifespan: 1800, alpha: { start: 0.55, end: 0 }, tint: [0x8a7f8f, 0xb8a8a0, 0x5e5363], frequency: 45, emitting: false,
     }).setDepth(3);
     this.veins = new Veins(this, this.state);
+    this.pockets = new Pockets(this, this.state);
     this.director = new EventDirector(this);
-    this.obstacles.spawnFilter = (arrival) => !this.inRelayWindow(arrival, 0) && !this.veins.near(arrival, ORE.CLEAR_M);
-    this.veins.spawnFilter = (arrival) => !this.inRelayWindow(arrival, 15) && !this.boulderNear(arrival, ORE.CLEAR_M);
+    // stops never overlap: boulders, vein stops and pocket stops keep clear of each other (and of relays)
+    this.obstacles.spawnFilter = (arrival) => !this.inRelayWindow(arrival, 0) && !this.veins.near(arrival, ORE.CLEAR_M) && !this.pockets.near(arrival, SIPHON.CLEAR_M);
+    this.veins.spawnFilter = (arrival) => !this.inRelayWindow(arrival, 15) && !this.boulderNear(arrival, ORE.CLEAR_M) && !this.pockets.near(arrival, SIPHON.CLEAR_M);
+    this.pockets.spawnFilter = (arrival) => !this.inRelayWindow(arrival, 15) && !this.boulderNear(arrival, SIPHON.CLEAR_M) && !this.veins.near(arrival, SIPHON.CLEAR_M);
 
     this.scene.launch('UI');
     this.setupKeyboard();
@@ -78,8 +83,10 @@ export class GameScene extends Phaser.Scene {
     if (q.has('boosts')) this.forceOffers = q.get('boosts').split(',');
     // ?noevents=1: no random veins or events (tests / calm playtests). ?vein=small|rich|fine: one ~45 m ahead.
     // ?event=fire|jam|surge (fire:engine picks the room): triggered 1.5 s into the run.
-    if (q.get('noevents') === '1') { this.veins.enabled = false; this.director.enabled = false; }
+    if (q.get('noevents') === '1') { this.veins.enabled = false; this.director.enabled = false; this.pockets.enabled = false; }
     if (q.has('vein') && ORE.TYPES[q.get('vein')]) this.veins.spawn(q.get('vein'), L.DRILL_TIP_Y - 45 * T.PX_PER_METER);
+    // ?pocket=small|rich|volatile&side=left|right: one side pocket lining up ~45 m ahead
+    if (q.has('pocket') && SIPHON.TYPES[q.get('pocket')]) this.pockets.spawn(q.get('pocket'), q.get('side') === 'right' ? 'right' : 'left', SIPHON.PORT_Y - 45 * T.PX_PER_METER);
     if (q.has('event')) { const [type, arg] = q.get('event').split(':'); this.time.delayedCall(1500, () => { if (!this.over) this.director.trigger(type, arg); }); }
   }
 
@@ -104,6 +111,9 @@ export class GameScene extends Phaser.Scene {
     const s = this.state;
     s.anchor();
     this.director.clearAll();
+    // the relay buys the siphon tank: it goes into the haul
+    if (s.tank > 0.5) { const l = Math.round(s.tank), cr = s.sellTank(); this.toast(`SOLD ${l} L LIQUID: +${Math.floor(cr)} CR`, 0x4fe0c0); }
+    else { s.tank = 0; s.tankCr = 0; }
     this.setHold(null); this.blastCharge = 0;
     this.boostChosen = false;
     this.offers = drawBoosts(T.BOOST_CHOICES, Math.random, this.forceOffers);
@@ -156,7 +166,7 @@ export class GameScene extends Phaser.Scene {
     logRadio(`C${this.contractNo} ${reason === 'cashout' ? 'CASH-OUT' : 'POD'}`, reason === 'cashout' ? CASHOUT_LINE : POD_LINE);
     const st = this.state;
     this.lastRun = { reason, depth, best: Math.max(depth, prevBest), newBest, haul, bonus, recovery, banked, credits: save.credits, relays,
-      ore: Math.floor(st.ore), scrap: Math.floor(st.scrap), drill: Math.floor(st.drillPay), veins: st.veinsWorked + st.veinsCollapsed, veinsLost: st.veinsLost, collapses: st.veinsCollapsed };
+      ore: Math.floor(st.ore), liquid: Math.floor(st.liquid), pockets: st.pocketsTapped, scrap: Math.floor(st.scrap), drill: Math.floor(st.drillPay), veins: st.veinsWorked + st.veinsCollapsed, veinsLost: st.veinsLost, collapses: st.veinsCollapsed };
     this.scene.stop('Relay');
     // With cutscenes: a short in-run beat, then the ascent (bore -> space -> dock), and the
     // summary over the docked rig. ?anim=0: the old summary over the run.
@@ -209,6 +219,8 @@ export class GameScene extends Phaser.Scene {
     this.relayWarned = s.nextRelayAt - depthM <= T.RELAY_WARN;
     this.veins.clear();
     this.veins.nextAt = depthM + 40;
+    this.pockets.clear();
+    this.pockets.nextAt = depthM + 60;
   }
 
   drawRelayMarker(time) {
@@ -307,11 +319,12 @@ export class GameScene extends Phaser.Scene {
     const room = this.crew.station;
     const canWork = this.hold && !this.crew.walking && this.availableActions().includes(this.hold);
     this.crew.working = !!canWork;
-    let extracting = false;
+    let extracting = false, pumping = false;
     if (canWork) {
       if (this.hold === 'extinguish') this.director.extinguish(room, dt);
       else if (this.hold === 'freebit') this.director.fixJam(dt);
       else if (this.hold === 'extract') extracting = true;
+      else if (this.hold === 'pump') pumping = true;
       else if (this.hold === 'blast') {
         if (this.obstacles.target() && !s.mods.noBlast) {
           this.blastCharge += dt;
@@ -327,13 +340,14 @@ export class GameScene extends Phaser.Scene {
       }
     }
     this.handleVeinEvents(this.veins.update(dt, advancePx, extracting, time), s);
+    this.handlePocketEvents(this.pockets.update(dt, advancePx, pumping, time), s);
     this.director.update(dt);
     if (events.includes('overclockEnd')) this.toast('OVERCLOCK OVER', 0x9aa0b8);
     if (events.includes('restart')) this.toast('ENGINE BACK ONLINE', 0x8affa0);
     this.updateCalm(dt, s);
     const st = this.ship.room(this.crew.station || 'drill');
     this.ship.sparks.setPosition(st.stationX, st.floorY - 9);
-    this.ship.sparks.emitting = this.crew.working;
+    this.ship.sparks.emitting = this.crew.working && this.hold !== 'pump';
     this.crew.update(dt);
 
     // --- alerts ---------------------------------------------------------------
@@ -374,7 +388,33 @@ export class GameScene extends Phaser.Scene {
     if (!room) return [];
     if (this.director.fires[room]) return ['extinguish'];
     const s = this.state, base = STATION_ACTIONS[room] || [];
-    return base.filter((a) => (a !== 'extract' || (this.veins.stopped && !s.jammed && this.veins.stopped.taken < 1)) && (a !== 'freebit' || s.jammed));
+    return base.filter((a) => (a !== 'extract' || (this.veins.stopped && !s.jammed && this.veins.stopped.taken < 1)) && (a !== 'freebit' || s.jammed)
+      && (a !== 'pump' || this.pockets.canPump));
+  }
+
+  /** Stopped beside a pocket with tank room, and Holt isn't at the seat: offer GO TO SIPHON. */
+  get siphonCall() {
+    const p = this.pockets.stopped;
+    return !!p && p.vol > 0.01 && !this.state.tankFull && this.crew.station !== 'siphon' && this.crew.target !== 'siphon';
+  }
+
+  handlePocketEvents(evs, s) {
+    for (const e of evs) {
+      const p = e.v, n = p.def.name, side = p.side === 'left' ? 'LEFT' : 'RIGHT';
+      if (e.kind === 'appear') this.toast(`${n} POCKET ${side}: STOP BESIDE IT`, p.def.tint);
+      else if (e.kind === 'window') this.toast(s.speed > 1e-6 ? 'POCKET AT THE PORT: FULL STOP!' : 'POCKET AT THE PORT', 0x8affa0);
+      else if (e.kind === 'stopped') this.toast(s.tankFull ? 'TANK FULL: SELL AT A RELAY' : 'POCKET ALIGNED: PUMP AT SIPHON', s.tankFull ? 0xffc35c : 0x8affa0);
+      else if (e.kind === 'moving') this.toast('MOVING: HOSE IN, PUMPING NEEDS A FULL STOP', 0xffc35c);
+      else if (e.kind === 'pressure') this.toast('LINE PRESSURE HIGH: LET GO!', 0xff8a5c);
+      else if (e.kind === 'burst') {
+        this.toast(`LINE BURST! LOST ${Math.round(e.lost)} L`, 0xff4a4a);
+        this.cameras.main.shake(200, 0.006);
+        this.setHold(null);
+      } else if (e.kind === 'drained') this.toast(`POCKET DRAINED: TANK ${Math.round(s.tank)} L`, 0xffd23f);
+      else if (e.kind === 'full') { this.toast('TANK FULL: SELL AT A RELAY', 0xffc35c); this.setHold(null); }
+      else if (e.kind === 'left') this.toast(`POCKET TAPPED: ${Math.round(p.pumped)} L`, 0xffd23f);
+      else if (e.kind === 'missed') this.toast('POCKET MISSED', 0x9aa0b8);
+    }
   }
 
   handleVeinEvents(evs, s) {
@@ -398,16 +438,20 @@ export class GameScene extends Phaser.Scene {
   alerts() {
     const s = this.state, f = this.director.fires, vein = this.veins.current;
     const veinStop = !!this.veins.stopped && this.veins.stopped.taken < 1;
+    const pocket = this.pockets.current, pocketStop = this.pockets.canPump;
     return {
       engine: s.heat >= T.HEAT_ALERT || !!f.engine,
-      helm: (this.obstacles.anyAhead() && s.throttle > s.safeThrottle + 1e-6) || !!f.helm || (!!vein && vein.state !== 'stopped' && this.veins.dist(vein) < 30 && s.throttle > 0),
+      helm: (this.obstacles.anyAhead() && s.throttle > s.safeThrottle + 1e-6) || !!f.helm || (!!vein && vein.state !== 'stopped' && this.veins.dist(vein) < 30 && s.throttle > 0)
+        || (!!pocket && pocket.state !== 'stopped' && this.pockets.dist(pocket) < 30 && s.throttle > 0 && !s.tankFull),
       pilot: !this.piloted,
       drill: s.wear >= T.WEAR_ALERT || !!f.drill || s.jammed || veinStop,
       tools: s.hull <= T.HULL_ALERT || this.obstacles.anyAhead() || !!f.tools,
       hull: s.hull <= T.HULL_ALERT,
       rock: this.obstacles.anyAhead(),
       hard: s.inHard || this.terrain.hardAhead(),
+      siphon: pocketStop,
       ore: !!vein,
+      liq: !!pocket && !s.tankFull,
       fire: this.director.burning.length > 0,
       jam: s.jammed,
       surge: !!this.director.surge || s.overclockT > 0 || s.shutdownT > 0,
@@ -441,6 +485,8 @@ export class GameScene extends Phaser.Scene {
   }
 
   gameOver() {
+    // liquid still in the tank counts toward the haul (you keep 1/3 of it, like everything else)
+    if (this.state.tank > 0) this.state.sellTank();
     const haul = Math.floor(this.state.haul);
     const banked = Math.floor(this.state.haul * T.HULL_LOSS_KEEP);
     this.endRun({ reason: 'lost', haul, recovery: haul - banked, banked, relays: this.state.relays });

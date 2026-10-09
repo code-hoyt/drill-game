@@ -118,8 +118,9 @@ const circuit = []; const stack = ['helm'];
 while (stack.length) { const v = stack[stack.length - 1]; if (edges[v].length) stack.push(edges[v].shift()); else circuit.push(stack.pop()); }
 circuit.reverse();
 const DECK = { helm: 'top', drill: 'top', engine: 'bottom', tools: 'bottom' };
-const FLOORS = await G('Object.values(g.ship.rooms.reduce((m, r) => (m[r.deck] = r.floorY, m), {}))');
-const planned = await G(`(() => { const C = g.crew.constructor, out = {}; for (const a of g.ship.rooms) for (const b of g.ship.rooms) if (a !== b) {
+const FLOORS = await G('Object.values(g.ship.rooms.filter(r => !r.pod).reduce((m, r) => (m[r.deck] = r.floorY, m), {}))');
+// the 2x2 (the SIPHON keel pod is checked separately below)
+const planned = await G(`(() => { const C = g.crew.constructor, out = {}, R = g.ship.rooms.filter(r => !r.pod); for (const a of R) for (const b of R) if (a !== b) {
   const pts = C.plan(g.ship, a.standX, a.floorY, b.id); let x = a.standX, y = a.floorY; const segs = [];
   for (const p of pts) { segs.push({ dx: p.x - x, dy: p.y - y }); x = p.x; y = p.y; }
   out[a.id + '>' + b.id] = { pts: pts.map(p => [p.x, p.y]), segs, len: C.pathLength(a.standX, a.floorY, pts) }; } return out; })()`);
@@ -136,6 +137,10 @@ check('same-deck plans: one straight walk, no climbing (32px)', planOk.filter((p
   planOk.filter((p) => DECK[p.k.split('>')[0]] === DECK[p.k.split('>')[1]]).map((p) => p.k + '=' + p.len).join(' '));
 check('cross-deck plans: exactly one direct floor-to-floor climb, no mid stop (60px)', planOk.filter((p) => DECK[p.k.split('>')[0]] !== DECK[p.k.split('>')[1]]).every((p) => p.ok),
   planOk.filter((p) => DECK[p.k.split('>')[0]] !== DECK[p.k.split('>')[1]]).map((p) => p.k + '=' + p.len).join(' '));
+const podPlans = await G(`(() => { const C = g.crew.constructor, out = []; const pod = g.ship.room('siphon'); const fl = g.ship.rooms.map(r => r.floorY);
+  for (const a of g.ship.rooms.filter(r => !r.pod)) for (const [from, to] of [[a, pod], [pod, a]]) { const pts = C.plan(g.ship, from.standX, from.floorY, to.id);
+    out.push({ k: from.id + '>' + to.id, len: C.pathLength(from.standX, from.floorY, pts), floors: pts.every(p => fl.includes(p.y) || p.x === 90), end: pts.at(-1) }); } return out; })()`);
+check('SIPHON keel pod: every room reaches it down the hub ladder in one climb (<= 75 px, ends at the seat)', podPlans.every((p) => p.len <= 75 && p.floors), podPlans.map((p) => p.k + '=' + p.len).join(' '));
 
 await G('(s.throttle = 0, true)');
 const trips = [];
@@ -223,7 +228,7 @@ const n0 = await G('g.obstacles.list.length'); await hold(...ACTION_RIGHT, 1600)
 const gone = await G('!g.obstacles.list.includes(window.__testRock)');
 check('holding BLAST at Tools clears the nearest boulder', gone, `boulders ${n0} -> ${await G('g.obstacles.list.length')}`);
 await G('(s.heat = 95, s.wear = 95, s.hull = 20, g.obstacles.spawn(s.depth), g.obstacles.list.at(-1).sprite.y = 60, true)'); await wait(200);
-const bub = await G(`g.ship.rooms.map(r => { const b = g.ship.bubbles[r.id]; return { id: r.id, vis: b.visible, inRoom: b.x > r.x && b.x < r.x + r.w && b.y > r.ceil && b.y < r.floorY }; })`);
+const bub = await G(`g.ship.rooms.filter(r => !r.pod).map(r => { const b = g.ship.bubbles[r.id]; return { id: r.id, vis: b.visible, inRoom: b.x > r.x && b.x < r.x + r.w && b.y > r.ceil && b.y < r.floorY }; })`);
 check("'!' bubbles show over the correct room for all 4 stations", bub.every((b) => b.vis && b.inRoom), JSON.stringify(bub));
 await G('(s.hull = 60, true)');
 await G('(s.heat = 0, s.wear = 0, true)');
@@ -365,7 +370,7 @@ await tap(90, 249); await wait(1000);
 check('full loop: cash out -> end screen -> concourse', await page.evaluate(() => __drill.scene.isActive('Dock') && __drill.scene.isActive('DockUI') && !__drill.scene.isActive('Game') && !__drill.scene.isActive('GameOver')));
 const sv1 = await page.evaluate(() => JSON.parse(localStorage.getItem('drill.save')));
 check('vendor stock refreshed after each contract (refresh count = runs)', sv1.vendor.refreshes === sv1.runs && sv1.vendor.rerolls === 0, `refreshes=${sv1.vendor.refreshes} runs=${sv1.runs}`);
-const TIER2000 = ['harness', 'lightframe', 'grinder', 'governor', 'overdrive', 'quickcap', 'plating', 'bypass'];
+const TIER2000 = ['harness', 'lightframe', 'grinder', 'governor', 'overdrive', 'quickcap', 'plating', 'bypass', 'bigtank', 'highflow'];
 check('reaching 2000 m unlocks the 500-2000 m parts (and nothing deeper)', TIER2000.every((id) => sv1.unlocked.includes(id)) && !['linkage', 'widecut', 'heavycharge', 'toolbelt'].some((id) => sv1.unlocked.includes(id)), JSON.stringify(sv1.unlocked));
 await wait(400);
 const banner = await D('u.banner ? u.banner.text : (u.lastBanner ? u.lastBanner.text : null)');
@@ -424,7 +429,8 @@ console.log('WALKS', JSON.stringify([...walks, longW]));
 check('tap the rig in the bay -> Holt walks to the airlock -> rig bay', await (async () => { await tap(90, 150); await page.waitForFunction(() => __drill.scene.getScene('DockUI').menuKind === 'bay', null, { timeout: 3000 }).catch(() => {}); return (await dockMenu()) === 'bay' && (await D('d.at')) === 'airlock'; })());
 // rig bay hotspots: each part location opens its slot
 const HOTS = await D('Object.fromEntries(Object.entries(u.hot).map(([k, h]) => [k, h]))');
-check('rig bay: 6 hotspots (drill, engine, hull, tools, helm, kit), each at least 32x24 base px (thumb-sized)', Object.keys(HOTS).sort().join() === 'drill,engine,helm,hull,kit,tools' && Object.values(HOTS).every((h) => h.w >= 32 && h.h >= 24), JSON.stringify(HOTS));
+check('rig bay: 7 hotspots (drill, engine, hull, tools, helm, siphon pod, kit), each at least 32x24 base px (thumb-sized), none overlapping', Object.keys(HOTS).sort().join() === 'drill,engine,helm,hull,kit,siphon,tools'
+  && Object.values(HOTS).every((a) => Object.values(HOTS).every((b) => a === b || a.x + a.w <= b.x || b.x + b.w <= a.x || a.y + a.h <= b.y || b.y + b.h <= a.y)) && Object.values(HOTS).every((h) => h.w >= 32 && h.h >= 24), JSON.stringify(HOTS));
 check('rig bay shows the equipped part names next to the hotspots', await D('u.menu.some(t => t.text === "SURVEY BIT") && u.menu.some(t => t.text === "K-9 ENGINE") && u.menu.some(t => t.text === "WORK BOOTS") && u.menu.some(t => t.text === "BASIC CONSOLE")'));
 for (const slot of ['drill', 'helm', 'hull', 'engine', 'tools', 'kit']) {
   const h = HOTS[slot];
@@ -434,13 +440,14 @@ for (const slot of ['drill', 'helm', 'hull', 'engine', 'tools', 'kit']) {
 }
 check('slot list BACK returns to the rig bay', (await dockMenu()) === 'bay');
 const TAGS = await D('Object.fromEntries(Object.entries(u.tags).map(([k, t]) => [k, { x: t.x, y: t.y, w: t.w, h: t.h }]))');
-check('rig bay: a callout per slot (equipped part) beside the rig, each tappable (>= 80x24)', Object.keys(TAGS).length === 6 && Object.values(TAGS).every((t) => t.w >= 80 && t.h >= 24 && t.x >= 96));
-for (const slot of ['engine', 'kit']) { const t = TAGS[slot]; await tap(t.x + t.w / 2, t.y + t.h / 2); await wait(200);
+check('rig bay: a callout per slot (equipped part) beside the rig, each tappable (>= 80x22), all 7 inside the content area', Object.keys(TAGS).length === 7 && Object.values(TAGS).every((t) => t.w >= 80 && t.h >= 22 && t.x >= 96 && t.y >= 38 && t.y + t.h <= 202)
+  && (await D('u.menu.some(t => t.text === "HAND PUMP") && u.menu.some(t => t.text === "SIPHON")')), JSON.stringify(TAGS));
+for (const slot of ['engine', 'siphon', 'kit']) { const t = TAGS[slot]; await tap(t.x + t.w / 2, t.y + t.h / 2); await wait(200);
   check(`rig bay: tap the ${slot} callout -> ${slot} swap list`, (await dockMenu()) === 'slot' && (await D('u.menuArg')) === slot); await tapBtn('u.btns.back'); }
 await closeMenu();
 await navTo('qm', 'vendor');
 const vend = await D('({ kind: u.menuKind, offers: u.offerIds, page: u.vendorPage, pages: u.vendorPages, shown: Object.keys(u.btns.offers) })');
-check('Quartermaster pages its list: 6 per page, 2 pages for 12 offers', vend.pages === 2 && vend.page === 0 && vend.shown.length === 6, JSON.stringify(vend));
+check('Quartermaster pages its list: 6 per page, 3 pages for 14 offers', vend.pages === 3 && vend.page === 0 && vend.shown.length === 6, JSON.stringify(vend));
 await tapBtn('u.btns.next');
 const vend2 = await D('({ page: u.vendorPage, shown: Object.keys(u.btns.offers) })');
 check('NEXT > shows the other 6 offers (all 12 reachable, no repeats)', vend2.page === 1 && vend2.shown.length === 6 && new Set([...vend.shown, ...vend2.shown]).size === 12, JSON.stringify(vend2));
@@ -451,7 +458,7 @@ check('< PREV returns to page 1', (await D('u.vendorPage')) === 0);
 const PARTS = await page.evaluate(async () => (await import(new URL('src/data/parts.js', location.href).href)).PARTS.map((p) => ({ id: p.id, slot: p.slot, stock: !!p.stock, price: p.price, unlock: p.unlock })));
 const P_ = Object.fromEntries(PARTS.map((p) => [p.id, p]));
 const perSlot = {}; vend.offers.forEach((id) => { perSlot[P_[id].slot] = (perSlot[P_[id].slot] || 0) + 1; });
-check('Quartermaster: 12 offers, 2 per slot, never stock, owned or locked', vend.kind === 'vendor' && vend.offers.length === 12 && Object.keys(perSlot).length === 6 && Object.values(perSlot).every((n) => n === 2)
+check('Quartermaster: 14 offers, 2 per slot (7 slots), never stock, owned or locked', vend.kind === 'vendor' && vend.offers.length === 14 && Object.keys(perSlot).length === 7 && Object.values(perSlot).every((n) => n === 2)
   && vend.offers.every((id) => !P_[id].stock && !sv1.owned.includes(id) && (!P_[id].unlock || sv1.unlocked.includes(id))), JSON.stringify(perSlot));
 // a fresh stock draw should vary across refreshes (3 candidates per slot, 2 shown)
 const draws = await page.evaluate(async () => { const S = await import(new URL('src/systems/Save.js', location.href).href); const Pm = await import(new URL('src/data/parts.js', location.href).href);
@@ -517,7 +524,7 @@ await closeMenu(); await wait(1800);
 await page.screenshot({ path: `${OUT}/08-concourse.png` });
 await page.reload(); await wait(1500); await tap(90, 160); await wait(800);
 sv = await page.evaluate(() => JSON.parse(localStorage.getItem('drill.save')));
-check('owned parts + loadout persist across reloads', sv.loadout.kit === 'lightboots' && sv.loadout.hull === 'plating' && sv.loadout.drill === 'widecut' && sv.owned.length === 9);
+check('owned parts + loadout persist across reloads', sv.loadout.kit === 'lightboots' && sv.loadout.hull === 'plating' && sv.loadout.drill === 'widecut' && sv.owned.length === 10);
 
 // ---- the parts change the run, measurably ---------------------------------------------
 await startContract();
@@ -552,7 +559,7 @@ const th = await page.evaluate(async () => {
   const at = (best, relays) => { const s = mk(best, relays); S.checkUnlocks(s); return s.unlocked.slice().sort(); };
   return { b499: at(499, 0), b500: at(500, 0), b999: at(999, 0), b1000: at(1000, 0), b2999: at(2999, 2), b3000: at(3000, 0), r3: at(0, 3) };
 });
-check('unlocks trigger exactly at the milestones (499 vs 500, 999 vs 1000, 2999 vs 3000)', th.b499.length === 0 && th.b500.join() === 'harness,lightframe' && th.b999.join() === 'harness,lightframe'
+check('unlocks trigger exactly at the milestones (499 vs 500, 999 vs 1000, 2999 vs 3000)', th.b499.length === 0 && th.b500.join() === 'bigtank,harness,lightframe' && th.b999.join() === 'bigtank,harness,lightframe'
   && th.b1000.includes('grinder') && th.b1000.includes('governor') && !th.b2999.includes('widecut') && th.b3000.includes('widecut') && th.b3000.includes('heavycharge'), JSON.stringify(th));
 check('3 lifetime relays unlock the tool belt (without depth)', th.r3.join() === 'toolbelt');
 // grandfathering: a v2 save that owns parts which are now milestone-locked keeps them
@@ -560,10 +567,10 @@ await page.evaluate(() => { localStorage.clear(); localStorage.setItem('drill.sa
   owned: ['stockbit', 'stockengine', 'stockhull', 'stocktools', 'stockhelm', 'stockkit', 'widecut', 'heavycharge'], loadout: { drill: 'widecut', tools: 'heavycharge' }, vendor: { stock: ['linkage', 'diamond', 'bypass'], rerolls: 0, refreshes: 5 }, radio: [] })); });
 await page.goto(BASE + '?anim=0&noevents=1'); await wait(1500);
 const gf = await page.evaluate(() => JSON.parse(localStorage.getItem('drill.save')));
-check('grandfathering: owned locked parts stay owned + equipped (v2 -> v3)', gf.v === 3 && gf.owned.includes('widecut') && gf.owned.includes('heavycharge') && gf.loadout.drill === 'widecut' && gf.loadout.tools === 'heavycharge' && gf.credits === 50, JSON.stringify({ l: gf.loadout, v: gf.v }));
+check('grandfathering: owned locked parts stay owned + equipped (v2 -> v4)', gf.v === 4 && gf.loadout.siphon === 'stocksiphon' && gf.owned.includes('widecut') && gf.owned.includes('heavycharge') && gf.loadout.drill === 'widecut' && gf.loadout.tools === 'heavycharge' && gf.credits === 50, JSON.stringify({ l: gf.loadout, v: gf.v }));
 check('grandfathering: an old stock with now-locked parts is re-drawn from unlocked parts only', gf.vendor.stock.length >= 6 && !gf.vendor.stock.includes('linkage') && !gf.vendor.stock.includes('bypass')
   && gf.vendor.stock.every((id) => !P_[id].unlock || gf.unlocked.includes(id)) && gf.unlocked.includes('harness') && gf.newUnlocks.length === 0, gf.vendor.stock.join());
-check('grandfathered parts count as unlocked; 8 parts still locked', gf.unlocked.includes('widecut') && gf.unlocked.includes('heavycharge') && PARTS.filter((p) => p.unlock && !gf.unlocked.includes(p.id)).length === 8, gf.unlocked.join());
+check('grandfathered parts count as unlocked; 9 parts still locked', gf.unlocked.includes('widecut') && gf.unlocked.includes('heavycharge') && PARTS.filter((p) => p.unlock && !gf.unlocked.includes(p.id)).length === 9, gf.unlocked.join());
 const gfEquip = await page.evaluate(async () => { const S = await import(new URL('src/systems/Save.js', location.href).href); const a = S.equipPart('stockbit'); const b = S.equipPart('widecut'); return a.ok && b.ok; });
 check('grandfathered part can still be swapped in and out', gfEquip);
 
@@ -585,7 +592,7 @@ const CONF_SCALE = await page.evaluate(async () => (await import(new URL('src/co
 check('animation speed is one config multiplier: ANIM_SCALE 2 -> 9.2 s cutscenes, ~0.5 s grace, ~0.78 s lift', CONF_SCALE === 2 && CFG.scale === 2 && CFG.cutsceneMs === 9200 && CFG.graceMs >= 450 && CFG.graceMs <= 550 && CFG.liftMs >= 700 && CFG.liftMs <= 850, JSON.stringify(CFG));
 await tap(90, 160); await wait(800);
 await D('(u.openMenu("locked"), true)'); await wait(200);
-check('fresh save: 12 parts locked, one alternative per slot open', (await D('u.lockedRows.length')) === 12);
+check('fresh save: 14 parts locked (both SIPHON parts depth-gated), one alternative per other slot open', (await D('u.lockedRows.length')) === 14);
 await page.screenshot({ path: `${OUT}/16-locked-parts.png` });
 await D('(u.closeMenu(), true)');
 const fresh = await page.evaluate(() => JSON.parse(localStorage.getItem('drill.save')));
@@ -745,7 +752,7 @@ await G('(g.debugJump(985), s.hull = 100, g.setThrottle(1), true)');
 await page.waitForFunction(() => __drill.scene.isActive('Relay'), null, { timeout: 15000 }).catch(() => {});
 await R('r.skipTyping()'); await wait(200); await tap(90, 137); await wait(700);
 const rOre = await R('({ t: r.oreText && r.oreText.text, ore: Math.floor(s.ore + s.scrap), drill: Math.floor(s.drillPay) })');
-check('relay break shows the haul split: DRILL n  ORE n', rOre.t === `DRILL ${rOre.drill}  ORE ${rOre.ore}` && rOre.ore > 50, rOre.t);
+check('relay break shows the haul split: DRILL n ORE n LIQ n', rOre.t === `DRILL ${rOre.drill} ORE ${rOre.ore} LIQ 0` && rOre.ore > 50, rOre.t);
 await page.screenshot({ path: `${OUT}/31-relay-ore-breakdown.png` });
 await tap(132, 277); await wait(1500);
 const endOre = await page.evaluate(() => { const go = __drill.scene.getScene('GameOver'); return { active: __drill.scene.isActive('GameOver'), texts: go.children.list.map(c => c.text).filter(Boolean), run: __drill.scene.getScene('Game').lastRun }; });
@@ -880,16 +887,157 @@ const grace = await G('g.director.timer');
 const resumed = await waitFor(`g.director.log.length > ${ev0}`, 7000);
 check(`events resume after moving again (next one at least ${CALMC.RESUME_GRACE_S} s out)`, grace > CALMC.RESUME_GRACE_S - 0.5 && resumed, `timer after restart ${grace.toFixed(2)} s; events ${ev0} -> ${await G('g.director.log.length')}`);
 
+// ---- side pockets + SIPHON seat ([C]) -------------------------------------------------------------
+{ // own scope (names like fit/al are used elsewhere)
+const SC = await page.evaluate(async () => { const c = await import(new URL('src/config.js', location.href).href); return { S: c.SIPHON, LL: c.LAYOUT }; });
+const { S: SIP, LL } = SC;
+const PK = 'g.pockets.current';
+// drive at the pocket and stop inside the alignment window (throttle cut early enough to coast in)
+const alignStop = async () => {
+  await G('(g.setThrottle(0.4), true)');
+  await page.waitForFunction(() => { const g = __drill.scene.getScene('Game'); const p = g.pockets.current; if (p && g.pockets.dist(p) < 14) { g.setThrottle(0.1); return true; } return false; }, null, { timeout: 20000, polling: 'raf' });
+  await page.waitForFunction(() => { const g = __drill.scene.getScene('Game'); const p = g.pockets.current; if (p && g.pockets.dist(p) < 2.5) { g.setThrottle(0); return true; } return false; }, null, { timeout: 20000, polling: 'raf' });
+  await waitFor('s.calm', 4000); await wait(250);
+};
+// a pocket you drive past is missed
+await runFrom('&noevents=1&pocket=small&side=right');
+check('?pocket=small&side=right: a SMALL pocket glows in the RIGHT bore wall ahead, with early warning (toast + chip + icon)',
+  (await G(`(() => { const p = ${PK}; return !!p && p.type === 'small' && p.side === 'right' && p.x - 10 > ${LL.SHIP_X + LL.SHIP_W} + 2 && p.state === 'ahead' && g.pockets.dist(p) > 30; })()`))
+  && (await toastSeen('SMALL POCKET RIGHT')) && (await G('ui.chipText.text.startsWith("SMALL POCKET R") && ui.icons.find(i => i.k === "liq").img.visible')), await G('ui.chipText.text'));
+check('no pumping while the pocket is still ahead', await G('!g.availableActions("siphon").includes("pump")'));
+await G('(g.setThrottle(0.6), true)');
+const missed = await waitFor('s.pocketsMissed === 1', 15000);
+check('drive past without stopping: POCKET MISSED (no window left behind)', missed && (await toastSeen('POCKET MISSED')) && (await G('!g.pockets.current && s.tank === 0')));
+
+// the main pocket: RICH, left wall
+await runFrom('&noevents=1&pocket=rich&side=left');
+check('?pocket=rich&side=left: RICH pocket in the LEFT wall (outside the bore)', await G(`(() => { const p = ${PK}; return p.type === 'rich' && p.side === 'left' && p.x + 10 < ${LL.SHIP_X} - 2; })()`));
+await G('(g.setThrottle(0.4), true)');
+await page.waitForFunction(() => { const g = __drill.scene.getScene('Game'); const p = g.pockets.current; return p && g.pockets.dist(p) < 30; }, null, { timeout: 20000, polling: 'raf' });
+check('approach: alignment bracket drawn at the hose port + chip counts down', await G(`g.pockets.zone.commandBuffer.length > 0 && /RICH POCKET L \\d+M/.test(ui.chipText.text)`), await G('ui.chipText.text'));
+await page.waitForFunction(() => { const g = __drill.scene.getScene('Game'); const p = g.pockets.current; return p && p.state === 'window'; }, null, { timeout: 20000, polling: 'raf' });
+check('in the window while moving: state window, toast FULL STOP!, pumping still not allowed', (await toastSeen('POCKET AT THE PORT')) && (await G('!g.pockets.canPump && g.pockets.hoseK === 0')));
+await G('(g.setThrottle(0), true)');
+await waitFor('s.calm', 4000); await wait(300);
+const al = await G(`(() => { const p = ${PK}; return { st: p && p.state, d: p && g.pockets.dist(p), hose: g.pockets.hoseK, btn: ui.siphonBtn.gfx.visible, chip: ui.chipText.text, pilotBtn: ui.pilotBtn.gfx.visible }; })()`);
+check(`full stop inside the window (${SIP.WINDOW_AHEAD} m ahead .. ${SIP.WINDOW_PAST} m past): STOPPED, hose runs out, GO TO SIPHON + chip`,
+  al.st === 'stopped' && al.d <= SIP.WINDOW_AHEAD && al.d >= -SIP.WINDOW_PAST && al.hose === 1 && al.btn && al.chip === 'STOPPED AT POCKET' && (await toastSeen('POCKET ALIGNED')), JSON.stringify(al));
+// seat required: holding PUMP anywhere else does nothing
+await G('(g.setHold("pump"), true)'); await wait(600);
+check('seat required: PUMP does nothing away from the SIPHON seat (Holt at the helm)', await G('s.tank === 0 && !g.availableActions().includes("pump") && g.availableActions("siphon").includes("pump")'));
+await G('(g.setHold(null), true)');
+const t0 = Date.now();
+await tap(91, 312);   // GO TO SIPHON
+const reached = await waitFor('g.crew.station === "siphon" && !g.crew.walking', 3000);
+const trip = await G('g.crew.lastTrip');
+check('GO TO SIPHON: Holt climbs down to the keel pod seat (short walk)', reached && trip.to === 'siphon' && trip.ms < 1700 && !(await G('ui.siphonBtn.gfx.visible')), `${trip.ms} ms from ${trip.from}`);
+await tap(...TOGGLE); await waitFor('g.view.inside && g.cameras.main.zoom === 2', 3000); await wait(150);
+// visible band = between the HUD (top 24 px) and the station panel (from y 232)
+const fit = await G(`(() => { const c = g.cameras.main, v = c.worldView; const r = g.ship.room('siphon'); return { top: v.y + 24 / c.zoom, bot: v.y + 232 / c.zoom, ceil: r.ceil, floor: r.floorY, tip: ${LL.DRILL_TIP_Y} }; })()`);
+check('inside view: drill tip .. keel pod floor all visible between HUD and panel', fit.top <= fit.tip && fit.bot >= fit.floor && fit.top <= LL.SHIP_TOP, JSON.stringify(fit));
+check('siphon panel: TANK + PRESS gauges and HOLD: PUMP', await G('ui.stationText.text.startsWith("SIPHON   TANK 0/100L") && ui.pumpLabels.every(o => o.visible) && ui.actionBtns.pump.gfx.visible && ui.actionBtns.pump.enabled && ui.actionBtns.pump.text.text === "HOLD: PUMP"'), await G('ui.stationText.text'));
+await page.screenshot({ path: `${OUT}/34-siphon-seat.png` });
+// pump: tank fills, pocket drains, pressure rises; release: pressure falls
+const v0 = await G(`${PK}.vol`);
+await touchDown(...ACTION_FULL); await wait(1500);
+const pm = await G(`({ tank: s.tank, cr: s.tankCr, vol: ${PK}.vol, press: g.pockets.pressure, pumping: g.pockets.pumping, chip: ui.chipText.text, working: g.crew.working })`);
+await touchUp(); await wait(150);
+const pr0 = await G(`({ press: g.pockets.pressure, tank: s.tank, vol: ${PK}.vol })`); await wait(900);
+const pr = await G(`({ press: g.pockets.pressure, tank: s.tank, vol: ${PK}.vol })`);
+check(`hold PUMP: tank fills (~${SIP.PUMP_RATE} L/s), the pocket drains by the same amount, line pressure builds`, pm.pumping && pm.working && pm.tank > SIP.PUMP_RATE * 1.0 && pm.tank < SIP.PUMP_RATE * 1.7 && Math.abs((v0 - pm.vol) - pm.tank) < 0.01 && pm.press > 20 && pm.cr > 0 && pm.chip.startsWith('PUMPING'), JSON.stringify(pm));
+check(`release: pressure falls (${SIP.PRESS_FALL}/s), nothing more pumped`, pr.press < pr0.press - 20 && pr.tank === pr0.tank && pr.vol === pr0.vol && !(await G('g.pockets.pumping')), JSON.stringify({ pr0, pr }));
+check('pocket visibly drains (fewer liquid rows drawn)', await G(`(() => { const p = ${PK}; return p.vol / p.def.vol < 0.8; })()`));
+// outside view of the hose while pumping (hold set directly: the PUMP button lives in the inside panel)
+await G('(g.view.set("outside"), g.setHold("pump"), true)'); await wait(700);
+check('outside: hose from the hull port to the pocket, liquid flowing', await G('g.pockets.pumping && g.pockets.hose.commandBuffer.length > 0 && g.pockets.hoseK === 1'));
+await page.screenshot({ path: `${OUT}/35-siphon-pumping.png` });
+await G('(g.setHold(null), g.view.set("inside"), true)'); await wait(1500);
+// full tank blocks pumping
+const tk = await G(`(() => { s.tank = s.tankCap - 3; return s.tank; })()`);
+await touchDown(...ACTION_FULL); await wait(800); await touchUp(); await wait(200);
+const ft = await G('({ tank: s.tank, cap: s.tankCap, can: g.availableActions().includes("pump"), lbl: ui.actionBtns.pump.text.text, en: ui.actionBtns.pump.enabled, chip: ui.chipText.text, hold: g.hold })');
+check('full tank: pumping stops at capacity, TANK FULL toast, PUMP disabled, chip says skip it', ft.tank === ft.cap && !ft.can && ft.lbl === 'TANK FULL' && !ft.en && ft.chip === 'TANK FULL: SKIP IT' && (await toastSeen('TANK FULL')) && ft.hold === null, JSON.stringify(ft));
+await G('(g.setHold("pump"), true)'); await wait(400);
+check('full tank: holding PUMP does nothing', (await G('s.tank')) === ft.cap && !(await G('g.pockets.pumping')));
+await G('(g.setHold(null), true)');
+const keepTank = await G('({ tank: s.tank, cr: s.tankCr })');
+// burst: a VOLATILE pocket, sustained pumping
+await runFrom('&noevents=1&pocket=volatile&side=right');
+await alignStop();
+check('VOLATILE pocket (right wall) aligned with a full stop', await G(`${PK}.state === 'stopped' && ${PK}.side === 'right'`));
+await tap(...TOGGLE); await waitFor('g.view.inside && g.cameras.main.zoom === 2', 3000); await wait(150); await goRoom('siphon');
+const bh = await G('s.hull');
+await touchDown(...ACTION_FULL);
+const burst = await waitFor('s.bursts > 0', 4500);
+await wait(90); await page.screenshot({ path: `${OUT}/36-siphon-burst.png` });
+await touchUp();
+const bs = await G(`(() => { const p = ${PK}; return { lost: p.lost, vol: p.vol, pumped: p.pumped, lock: g.pockets.lockT, press: g.pockets.pressure, hold: g.hold, hull: s.hull, lbl: ui.actionBtns.pump.text.text, en: ui.actionBtns.pump.enabled, chip: ui.chipText.text }; })()`);
+check(`sustained pumping on a volatile pocket bursts the line (~${SIP.BURST_AT} pressure)`, burst && (await toastSeen('LINE BURST')), JSON.stringify(bs));
+check(`burst: ${SIP.BURST_LOSS * 100}% of what's left is lost, pump locked ${SIP.BURST_LOCKOUT_S} s, hold released, no hull damage`,
+  bs.lost > 0 && Math.abs(bs.lost - (bs.lost + bs.vol) * SIP.BURST_LOSS) < 0.01 && Math.abs(bs.pumped + bs.vol + bs.lost - 50) < 0.01 && bs.lock > SIP.BURST_LOCKOUT_S - 0.4 && bs.hold === null && bs.hull === bh && /^LINE BURST: \dS$/.test(bs.lbl) && !bs.en && bs.chip.startsWith('LINE BURST'), JSON.stringify(bs));
+await wait(SIP.BURST_LOCKOUT_S * 1000 + 200);
+check('after the lockout PUMP works again', await G('g.availableActions().includes("pump") && ui.actionBtns.pump.enabled'));
+// keep going until drained
+await touchDown(...ACTION_FULL); const drained = await waitFor(`!g.pockets.current || g.pockets.current.state !== 'stopped'`, 3000); await touchUp();
+check('pump it dry: POCKET DRAINED', drained && (await toastSeen('POCKET DRAINED')), await G('g.toastLog.slice(-3).join(" / ")'));
+// sell at the relay (Holt back at the helm to drive)
+await goRoom('helm');
+await G(`(s.tank = ${keepTank.tank}, s.tankCr = ${keepTank.cr}, g.debugJump(985), g.setThrottle(1), true)`);
+const h0 = await G('s.haul');
+await page.waitForFunction(() => __drill.scene.isActive('Relay'), null, { timeout: 15000 }).catch(() => {});
+await wait(300);
+const sold = await G('({ tank: s.tank, cr: s.tankCr, liquid: s.liquid, haul: s.haul })');
+await R('r.skipTyping()'); await wait(200); await tap(90, 137); await wait(700);
+const relayTxt = await R('r.oreText && r.oreText.text');
+check('relay: the tank is sold into the haul (toast, tank empty, LIQ in the relay breakdown)', sold.tank === 0 && sold.cr === 0 && Math.abs(sold.liquid - keepTank.cr) < 1e-6 && sold.haul >= h0 + keepTank.cr - 0.01
+  && (await toastSeen(`SOLD ${Math.round(keepTank.tank)} L LIQUID`)) && relayTxt.endsWith(`LIQ ${Math.floor(keepTank.cr)}`), JSON.stringify({ sold, relayTxt }));
+// hull loss: liquid in the tank counts toward the haul (1/3 kept)
+await G('(g.pushOn(), true)'); await wait(300);
+const hl = await G('(s.tank = 40, s.tankCr = 90, { haul: s.haul, liquid: s.liquid })');
+await G('(s.hull = 0, true)');
+await page.waitForFunction(() => __drill.scene.isActive('GameOver'), null, { timeout: 5000 }).catch(() => {});
+await wait(300);
+const lr = await G('g.lastRun');
+const goT = await page.evaluate(() => __drill.scene.getScene('GameOver').children.list.map((c) => c.text).filter(Boolean));
+check('hull loss: tank liquid joins the haul before the 1/3 is kept; summary shows INCL. LIQUID', lr.liquid === Math.floor(hl.liquid + 90) && lr.haul >= Math.floor(hl.haul + 90) && lr.banked === Math.floor(lr.haul * T.HULL_LOSS_KEEP + 1e-9) - (Math.floor(lr.haul * T.HULL_LOSS_KEEP + 1e-9) - lr.banked)
+  && goT.some((t) => t.startsWith(' INCL. LIQUID')) && goT.includes(`${lr.liquid} CR`), JSON.stringify({ liq: lr.liquid, haul: lr.haul, banked: lr.banked }));
+// stops never overlap: pockets vs veins vs boulders
+await runFrom('');
+const ov = await G(`(() => { g.debugJump(400); g.veins.spawn('rich', ${LL.DRILL_TIP_Y} - 60 * 4); const vAt = s.depth + g.veins.dist(g.veins.current);
+  const r = { pBlocked: !g.pockets.spawnFilter(vAt + 10), pFree: g.pockets.spawnFilter(vAt + ${SIP.CLEAR_M} + 5) };
+  g.veins.clear(); g.pockets.spawn('small', 'left', ${SIP.PORT_Y} - 60 * 4); const pAt = s.depth + g.pockets.dist(g.pockets.current);
+  r.vBlocked = !g.veins.spawnFilter(pAt - 10); r.bBlocked = !g.obstacles.spawnFilter(pAt + 5); r.vFree = g.veins.spawnFilter(pAt + ${SIP.CLEAR_M} + 25);
+  r.relay = !g.pockets.spawnFilter(995); return r; })()`);
+check(`pockets keep ${SIP.CLEAR_M} m clear of vein stops + boulders (both ways) and of relays`, ov.pBlocked && ov.pFree && ov.vBlocked && ov.bBlocked && ov.vFree && ov.relay, JSON.stringify(ov));
+await G('(g.pockets.clear(), g.pockets.nextAt = s.depth, g.setThrottle(0.3), true)'); await wait(600);
+const rp = await G('g.pockets.log.slice(-1)[0]');
+check('random pockets spawn during a normal run (type + side rolled)', !!rp && ['small', 'rich', 'volatile'].includes(rp.type) && ['left', 'right'].includes(rp.side), JSON.stringify(rp));
+// the SIPHON slot parts change the rig
+await page.evaluate(() => { const s = JSON.parse(localStorage.getItem('drill.save')); s.owned.push('bigtank'); s.loadout.siphon = 'bigtank'; localStorage.setItem('drill.save', JSON.stringify(s)); });
+await runFrom('&noevents=1');
+check('SIPHON part BULK TANK: tank 160 L, slower pump', await G('s.tankCap === 160 && s.mods.pumpMul === 0.7'));
+await page.evaluate(() => { const s = JSON.parse(localStorage.getItem('drill.save')); s.loadout.siphon = 'stocksiphon'; localStorage.setItem('drill.save', JSON.stringify(s)); });
+}
+
 // ---- save migration (v1 from M1, plus the pre-M1 best-depth key) ----------------------------
 await page.evaluate(() => { localStorage.clear(); localStorage.setItem('drill.save', JSON.stringify({ v: 1, credits: 777, runs: 3, cashouts: 2, rigsLost: 1, relaysReached: 4 })); localStorage.setItem('drill.bestDepth', '1234'); });
 await page.goto(BASE + '?anim=0'); await wait(1500);
 const mig = await page.evaluate(() => JSON.parse(localStorage.getItem('drill.save')));
-check('v1 save migrates to v3 without losing credits, stats or best depth', mig.v === 3 && mig.credits === 777 && mig.runs === 3 && mig.cashouts === 2 && mig.rigsLost === 1 && mig.relaysReached === 4 && mig.best.kessa4 === 1234 && mig.totalEarned === 777,
+check('v1 save migrates to v4 without losing credits, stats or best depth', mig.v === 4 && mig.credits === 777 && mig.runs === 3 && mig.cashouts === 2 && mig.rigsLost === 1 && mig.relaysReached === 4 && mig.best.kessa4 === 1234 && mig.totalEarned === 777,
   JSON.stringify({ v: mig.v, c: mig.credits, runs: mig.runs, best: mig.best }));
-const MIG_OPEN = ['harness', 'lightframe', 'grinder', 'governor', 'toolbelt']; // best 1234 m + 4 lifetime relays
-check('migrated save: stock loadout, milestones already reached are open (silently)', mig.owned.length === 6 && Object.values(mig.loadout).every((id) => P_[id].stock)
+const MIG_OPEN = ['harness', 'lightframe', 'grinder', 'governor', 'toolbelt', 'bigtank']; // best 1234 m + 4 lifetime relays
+check('migrated save: stock loadout, milestones already reached are open (silently)', mig.owned.length === 7 && Object.keys(mig.loadout).length === 7 && Object.values(mig.loadout).every((id) => P_[id].stock)
   && MIG_OPEN.every((id) => mig.unlocked.includes(id)) && mig.unlocked.length === MIG_OPEN.length && mig.newUnlocks.length === 0, JSON.stringify(mig.unlocked));
-check('migrated vendor stock only offers unlocked parts (10: 2/1/2/1/2/2)', mig.vendor.stock.length === 10 && mig.vendor.stock.every((id) => !P_[id].unlock || mig.unlocked.includes(id)), mig.vendor.stock.join());
+check('migrated vendor stock only offers unlocked parts (11: 2/1/2/1/2/2/1)', mig.vendor.stock.length === 11 && mig.vendor.stock.every((id) => !P_[id].unlock || mig.unlocked.includes(id)), mig.vendor.stock.join());
+// v3 -> v4: the SIPHON slot arrives with the stock hand pump; nothing else changes
+const m34 = await page.evaluate(async () => { const S = await import(new URL('src/systems/Save.js', location.href).href);
+  const v3 = { v: 3, credits: 4321, totalEarned: 9000, runs: 7, cashouts: 4, rigsLost: 3, relaysReached: 6, deepestRelay: 2, best: { kessa4: 1600 },
+    owned: ['stockbit', 'stockengine', 'stockhull', 'stocktools', 'stockhelm', 'stockkit', 'diamond', 'lightboots'], loadout: { drill: 'diamond', engine: 'stockengine', hull: 'stockhull', tools: 'stocktools', helm: 'stockhelm', kit: 'lightboots' },
+    vendor: { stock: ['grinder', 'coldloop', 'ablative', 'patchfoam', 'scanner', 'harness'], rerolls: 1, refreshes: 7 }, unlocked: ['harness', 'lightframe', 'grinder', 'governor', 'overdrive', 'quickcap', 'toolbelt'], newUnlocks: [], radio: [] };
+  return S.migrate(v3); });
+check('v3 save migrates to v4: credits/stats/loadout kept, HAND PUMP owned + fitted, siphon parts reached by depth open, stock gains siphon offers', m34.v === 4 && m34.credits === 4321 && m34.runs === 7 && m34.loadout.drill === 'diamond' && m34.loadout.kit === 'lightboots'
+  && m34.loadout.siphon === 'stocksiphon' && m34.owned.includes('stocksiphon') && m34.owned.length === 9 && m34.unlocked.includes('bigtank') && m34.unlocked.includes('highflow') && m34.vendor.stock.slice(0, 6).join() === 'grinder,coldloop,ablative,patchfoam,scanner,harness'
+  && m34.vendor.stock.filter((id) => P_[id].slot === 'siphon').length === 2 && m34.vendor.rerolls === 1, JSON.stringify({ v: m34.v, l: m34.loadout, st: m34.vendor.stock, un: m34.unlocked }));
 check('title shows migrated credits + best', await page.evaluate(() => { const t = __drill.scene.getScene('Title'); const tx = t.children.list.map((c) => c.text).filter(Boolean); return tx.includes('CREDITS 777 CR') && tx.includes('BEST DEPTH 1234M'); }));
 await tap(90, 160); await wait(800);
 check('docked HUD shows migrated credits', (await D('u.creditText.text')) === '777 CR' && (await D('u.bestText.text')) === 'BEST 1234M');

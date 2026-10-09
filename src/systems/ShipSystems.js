@@ -1,5 +1,5 @@
 // Pure gameplay numbers: speed, depth, heat, bit wear, hull. No rendering.
-import { CALM, TUNING as T, EVENTS as E } from '../config.js';
+import { CALM, SIPHON, TUNING as T, EVENTS as E } from '../config.js';
 import { applyParts } from '../data/parts.js';
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -30,6 +30,10 @@ export class ShipSystems {
     this.jammed = false;              // drill jam event: no progress, the engine strains
     this.shutdownT = 0;               // power surge SHUT DOWN: seconds left with the engine off
     this.overclockT = 0;              // power surge OVERCLOCK: seconds left boosted
+    // --- siphon: liquid in the tank (litres + what it sells for), sold at the next relay ---
+    this.tank = 0; this.tankCr = 0;
+    this.liquid = 0;                  // credits from liquid sold this run (part of the haul)
+    this.pocketsTapped = 0; this.pocketsMissed = 0; this.bursts = 0;
     // Run modifiers: loadout parts (applied once, here) + relay supplies (stacked at relays).
     // Multipliers multiply; maxHullBonus/spareBits add; the rest are flags/overrides.
     this.mods = { heatMul: 1, wearMul: 1, ventMul: 1, repairMul: 1, patchMul: 1, blastTimeMul: 1,
@@ -37,7 +41,9 @@ export class ShipSystems {
       // parts (M2)
       maxSpeedMul: 1, accelMul: 1, decelMul: 1, coolMul: 1, spikeMul: 1, grindWearMul: 1, workMul: 1,
       walkMul: 1, climbMul: 1, overheatDmgMul: 1, overheatCap: null, ramSafe: null, blastAll: false,
-      noBlast: false, blastHeat: 0, governor: false, pilotRooms: null };
+      noBlast: false, blastHeat: 0, governor: false, pilotRooms: null,
+      // siphon (side pockets)
+      tankMul: 1, pumpMul: 1, pressMul: 1 };
     if (loadout) applyParts(this.mods, loadout);
     this.loadout = loadout;
     this.hull = this.maxHull;
@@ -47,6 +53,10 @@ export class ShipSystems {
   get realSpeed() { return this.speed * this.mods.maxSpeedMul * this.boostMul; }
   /** Full stop (actual speed 0, not clamped at a relay): the safe, calm state. */
   get calm() { return !this.anchored && this.speed <= 1e-6; }
+  get tankCap() { return SIPHON.TANK * this.mods.tankMul; }
+  get tankFull() { return this.tank >= this.tankCap - 1e-6; }
+  /** Sell the tank into the haul (relay arrival, or counted into the haul on hull loss). Returns credits. */
+  sellTank() { const cr = this.tankCr; this.haul += cr; this.liquid += cr; this.tank = 0; this.tankCr = 0; return cr; }
   get boostMul() { return this.overclockT > 0 ? E.OVERCLOCK_SPEED : 1; }
   /** Highest throttle setting that grinds boulders instead of ramming them. */
   get safeThrottle() { return Math.min(1, (this.mods.ramSafe ?? T.RAM_SAFE_SPEED) / this.mods.maxSpeedMul); }

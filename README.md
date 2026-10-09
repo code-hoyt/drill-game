@@ -1,4 +1,4 @@
-# Drill (working title): prototype v0.9 (ore veins + decision events, on top of M2/unlocks/cutscenes/concourse)
+# Drill (working title): prototype v0.10 (side pockets + SIPHON seat, ore veins + decision events, on top of M2/unlocks/cutscenes/concourse)
 
 An endless, portrait, pixel-art drilling game for phone browsers. You pilot a drill ship that bores **upward** through an alien planet and keep it alive by running your one crew member between stations. Your score is depth. Every 1000 m you clamp onto a relay and choose: push on for better pay, or cash out. Between contracts the rig docks at an orbital station. The home screen is the station concourse: pick contracts, hear from Ines, buy parts, and swap them in the rig bay. Design doc: [`docs/DESIGN.md`](docs/DESIGN.md).
 
@@ -38,15 +38,16 @@ ES modules don't load over `file://`, so you need a server.
 | **QUARTERMASTER** | shelves of parts, crates, the quartermaster bot at the counter | The parts vendor: rotating stock (6 per page, < PREV / NEXT >), reroll, LOCKED list (7 per page), buy screen. |
 | **HOLT'S BUNK** | bunk bed, locker, codex shelf | Holt's log (stats, next unlock) with a **CODEX SHELF** button (stub until M4). The loadout lives in the rig bay. |
 
-**Rig bay (garage-style parts screen).** It fits the content area: the rig's exterior at 1x (as in the bay view), drill up, on the left, with the airlock door and Holt's locker under it. Six **callouts** run down the right, one per slot, showing the slot name and the part fitted (green when it isn't the stock part). Each slot has its own colour, used both on its callout and on the pulsing corner brackets of its hotspot on the rig:
+**Rig bay (garage-style parts screen).** It fits the content area: the rig's exterior at 1x (as in the bay view), drill up, on the left, with the airlock door and Holt's locker under it. The siphon keel pod hangs under the hull. Seven **callouts** run down the right, one per slot, showing the slot name and the part fitted (green when it isn't the stock part). Each slot has its own colour, used both on its callout and on the pulsing corner brackets of its hotspot on the rig:
 * the **drill nose**: drill head
 * the **cockpit porthole**, top-left: helm
 * the **plating**, top-right: hull
 * the **vents**, bottom-left: engine
 * the **tool hatch**, bottom-right: tools
+* the **keel pod** under the hull: siphon
 * **Holt's locker** by the airlock door below the rig: Holt's kit
 
-Hotspots: drill nose 70×24 base px, each hull quadrant 43×31, and the kit locker 40×30. At 390×844 that's at least about 87×52 screen px. Callouts are 80×24. Tapping a hotspot or its callout opens that slot's swap list, with each owned part's upside and downside (paged if it doesn't fit); **<** returns to the bay. Swapping only works while docked.
+Hotspots: drill nose 70×24 base px, the cockpit/plating quadrants 43×31, the vent/hatch quadrants 43×29, the keel pod 56×24, and the kit locker 40×24. At 390×844 that's at least about 87×52 screen px. Callouts are 80×22 (one line per part). Tapping a hotspot or its callout opens that slot's swap list, with each owned part's upside and downside (paged if it doesn't fit); **<** returns to the bay. Swapping only works while docked.
 
 
 | View | Controls |
@@ -57,7 +58,7 @@ Hotspots: drill nose 70×24 base px, each hull quadrant 43×31, and the kit lock
 
 Optional desktop keys: `W/S` or arrow keys for throttle (only when piloted), `Space` to toggle the view, `1/2/3/4` to pick a room (HELM/DRL/ENG/TLS), `E` (hold) for the primary action, `Q` (hold) to blast, `R`/`Enter` to restart.
 
-**Debug/playtest URL params:** `?anim=0` skips the cutscenes. `?unlock=all` unlocks every part. `?credits=5000` sets your credits. `?own=all` (or `?own=widecut,plating`) owns parts. `?stock=id,id,...` forces the Quartermaster's stock. `?wipe=1` clears the save. `?depth=950` starts the run at 950 m (relay 1 is 50 m ahead). `?boosts=plate,coolant,charge` fixes the relay supply offers (ids in `src/data/boosts.js`). `?vein=small|rich|fine` puts a vein ~45 m ahead at the start of the run. `?event=fire|jam|surge` triggers that event 1.5 s in (`?event=fire:helm` picks the room). `?noevents=1` turns off random veins and events (the tests use it). In the console, `__drill.scene.getScene('Game').debugJump(1980)` jumps mid-run and keeps the haul.
+**Debug/playtest URL params:** `?anim=0` skips the cutscenes. `?unlock=all` unlocks every part. `?credits=5000` sets your credits. `?own=all` (or `?own=widecut,plating`) owns parts. `?stock=id,id,...` forces the Quartermaster's stock. `?wipe=1` clears the save. `?depth=950` starts the run at 950 m (relay 1 is 50 m ahead). `?boosts=plate,coolant,charge` fixes the relay supply offers (ids in `src/data/boosts.js`). `?vein=small|rich|fine` puts a vein ~45 m ahead at the start of the run. `?event=fire|jam|surge` triggers that event 1.5 s in (`?event=fire:helm` picks the room). `?pocket=small|rich|volatile&side=left|right` puts a side pocket ~45 m ahead (lined up with the hose port on that side). `?noevents=1` turns off random veins, pockets and events (the tests use it). In the console, `__drill.scene.getScene('Game').debugJump(1980)` jumps mid-run and keeps the haul.
 
 ## Mechanics
 
@@ -94,6 +95,13 @@ Optional desktop keys: `W/S` or arrow keys for throttle (only when piloted), `Sp
   * Heat cools 6/s faster than passive.
   * Cues: `ALL STOP` in the bottom bar and an `ALL STOP: HOLDING` chip. Alarms dim and stop blinking, the red hull light goes off, and dust settles; it all fades back on throttle-up.
   * The only cost is lost time (no pay while stopped). Discrete choices (a vein collapse, rocking a jam) still cost. Tuning is in `CALM` in `src/config.js`.
+* **Side pockets + SIPHON seat ([C], v0.10)**: glowing liquid pockets in the LEFT or RIGHT bore wall (every 160–260 m from 110 m on, a bit more often each leg). Warning ~80 m out: toast `RICH POCKET LEFT: STOP BESIDE IT`, a droplet icon, and the chip `RICH POCKET L 38M`. Inside 60 m an alignment bracket shows on that hull flank around the **hose port**.
+  * **Full stop** with the pocket 4 m ahead to 3 m past the port → `STOPPED AT POCKET`. The hose runs out to the wall, and **GO TO SIPHON** appears in the bottom bar. Drive past and it's `POCKET MISSED` (no penalty).
+  * The **SIPHON seat (SIP)** is a keel pod under the hub: down the ladder through a grate in the bottom deck (HELM → SIP ~1.2 s). Holt must be in the seat.
+  * **Hold PUMP**: 20 L/s into the tank, the pocket drains, the hose shows flow. **PRESS** rises the longer you hold (escalating) and falls 30/s when you let go. At 100 the **line bursts**: 30% of what's left in the pocket is lost, the deck sprays, and the pump locks for 3 s. No hull damage; it's purely your gamble.
+  * Types: SMALL 40 L / 60 cr (safe), RICH 70 L / 150 cr (one breather needed), VOLATILE (rare) 50 L / 260 cr with pressure ×2.2 (short pulses). Value × the pay multiplier.
+  * **Tank** 100 L (2–3 small pockets). Full tank = no pumping (`TANK FULL: SKIP IT`). **Relays buy the tank** into the haul (`SOLD n L LIQUID`). On hull loss the tank counts into the haul before the 1/3 is kept. The haul split reads `DRILL n ORE n LIQ n` at relays and `INCL. LIQUID (N POCKETS)` at the end.
+  * Pockets keep 25 m clear of vein stops and boulders and stay out of relay approaches. Tuning is in `SIPHON` in `src/config.js`.
 * **Decision events ([P], v0.9)**, one every 30–45 s in leg 1 (22–34 s in leg 2, then 16–26 s); a relay clamp-in clears them:
   * **FIRE** in ENG/DRL/TLS: that station is down, the room offers only **EXTINGUISH**, and it chips the hull. Left 14 s, it spreads to a neighbour (at the HELM it kills the throttle).
   * **DRILL JAM**: the rig stalls. Rock the throttle at the HELM 0% → 60%+ ×3 (fast, costs heat and hull), or hold **FREE BIT** at DRL (3.5 s, free).
@@ -122,7 +130,7 @@ Optional desktop keys: `W/S` or arrow keys for throttle (only when piloted), `Sp
 * **Relay supplies** (`src/data/boosts.js`, 3 distinct offered per relay; repeats are possible across relays): COOLANT CANISTER (vent +30%), SPARE BIT (auto-swaps when the bit hits 100%), CHARGE PACK (blast 2× faster), PLATE KIT (+15 max hull and +15 now), SCANNER TUNE-UP (boulder warnings 50% earlier), GOOD BOOTS (walk/climb +15%), HEAT SINK (heat −15%), HARDENED TEETH (wear −15%), PATCH COMPOUND (patch +40%), SHOCK STRUTS (ram damage −20%).
 * **Hull loss**: the rig is lost. The crew cab ejects as an escape pod and rides the bore back, and you bank `floor(haul / 3)`.
 * **End screen**: CASHED OUT or RIG LOST. It shows depth, best depth (`localStorage['drill.bestDepth']`), relays reached, the breakdown (haul, +10% bonus or −2/3 lost, banked, total credits), Ines's sign-off, and **NEW CONTRACT**.
-* **Loadout (6 slots, one part each)**: drill head, engine, hull, tools, helm, Holt's kit.
+* **Loadout (7 slots, one part each)**: drill head, engine, hull, tools, helm, siphon, Holt's kit.
   * Every slot starts with its stock part, which is the M1 balance. Every other part is a **sidegrade with a real downside**.
   * Parts are bought once and kept. You can swap them **only while docked**: the run locks in the loadout at contract start, and `equipPart` refuses while a run is active.
   * Effects fold into the same `mods` object as relay supplies (`src/data/parts.js` → `applyParts`).
@@ -150,13 +158,16 @@ Optional desktop keys: `W/S` or arrow keys for throttle (only when piloted), `Sp
 | | Long scanner | 600 | boulder warnings 2× earlier | heat +15% |
 | | Dead-man governor | 450 | with no pilot and rock close ahead (boulder or hard band), drops the throttle to safe speed | trips on any rock; stays at safe speed until Holt is back at the helm |
 | | Cable linkage | 700 | throttle works from HELM **or DRL** | top speed −15% |
+| Siphon | Hand pump (stock) | – | balanced, 100 L tank | – |
+| | Bulk tank | 500 | tank 160 L | pumps 30% slower |
+| | High-flow pump | 650 | pumps 60% faster | pressure builds 70% faster |
 | Holt's kit | Work boots (stock) | – | standard | – |
 | | Climbing harness | 350 | climb speed +50% | walk speed −15% |
 | | Light boots | 350 | walk speed +25% | climb speed −20% |
 | | Tool belt | 450 | vent, fix and patch 25% faster | climb speed −25% |
 
 * **Quartermaster (rotating stock)**:
-  * It offers **2 parts per slot (12 total)**, drawn at random from the *unlocked*, *unowned*, non-stock pool. If a slot's pool is short, it shows what's left. A sold-out slot means you own everything for it.
+  * It offers **2 parts per slot (up to 14 total)**, drawn at random from the *unlocked*, *unowned*, non-stock pool. If a slot's pool is short, it shows what's left. A sold-out slot means you own everything for it.
   * The stock **refreshes after every contract**, whether you cash out or lose the rig.
   * **Reroll** costs 100 → 200 → 400… (doubling) and resets when the stock refreshes. A reroll always changes something when the pool allows.
   * Tap an offer to see its full upside, downside, what it replaces, and the price. Then choose **BUY + EQUIP** (one tap) or **BUY ONLY**.
@@ -165,18 +176,18 @@ Optional desktop keys: `W/S` or arrow keys for throttle (only when piloted), `Sp
   | Unlocks at | Parts |
   |---|---|
   | Start | Diamond-core bit, Cold-loop engine, Ablative skin, Patch foam, Long scanner, Light boots |
-  | Best 500 m | Climbing harness, Light frame |
+  | Best 500 m | Climbing harness, Light frame, Bulk tank |
   | Best 1000 m | Grinder head, Dead-man governor |
-  | Best 1500 m | Overdrive turbine, Quick capacitor |
+  | Best 1500 m | Overdrive turbine, Quick capacitor, High-flow pump |
   | Best 2000 m | Heavy plating, Bypass valve |
   | 3 relays (lifetime) | Tool belt |
   | Best 2500 m | Cable linkage |
   | Best 3000 m | Wide-cut bit, Heavy charge |
 
   Locked parts are listed on the Quartermaster's **LOCKED** page ("REACH 3000M"), on each slot screen, and as **NEXT UNLOCK** in the vendor and Holt's log.
-* **Save** (`localStorage['drill.save']`, v3):
+* **Save** (`localStorage['drill.save']`, v4):
   * Contents: credits, total earned, runs, cash-outs, rigs lost, relays reached, deepest relay, best depth per planet, owned parts, loadout, vendor stock and reroll count, unlocked parts (plus a pending NEW PARTS notice), and Ines's radio log (last 40).
-  * **Migration**: a v1 save (M1) keeps its credits and stats, and the old `drill.bestDepth` key is folded into `best.kessa4`. A v2 save (M2) becomes v3: milestones it already reached open silently, owned parts are grandfathered, and an old stock with now-locked parts is re-drawn. No save is ever wiped by an upgrade.
+  * **Migration**: a v1 save (M1) keeps its credits and stats, and the old `drill.bestDepth` key is folded into `best.kessa4`. A v2 save (M2) becomes v3: milestones it already reached open silently, owned parts are grandfathered, and an old stock with now-locked parts is re-drawn. v4 adds the SIPHON slot: older saves get the stock hand pump owned and fitted, keep everything else, and their stock gains siphon offers if one is already unlocked. No save is ever wiped by an upgrade.
 
 ## File structure
 
@@ -197,18 +208,19 @@ src/
     GameOverScene.js       end screen: cashed out / rig lost, earnings breakdown, back to the rig
   data/
     boosts.js              relay supplies + drawBoosts()
-    parts.js               6 slots, 24 parts (6 stock + 18 sidegrades), unlock milestones, applyParts()
+    parts.js               7 slots, 27 parts (7 stock + 20 sidegrades), unlock milestones, applyParts()
     contracts.js           planets/contracts for the HELM board (M3 extends)
     dispatch.js            Ines's relay messages (1-4 + fallbacks), ping, sign-offs
   systems/
     Settings.js            URL settings (?anim=0, ?animscale=N) + the derived cutscene/grace/lift durations
-    Save.js                localStorage save v3 + migration, unlocks, vendor stock/reroll/buy, equip (blocked mid-run), radio log, URL shortcuts
+    Save.js                localStorage save v4 + migration, unlocks, vendor stock/reroll/buy, equip (blocked mid-run), radio log, URL shortcuts
     ShipSystems.js         pure numbers: speed, depth, heat, wear, hull, leaks (no rendering)
     Terrain.js             scrolling rock/tunnel tiles, depth tint, hard-rock bands
     Obstacles.js           boulder spawn/scroll, ram / grind / blast
+    Pockets.js             side pockets: spawn, alignment window at the hose port, pumping/tank/pressure/burst, pocket + hose + bracket drawing
     Veins.js               ore veins: spawn, stop window, extraction, instability/collapse, lost/scrap, on-screen markers
     Events.js              decision events director: fire (spread/extinguish), drill jam (rock/free), power surge (overclock/shut down/blowout)
-    Ship.js                ship visuals: 2-deck 2x2 cutaway + hub ladder, stations, exterior, drill, room tap zones
+    Ship.js                ship visuals: 2-deck 2x2 cutaway + hub ladder + SIPHON keel pod, stations, exterior, drill, room tap zones
     Crew.js                crew member: hub-routed path planning, walk/climb/work animation
     ViewController.js      camera pan/zoom between outside and inside
     PixelFont.js           runtime-generated 3x5 bitmap font ('pixel')
@@ -216,9 +228,11 @@ src/
   ui/
     Button.js              touch button with tap + press-and-hold
 tests/e2e.mjs              Playwright phone-viewport test (see below)
-screenshots/               01-07 run + relay screens; 08 concourse (bay view), 08b concourse + NEW PARTS banner, 09/09b/09c Quartermaster (09c = page 2), 10 part swap, 11 Holt's log, 12 buy detail; 13 launch (winch out of the bore), 14 docking (clamps), 15 descent (drill bites), 16 locked parts, 17 descent mid-turn, 18 ascent mid-turn, 19 contract board, 20 Ines's window, 21 rig bay, 22 codex, 23 docking end frame (bay framing), 24 Holt steps out (lift), 25 summary in the content area (every panel shot shows the concourse below); 26 vein approaching (stop window), 27 stopped + extracting, 28 fire, 29 jam, 30 power surge, 31 relay haul split (drill/ore), 32 end screen with the ore row, 33 ALL STOP (calm cues with a fire held)
+screenshots/               01-07 run + relay screens; 08 concourse (bay view), 08b concourse + NEW PARTS banner, 09/09b/09c Quartermaster (09c = page 2), 10 part swap, 11 Holt's log, 12 buy detail; 13 launch (winch out of the bore), 14 docking (clamps), 15 descent (drill bites), 16 locked parts, 17 descent mid-turn, 18 ascent mid-turn, 19 contract board, 20 Ines's window, 21 rig bay, 22 codex, 23 docking end frame (bay framing), 24 Holt steps out (lift), 25 summary in the content area (every panel shot shows the concourse below); 26 vein approaching (stop window), 27 stopped + extracting, 28 fire, 29 jam, 30 power surge, 31 relay haul split (drill/ore), 32 end screen with the ore row, 33 ALL STOP (calm cues with a fire held), 34 the SIPHON keel-pod seat (inside, stopped at a pocket), 35 outside: pocket + hose while pumping, 36 line burst (spray in the pod)
 docs/DESIGN.md             game design doc
 ```
+
+**Side pockets** are tuned in `src/config.js` → `SIPHON` (start depth, gaps, port position, alignment window, clearance, tank, pump rate, pressure rate/escalation/fall/warn/burst, burst loss/lockout, per-type litres/value/pressure, spawn weights per leg).
 
 **Ore veins and events** are tuned in `src/config.js` → `ORE` (gaps, stop window, scrap, decay, escalation, collapse, per-type value/secs/instability/tremor/damage, spawn weights per leg) and `EVENTS` (gaps and pool per leg, fire spread/put-out, jam rocks/fix, surge decide/overclock/shutdown/blowout).
 
@@ -278,7 +292,7 @@ docs/DESIGN.md             game design doc
   * Every walk is ≤ 1.05 s; measured 0.23–0.46 s between neighbours and 0.91 s board → bunk.
   * With every panel open, all panel objects stay inside the content area (22–202), and the five concourse columns stay live and uncovered.
   * Tapping the active spot closes to the bay view, and tapping again reopens. X closes. On the codex, tapping the bunk returns to the log. Tapping the rig walks to the airlock.
-* Rig bay: 6 thumb-sized hotspots plus 6 callouts, each opening its own slot list. Callouts show the equipped parts and update after a swap. Equipping heavy plating (hull) and wide-cut (drill nose) from the bay persists.
+* Rig bay: 7 thumb-sized hotspots plus 7 callouts (incl. the siphon keel pod), each opening its own slot list. Callouts show the equipped parts and update after a swap. Equipping heavy plating (hull) and wide-cut (drill nose) from the bay persists.
 * Quartermaster paging: 12 offers show 6 per page. NEXT shows the other 6 (all 12 reachable, no repeats) and PREV goes back. The buy screen and slot lists fit the content area.
 * Vendor stock: 12 offers, 2 per slot, never stock or owned parts; it's randomized across draws and refreshed per contract.
 * Shortcuts: `?credits=` and `?stock=` work.
@@ -290,7 +304,7 @@ docs/DESIGN.md             game design doc
   * Wide-cut: about 50 px/s at full speed, heat ×1.35, safe ram zone 28%.
   * Light boots: same-deck walk 0.55 s, slower climbs.
 * Swapping is blocked mid-run and allowed again once docked.
-* Migration: a v1 save plus the old best-depth key become v3 with credits, stats and best intact.
+* Migration: a v1 save plus the old best-depth key become v4 with credits, stats and best intact; a v3 save becomes v4 with the hand pump owned + fitted and nothing lost.
 
 **Ore veins + events coverage (v0.9)**: the earlier flows run with `?noevents=1`, so random veins and events can't interfere. Then:
 * `?vein=rich` spawns a rich vein. Checks: the early alert (toast, chip, icon), the stop-window brackets, and no EXTRACT while moving. Braking with the outside slider stops in the window and gives `STOPPED AT VEIN`. At DRL, holding EXTRACT pays value × taken into the haul and raises RISK, and the risk bleeds off when you let go. Pushing it to 100 collapses the vein (−14 hull, half that vein's ore lost, hold released).
@@ -309,6 +323,16 @@ docs/DESIGN.md             game design doc
   * Events resume after a 4 s or longer grace.
   * Stopped at a vein, extraction risk still rises.
 * A normal run spawns veins on its own. Leg 1 events are fire and jam only. The first leg-2 event is the surge, after which all three mix. The mean gap is shorter in leg 2.
+
+**Side pockets + SIPHON coverage (v0.10)**:
+* `?pocket=small&side=right`: spawns in the right wall (outside the bore) with toast, chip and icon; no PUMP while it's ahead; driving past gives `POCKET MISSED`.
+* `?pocket=rich&side=left`: the alignment bracket and chip count down; in the window while moving, PUMP is still off; a full stop in the window gives `STOPPED AT POCKET`, the hose runs out, and GO TO SIPHON shows.
+* Seat required: PUMP at the helm does nothing. GO TO SIPHON walks Holt to the keel pod (~1.2 s). Inside, the drill tip to the pod floor are all visible; the panel shows TANK/PRESS and HOLD: PUMP.
+* Holding PUMP fills the tank ~20 L/s, drains the pocket by the same amount, builds pressure; release drops pressure and stops flow. Outside, the hose and flow are drawn.
+* Full tank: pumping stops exactly at capacity, `TANK FULL`, PUMP disabled, chip `TANK FULL: SKIP IT`.
+* Volatile pocket: sustained pumping bursts the line; 30% of the remainder is lost, 3 s lockout, hold released, no hull damage; PUMP works again after, and it can be pumped dry.
+* The relay sells the tank into the haul (`SOLD n L LIQUID`, `LIQ n` in the split). On hull loss the tank joins the haul before the 1/3 and the end screen shows `INCL. LIQUID`.
+* Spawn filters: pockets vs vein stops vs boulders (both ways) and relays. Random pockets spawn in a normal run. BULK TANK gives a 160 L tank.
 
 **Unlocks + cutscenes coverage** (the main flow runs with `?anim=0`; the cutscene section runs with them on):
 * Cashing out at 2000 m unlocks exactly the 500–2000 m parts, and the dock shows NEW PARTS AVAILABLE with their names once.

@@ -7,7 +7,7 @@ import { CASHOUT_LINE, POD_LINE } from '../data/dispatch.js';
 
 export class GameOverScene extends Phaser.Scene {
   constructor() { super('GameOver'); }
-  create({ reason = 'lost', depth = 0, best = 0, newBest = false, haul = 0, bonus = 0, recovery = 0, banked = 0, credits = 0, relays = 0, inDock = false, ore = 0, scrap = 0, veins = 0, veinsLost = 0 } = {}) {
+  create({ reason = 'lost', depth = 0, best = 0, newBest = false, haul = 0, bonus = 0, recovery = 0, banked = 0, credits = 0, relays = 0, inDock = false, ore = 0, scrap = 0, veins = 0, veinsLost = 0, liquid = 0, pockets = 0 } = {}) {
     const cash = reason === 'cashout';
     this.inDock = inDock;
     const t = (x, y, s, str, tint, ox = 0.5) => this.add.bitmapText(x, y, FONT_KEY, str, s).setOrigin(ox, 0).setTint(tint);
@@ -19,6 +19,7 @@ export class GameOverScene extends Phaser.Scene {
     const row = (y, label, value, tint = 0xffffff) => { t(18, y, 6, label, 0x9aa0b8, 0); t(162, y, 6, value, tint, 1); };
     // ore from veins (+ scrap from lost ones) is part of the run haul; shown on its own line
     const oreRow = (y) => row(y, ` INCL. ORE (${veins} VEIN${veins === 1 ? '' : 'S'})`, `${Math.floor(ore + scrap)} CR`, 0xd8b04a);
+    const liqRow = (y) => row(y, ` INCL. LIQUID (${pockets} POCKET${pockets === 1 ? '' : 'S'})`, `${Math.floor(liquid)} CR`, 0x4fe0c0);
     if (inDock) {
       // after docking: the summary fills the content area (y 22..202); the concourse below stays live
       // (tapping a spot dismisses it and walks Holt there)
@@ -29,15 +30,16 @@ export class GameOverScene extends Phaser.Scene {
       t(C, 50, 18, `${depth}M`, 0xffffff);
       t(C, 70, 6, `BEST ${best}M  -  RELAYS ${relays}`, 0x4fd1c5);
       if (newBest) { const nb = t(C, 79, 6, 'NEW BEST!', 0xffd23f); this.tweens.add({ targets: nb, alpha: 0.2, duration: 300, yoyo: true, repeat: -1 }); }
-      row(90, 'RUN HAUL', `${haul} CR`);
-      oreRow(99);
-      if (cash) row(108, 'CASH-OUT BONUS +10%', `+${bonus} CR`, 0x8affa0);
-      else row(108, 'LOST WITH THE RIG (2/3)', `-${recovery} CR`, 0xff5a5a);
-      this.add.rectangle(18, 117, 144, 1, 0x3a3348).setOrigin(0);
-      row(120, 'BANKED', `${banked} CR`, 0xffd23f);
-      row(129, 'TOTAL CREDITS', `${credits} CR`, 0xffd23f);
-      t(18, 140, 6, 'INES:', 0x7fe0ff, 0);
-      lines.slice(0, 3).forEach((l, i) => t(18, 149 + i * 8, 6, l, 0xd8f4f8, 0));
+      row(88, 'RUN HAUL', `${haul} CR`);
+      oreRow(96);
+      liqRow(104);
+      if (cash) row(112, 'CASH-OUT BONUS +10%', `+${bonus} CR`, 0x8affa0);
+      else row(112, 'LOST WITH THE RIG (2/3)', `-${recovery} CR`, 0xff5a5a);
+      this.add.rectangle(18, 121, 144, 1, 0x3a3348).setOrigin(0);
+      row(124, 'BANKED', `${banked} CR`, 0xffd23f);
+      row(132, 'TOTAL CREDITS', `${credits} CR`, 0xffd23f);
+      t(18, 142, 6, 'INES:', 0x7fe0ff, 0);
+      lines.slice(0, 3).forEach((l, i) => t(18, 150 + i * 8, 6, l, 0xd8f4f8, 0));
       this.restartBtn = new Button(this, 30, 176, 120, 20, 'CLOSE', {
         size: 6, color: cash ? 0x2f6a3a : 0x7a3320, pressColor: cash ? 0x48a058 : 0xb5532f, depth: 10, onTap: () => this.restart(),
       });
@@ -54,13 +56,14 @@ export class GameOverScene extends Phaser.Scene {
       }
       row(124, 'RUN HAUL', `${haul} CR`);
       oreRow(134);
-      if (cash) row(144, 'CASH-OUT BONUS +10%', `+${bonus} CR`, 0x8affa0);
-      else row(144, 'LOST WITH THE RIG (2/3)', `-${recovery} CR`, 0xff5a5a);
-      this.add.rectangle(18, 155, 144, 1, 0x3a3348).setOrigin(0);
-      row(159, 'BANKED', `${banked} CR`, 0xffd23f);
-      row(169, 'TOTAL CREDITS', `${credits} CR`, 0xffd23f);
-      t(18, 184, 6, 'INES:', 0x7fe0ff, 0);
-      lines.slice(0, 5).forEach((l, i) => t(18, 193 + i * 8, 6, l, 0xd8f4f8, 0));
+      liqRow(144);
+      if (cash) row(154, 'CASH-OUT BONUS +10%', `+${bonus} CR`, 0x8affa0);
+      else row(154, 'LOST WITH THE RIG (2/3)', `-${recovery} CR`, 0xff5a5a);
+      this.add.rectangle(18, 165, 144, 1, 0x3a3348).setOrigin(0);
+      row(169, 'BANKED', `${banked} CR`, 0xffd23f);
+      row(179, 'TOTAL CREDITS', `${credits} CR`, 0xffd23f);
+      t(18, 194, 6, 'INES:', 0x7fe0ff, 0);
+      lines.slice(0, 4).forEach((l, i) => t(18, 203 + i * 8, 6, l, 0xd8f4f8, 0));
       this.restartBtn = new Button(this, 30, 238, 120, 22, 'TO THE CONCOURSE', {
         size: 6, color: cash ? 0x2f6a3a : 0x7a3320, pressColor: cash ? 0x48a058 : 0xb5532f, depth: 10,
         onTap: () => this.restart(),

@@ -1,4 +1,4 @@
-// Loadout parts (DESIGN 4.2). Six slots, one part each. The stock part in every slot is the
+// Loadout parts (DESIGN 4.2). Seven slots (SIPHON added with the side pockets), one part each. The stock part in every slot is the
 // baseline balance; every other part is a sidegrade with a real downside.
 // A part's `mods` are folded into ShipSystems.mods at run start (multipliers multiply,
 // `add*` fields add, flags/overrides replace). `unlocked` gates the vendor pool (M3 licences
@@ -11,6 +11,7 @@ export const SLOTS = [
   { id: 'tools',  name: 'TOOLS',      short: 'TLS', room: 'tools' },
   { id: 'helm',   name: 'HELM',       short: 'HLM', room: 'helm' },
   { id: 'kit',    name: "HOLT'S KIT", short: 'KIT', room: 'tools' },
+  { id: 'siphon', name: 'SIPHON',     short: 'SIP', room: 'siphon' },
 ];
 
 const P = (slot, id, name, price, up, down, mods, extra = {}) => ({ slot, id, name, price, up, down, mods, unlocked: true, ...extra });
@@ -23,6 +24,7 @@ export const PARTS = [
   P('tools',  'stocktools',  'BENCH KIT',         0, 'PATCH + 1.2S BLAST.', 'NOTHING SPECIAL.', {}, { stock: true }),
   P('helm',   'stockhelm',   'BASIC CONSOLE',     0, 'STANDARD WARNINGS.', 'NOTHING SPECIAL.', {}, { stock: true }),
   P('kit',    'stockkit',    'WORK BOOTS',        0, 'STANDARD WALK + CLIMB.', 'NOTHING SPECIAL.', {}, { stock: true }),
+  P('siphon', 'stocksiphon', 'HAND PUMP',         0, 'BALANCED. 100 L TANK.', 'NOTHING SPECIAL.', {}, { stock: true }),
 
   // --- drill head ---
   P('drill', 'widecut', 'WIDE-CUT BIT', 900, 'TOP SPEED +25%', 'HEAT +35%. SAFE RAM ZONE SHRINKS', { maxSpeedMul: 1.25, heatMul: 1.35 }),
@@ -48,6 +50,9 @@ export const PARTS = [
   P('kit', 'harness', 'CLIMBING HARNESS', 350, 'CLIMB SPEED +50%', 'WALK SPEED -15%', { climbMul: 1.5, walkMul: 0.85 }),
   P('kit', 'lightboots', 'LIGHT BOOTS', 350, 'WALK SPEED +25%', 'CLIMB SPEED -20%', { walkMul: 1.25, climbMul: 0.8 }),
   P('kit', 'toolbelt', 'TOOL BELT', 450, 'VENT, FIX + PATCH 25% FASTER', 'CLIMB SPEED -25%', { workMul: 1.25, climbMul: 0.75 }),
+  // --- siphon (side pockets) ---
+  P('siphon', 'bigtank', 'BULK TANK', 500, 'TANK 160 L (WAS 100)', 'PUMPS 30% SLOWER', { tankMul: 1.6, pumpMul: 0.7 }),
+  P('siphon', 'highflow', 'HIGH-FLOW PUMP', 650, 'PUMPS 60% FASTER', 'PRESSURE BUILDS 70% FASTER', { pumpMul: 1.6, pressMul: 1.7 }),
 ];
 
 // ---- unlocks ([C] M2 feedback) -------------------------------------------------------
@@ -62,6 +67,7 @@ export const UNLOCKS = {
   plating: { depth: 2000 }, bypass: { depth: 2000 },
   toolbelt: { relays: 3 },
   linkage: { depth: 2500 },
+  bigtank: { depth: 500 }, highflow: { depth: 1500 },   // SIPHON: no starter alternative; both gated by depth
   widecut: { depth: 3000 }, heavycharge: { depth: 3000 },
 };
 for (const p of PARTS) { p.unlock = UNLOCKS[p.id] || null; p.unlocked = !p.unlock; }

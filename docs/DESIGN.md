@@ -92,12 +92,23 @@ The leg between relays used to be meter upkeep (vent, fix bit, patch). Two addit
 - Calm cues: `ALL STOP` in the bottom bar, an `ALL STOP: HOLDING` chip (or `STOPPED AT VEIN`), alert icons dimmed and no longer blinking, room `!` bubbles dimmed, the red hull light off, and rock dust settling in the bore for a couple of seconds. Everything fades back on throttle-up.
 - The only cost of stopping is lost time; nothing pays while you're stopped.
 
+**[C] Side pockets + the SIPHON seat (Kessa-4).** Valuable liquid pockets sit in the LEFT or RIGHT bore wall, beside the rig rather than ahead of the drill: a second kind of full-stop moment, with its own seat and its own gamble.
+- **Warning:** a pocket spawns above the screen (~80 m before it lines up), glowing in its colour in the wall outside the bore. It comes with a toast (`RICH POCKET LEFT: STOP BESIDE IT`), a droplet icon, and a top-right chip `RICH POCKET L 38M` (the chip shows whichever of vein/pocket is closer). Inside 60 m an alignment bracket appears on that hull flank around the **hose port**, with a dashed line from the pocket to the hull.
+- **Alignment window:** the pocket's centre must be 4 m ahead of the port to 3 m past it, at a full stop (speed 0). Drive past (or through at speed) and it's `POCKET MISSED`, with no payout and no penalty. Once stopped, the hose runs out from the port to the wall, and **GO TO SIPHON** replaces the pilot button in the bottom bar (one tap sends Holt).
+- **The SIPHON seat is a keel pod** under the hub, down the ladder through a grate in the bottom deck. It's a fifth station (`SIP`), not a re-use of TLS/DRL. Why a keel pod: the 2x2 already uses 86 of the 90 visible px at 2x zoom, so a side room would break the inside view. A pod under the hub keeps the 2x2 intact, and the inside camera moved down 14 px so the drill tip and the pod floor are both visible. Walks: HELM → SIP ~1.2 s, ENG/TLS ~0.8 s. Holt must be in the seat to pump.
+- **Pumping:** hold **PUMP** (SIPHON panel: `TANK` and `PRESS` gauges). Liquid flows at 20 L/s into the tank, the pocket's liquid level visibly drops, and the hose shows flow. **PRESSURE** rises with sustained pumping (18/s × the type's factor, escalating +25% per second held) and falls 30/s when you let go. A warning toast shows at 75.
+- **Burst at 100:** the line bursts. 30% of what's left in the pocket is lost, the deck sprays, the pump locks for 3 s, and pressure drops to 40. **There's no hull damage:** it's a pure greed cost, consistent with "a full stop is safe; the only risk is your own gamble."
+- **Types:** SMALL (40 L, 60 cr, drains in 2 s with no burst risk), RICH (70 L, 150 cr; pumping straight through bursts at ~68 L, so take one breather), VOLATILE (rare, 50 L, 260 cr; pressure ×2.2, bursts after ~2 s, so pump in short pulses). Value scales with the segment pay. Rich and volatile get more common each leg. Pockets come every 160–260 m (×0.9 per leg) from 110 m on.
+- **Tank:** 100 L, about 2–3 small pockets. A full tank blocks pumping (`TANK FULL: SKIP IT`). **Relays buy the tank:** `SOLD n L LIQUID: +x CR` goes into the haul. On hull loss the tank counts into the haul before the 1/3 is kept. The haul split reads `DRILL n ORE n LIQ n` at relays, and the end screen adds an `INCL. LIQUID (N POCKETS)` row.
+- **No overlaps:** pockets keep 25 m clear of vein stops and boulders (both ways), and stay out of relay approaches. Calm rules apply: pumping happens at a full stop, so events pause meanwhile.
+- **SIPHON slot (7th slot):** stock HAND PUMP (balanced, 100 L). **BULK TANK** (500 cr, unlocks at 500 m): 160 L tank, pumps 30% slower. **HIGH-FLOW PUMP** (650 cr, unlocks at 1500 m): pumps 60% faster, but pressure builds 70% faster. All tuning lives in `SIPHON` in `config.js`.
+
 **[P] Decision events** (time-based while you're moving; they pause at a full stop, see above):
 - **FIRE** (ENG / DRL / TLS): the station in that room is dead and the room only offers EXTINGUISH. Each burning room chips 0.5 hull/s, and after 14 s the fire spreads to a neighbouring room (it can reach the HELM, which kills the throttle). Put-out takes 1.4 s, plus a little more the longer it has burned. Choice: drop what you're doing, or let it burn while you finish the vein.
 - **DRILL JAM**: the bit seizes and the rig stalls (heat climbs if the throttle stays up). Two fixes: **rock the throttle** at the HELM (0% → 60%+, 3 times, within 4 s each; fast, but +6 heat and −2 hull per swing) or **hold FREE BIT** at DRL (3.5 s, free).
 - **POWER SURGE** (new in leg 2; the first event after relay 1 is always this one): a 6 s prompt. **OVERCLOCK**: 10 s at ×1.4 speed and ×1.5 pay per metre, +25 heat and double heat rate. **SHUT DOWN**: the engine is off for 4 s and vents 35 heat. **Ignore it**: blowout, −15 hull, +40 heat.
 - Frequency: an event every 30–45 s in leg 1, 22–34 s in leg 2, then 16–26 s. Fire and jam in leg 1, all three from leg 2, at most two at once, none in a relay approach. A relay clamp-in clears them.
-- Readability: the alert icons (fire / surge / jam / hull / heat / bit / boulder / hard rock / ore) sit top-left. Room `!` bubbles go up for a fire, a jam, or a vein stop at DRL. Toasts sit under the top bar, and the surge card sits mid-screen with a countdown.
+- Readability: the alert icons (fire / surge / jam / hull / heat / bit / boulder / hard rock / ore / liquid) sit top-left. Room `!` bubbles go up for a fire, a jam, a vein stop at DRL, or an aligned pocket at SIP. Toasts sit under the top bar, and the surge card sits mid-screen with a countdown.
 - Gas pocket was considered and skipped; it overlaps the stop mechanic.
 
 **Open questions:** should the surge be decided at the ENG station (spatial) instead of anywhere?
@@ -168,9 +179,9 @@ Every 1000 m the contract calls for a **relay anchor**: a beacon bolted into the
 
 ### 4.2 [P] Loadout slots and parts
 
-**[C]** The rig has **6 slots**, one per system. This leans into rig customization:
+**[C]** The rig has **7 slots**, one per system (the SIPHON slot was added with the side pockets). This leans into rig customization:
 
-**Drill head · Engine · Hull · Tools · Helm · Holt's kit**
+**Drill head · Engine · Hull · Tools · Helm · Siphon · Holt's kit**
 
 - Every slot always holds exactly one part. The stock parts are today's balance and a fair choice anywhere.
 - Buying a part adds it to your options; it doesn't make the rig stronger overall.
@@ -280,15 +291,16 @@ It suits careful players, and it's a trap on fast planets.
 - **Summary after docking:** shown in the content area. Closing it, or tapping any concourse spot, dismisses it.
 - **Holt's kit:** it doesn't change concourse walking (that's a run stat).
 
-**[C] Rig bay (garage).** From the airlock. It fits the content area: the rig's exterior at 1x, drill up, with the airlock door and Holt's locker below it, and a column of six colour-keyed callouts (slot + fitted part) beside it. You tap the real part locations, or their callouts:
+**[C] Rig bay (garage).** From the airlock. It fits the content area: the rig's exterior at 1x, drill up, with the siphon keel pod under the hull, the airlock door and Holt's locker below it, and a column of seven colour-keyed callouts (slot + fitted part) beside it. You tap the real part locations, or their callouts:
 - drill nose → drill head
 - cockpit porthole → helm
 - plating → hull
 - vents → engine
 - tool hatch → tools
+- keel pod → siphon
 - Holt's locker by the airlock → kit
 
-Callouts show what's fitted, the hotspots are thumb-sized (at least 40×24 base px), and swapping only works while docked.
+Callouts show what's fitted (one line each, so seven fit), the hotspots are thumb-sized (at least 40×24 base px), and swapping only works while docked.
 
 **Transitions:**
 - **Contract start:** Holt walks to the airlock and rides up. The descent opens on the bay framing and turns out to the drill-down station view.

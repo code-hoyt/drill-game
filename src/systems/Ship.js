@@ -15,6 +15,9 @@ export class Ship {
 
     // --- interior ---------------------------------------------------------
     const g = scene.add.graphics().setDepth(10);
+    const P = L.POD;   // keel pod (SIPHON seat) under the hub
+    g.fillStyle(0x1b1c25, 1).fillRect(P.x, P.top, P.w, 19);
+    g.fillStyle(0x4b4f63, 1).fillRect(P.x + 1, P.top + 1, P.w - 2, 17);
     g.fillStyle(0x1b1c25, 1).fillRect(x0, top, w, bot - top);
     g.fillStyle(0x4b4f63, 1).fillRect(x0 + 1, top + 1, w - 2, bot - top - 2);
     this.rooms = ROOM_GEOM.map((r) => ({ ...r }));
@@ -23,11 +26,11 @@ export class Ship {
       g.fillStyle(0x000000, 0.25).fillRect(r.x, r.ceil, r.w, 2);            // ceiling shadow
       g.fillStyle(0xfff2a8, 1).fillRect(Math.round(r.cx) - 2, r.ceil, 4, 1); // lamp
     }
-    // hub column with ladder
-    g.fillStyle(0x16171f, 1).fillRect(H.x, D.top.ceil, H.w, D.bottom.floor - D.top.ceil);
-    g.fillStyle(0x6b6f84, 1).fillRect(H.cx - 4, D.top.ceil, 1, D.bottom.floor - D.top.ceil)
-      .fillRect(H.cx + 3, D.top.ceil, 1, D.bottom.floor - D.top.ceil);
-    for (let y = D.top.ceil + 2; y < D.bottom.floor; y += 3) g.fillStyle(0x8d91a6, 1).fillRect(H.cx - 3, y, 6, 1);
+    // hub column with ladder (down through the bottom deck into the keel pod)
+    g.fillStyle(0x16171f, 1).fillRect(H.x, D.top.ceil, H.w, P.floor - D.top.ceil);
+    g.fillStyle(0x6b6f84, 1).fillRect(H.cx - 4, D.top.ceil, 1, P.floor - D.top.ceil)
+      .fillRect(H.cx + 3, D.top.ceil, 1, P.floor - D.top.ceil);
+    for (let y = D.top.ceil + 2; y < P.floor; y += 3) g.fillStyle(0x8d91a6, 1).fillRect(H.cx - 3, y, 6, 1);
     // walls between rooms and hub, with a doorway at each floor
     for (const d of [D.top, D.bottom]) {
       for (const wx of [H.x - 2, H.x + H.w]) {
@@ -40,27 +43,34 @@ export class Ship {
     slab(ix, D.top.floor, H.x - ix);
     slab(H.x + H.w, D.top.floor, ix + iw - H.x - H.w);
     // grate deck plate over the ladder shaft, so same-deck walks cross a real floor
-    const gy = D.top.floor;
-    g.fillStyle(0x6b6f84, 1).fillRect(H.x, gy, H.w, 1);                               // grate top edge
-    for (let x = H.x; x < H.x + H.w; x++) g.fillStyle(x % 2 ? 0x8d91a6 : 0x23252f, 1).fillRect(x, gy + 1, 1, 1);
-    g.fillStyle(0x34374a, 1).fillRect(H.x, gy + 2, H.w, 1);
-    g.fillStyle(0xffd23f, 1).fillRect(H.x, gy, 2, 1).fillRect(H.x + H.w - 2, gy, 2, 1); // hazard trim at the hatch edges
-    slab(ix, D.bottom.floor, iw);
+    const grate = (gy) => {
+      g.fillStyle(0x6b6f84, 1).fillRect(H.x, gy, H.w, 1);                               // grate top edge
+      for (let x = H.x; x < H.x + H.w; x++) g.fillStyle(x % 2 ? 0x8d91a6 : 0x23252f, 1).fillRect(x, gy + 1, 1, 1);
+      g.fillStyle(0x34374a, 1).fillRect(H.x, gy + 2, H.w, 1);
+      g.fillStyle(0xffd23f, 1).fillRect(H.x, gy, 2, 1).fillRect(H.x + H.w - 2, gy, 2, 1); // hazard trim at the hatch edges
+    };
+    grate(D.top.floor);
+    // bottom deck: same grate over the shaft down to the keel pod
+    slab(ix, D.bottom.floor, H.x - ix);
+    slab(H.x + H.w, D.bottom.floor, ix + iw - H.x - H.w);
+    grate(D.bottom.floor);
+    slab(P.x + 1, P.floor, P.w - 2);
     this.interior = g;
 
     this.labels = this.rooms.map((r) => {
+      if (r.pod) return scene.add.bitmapText(r.x + 2, r.ceil + 1, FONT_KEY, r.label, 6).setDepth(11).setTint(0x7ff0e0);
       const left = r.side === 'left';
       return scene.add.bitmapText(left ? r.x + 2 : r.x + r.w - 2, r.ceil + 3, FONT_KEY, r.label, 6)
         .setOrigin(left ? 0 : 1, 0).setDepth(11).setTint(0x9aa0b8);
     });
     this.stations = {};
     for (const r of this.rooms) {
-      this.stations[r.id] = scene.add.image(r.stationX, r.floorY, 'st_' + r.id).setOrigin(0.5, 1).setDepth(11).setFlipX(r.side === 'right');
+      this.stations[r.id] = scene.add.image(r.stationX, r.floorY, 'st_' + r.id).setOrigin(0.5, 1).setDepth(11).setFlipX(r.side === 'right' && !r.pod);
     }
     this.bubbles = {};
     for (const r of this.rooms) {
-      const bx = r.side === 'left' ? r.x + r.w - 6 : r.x + 6;
-      const b = scene.add.image(bx, r.ceil + 8, 'bubble').setDepth(14).setVisible(false);
+      const bx = r.pod ? r.x + 14 : r.side === 'left' ? r.x + r.w - 6 : r.x + 6;
+      const b = scene.add.image(bx, r.pod ? r.ceil + 11 : r.ceil + 8, 'bubble').setDepth(14).setVisible(false);
       scene.tweens.add({ targets: b, y: b.y - 2, duration: 350, yoyo: true, repeat: -1 });
       this.bubbles[r.id] = b;
     }
@@ -71,6 +81,7 @@ export class Ship {
 
     // --- exterior ---------------------------------------------------------
     this.exterior = scene.add.image(x0, top, 'ship_ext').setOrigin(0).setDepth(16);
+    this.podExt = scene.add.image(P.x, P.top, 'pod_ext').setOrigin(0).setDepth(16);
     this.warnLight = scene.add.rectangle(x0 + w / 2, top + 4, 4, 2, 0xff3030).setDepth(17).setVisible(false);
     const eng = this.room('engine');
     this.exhaust = scene.add.particles(x0 + 2, eng.floorY - 10, 'px2', {
@@ -99,7 +110,7 @@ export class Ship {
   room(id) { return this.rooms.find((r) => r.id === id); }
 
   setInside(inside, ms) {
-    this.scene.tweens.add({ targets: [this.exterior], alpha: inside ? 0 : 1, duration: ms, ease: 'Sine.easeInOut' });
+    this.scene.tweens.add({ targets: [this.exterior, this.podExt], alpha: inside ? 0 : 1, duration: ms, ease: 'Sine.easeInOut' });
     for (const z of this.roomZones) inside ? z.setInteractive() : z.disableInteractive();
     inside ? this.shipZone.disableInteractive() : this.shipZone.setInteractive();
   }
