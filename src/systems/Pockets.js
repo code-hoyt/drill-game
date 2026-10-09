@@ -94,6 +94,7 @@ export class Pockets {
       this.holdT += dt;
       const l = Math.min(S.PUMP_RATE * s.mods.pumpMul * dt, p.vol, s.tankCap - s.tank);
       p.vol -= l; p.pumped += l; s.tank += l; s.tankCr += l * p.crPerL;
+      if (s.tank > s.tankCap - 1e-6) s.tank = s.tankCap;   // snap float dust so a full tank reads exactly full
       this.pressure += S.PRESS_RATE * p.def.press * s.mods.pressMul * (1 + S.PRESS_ESC * this.holdT) * dt;
       if (!this.warned && this.pressure >= S.PRESS_WARN && this.pressure < S.BURST_AT) { this.warned = true; out.push({ kind: 'pressure', v: p }); }
       if (this.pressure >= S.BURST_AT) {
