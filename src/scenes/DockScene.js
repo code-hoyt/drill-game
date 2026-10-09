@@ -6,6 +6,7 @@
 import { GAME_W, GAME_H, LAYOUT as L } from '../config.js';
 import { FONT_KEY } from '../systems/PixelFont.js';
 import { Button } from '../ui/Button.js';
+import { rigParts } from '../systems/ShipArt.js';
 import { loadSave, buyPart, equipPart, reroll, rerollCost, isUnlocked, ackUnlocks, progressOf } from '../systems/Save.js';
 import { SLOTS, PARTS, partById, partsForSlot, unlockText } from '../data/parts.js';
 import { CONTRACTS } from '../data/contracts.js';
@@ -26,7 +27,7 @@ function wrap(text, width) {
 // Screen, top to bottom: HUD 0..22 | CONTENT 22..202 (the docking bay, or the open panel) |
 // concourse strip 202..300 (always visible + tappable) | bottom bar 303..320 (where Holt is / toasts).
 export const CONCOURSE = {
-  RIG_Y: 142,           // rig container centre: drill tip y 100, hull 122..184 (same framing the ascent ends on)
+  RIG_Y: 142,           // rig origin (run world y 260): drill tip y 50, CORMORANT 118..180 (same framing the ascent ends on)
   ROOF_Y: 194,          // station roof under the rig's hull end (clamps + collar)
   WALL_TOP: 202,        // concourse ceiling = bottom of the content area
   FLOOR_Y: 294,         // Holt stands here
@@ -94,16 +95,16 @@ export class DockScene extends Phaser.Scene {
     this.tweens.add({ targets: this.beacon, alpha: 0.1, duration: 900, yoyo: true, repeat: -1 });
     // the rig, drill up, standing on the station roof by its hull end
     this.rig = this.add.container(90, C.RIG_Y).setDepth(2);
-    this.rig.add([this.add.image(0, -42, 'drill0').setOrigin(0.5, 0), this.add.image(-43, -20, 'ship_ext').setOrigin(0)]);
+    this.rig.add(rigParts(this, 260).parts);   // TB-6 + CORMORANT, exactly as the run draws them
     const s = this.add.graphics().setDepth(3);
-    // clamps gripping the hull end + the docking collar over the airlock
-    const cy = C.RIG_Y + 37;
-    for (const x of [50, 126]) {
-      s.fillStyle(0x4b4f63, 1).fillRect(x, cy, 5, C.ROOF_Y - cy);
-      for (let y = cy; y < C.ROOF_Y; y += 2) s.fillStyle(0xffd23f, 1).fillRect(x, y, 5, 1);
+    // station clamps gripping the ship's engine end + the docking collar over the airlock
+    const sb = C.RIG_Y + (L.SHIP_BOTTOM - 260), cy = sb - 6;
+    for (const x of [70, 106]) {
+      s.fillStyle(0x4b4f63, 1).fillRect(x, cy, 4, C.ROOF_Y - cy);
+      for (let y = cy; y < C.ROOF_Y; y += 2) s.fillStyle(0xffd23f, 1).fillRect(x, y, 4, 1);
     }
-    s.fillStyle(0x23263a, 1).fillRect(82, C.RIG_Y + 41, 16, C.ROOF_Y - C.RIG_Y - 41);
-    s.fillStyle(0x8affa0, 1).fillRect(88, C.RIG_Y + 45, 4, 1);
+    s.fillStyle(0x23263a, 1).fillRect(83, sb + 1, 14, C.ROOF_Y - sb - 1);
+    s.fillStyle(0x8affa0, 1).fillRect(88, sb + 4, 4, 1);
     // station roof / concourse ceiling
     s.fillStyle(0x3a3f55, 1).fillRect(0, C.ROOF_Y, GAME_W, C.WALL_TOP - C.ROOF_Y);
     s.fillStyle(0x4b4f63, 1).fillRect(0, C.ROOF_Y, GAME_W, 1);
@@ -111,7 +112,7 @@ export class DockScene extends Phaser.Scene {
     this.add.bitmapText(4, C.ROOF_Y + 1, FONT_KEY, 'BAY 3', 6).setTint(0x8a90a8).setDepth(4);
     this.add.bitmapText(GAME_W - 4, C.ROOF_Y + 1, FONT_KEY, 'KESSA HIGH', 6).setOrigin(1, 0).setTint(0x8a90a8).setDepth(4);
     // tapping the rig = go to the airlock (rig bay)
-    this.add.zone(44, C.RIG_Y - 44, 92, C.ROOF_Y - C.RIG_Y + 44).setOrigin(0).setDepth(30).setInteractive().on('pointerdown', () => this.goSpot('airlock'));
+    this.add.zone(44, C.RIG_Y - 90, 92, C.ROOF_Y - C.RIG_Y + 90).setOrigin(0).setDepth(30).setInteractive().on('pointerdown', () => this.goSpot('airlock'));
   }
 
   buildConcourse() {
@@ -468,35 +469,33 @@ export class DockUIScene extends Phaser.Scene {
     this.buildPanel('RIG BAY', { tint: CYAN });
     const s = loadSave();
     const add = (o) => { o.setDepth(303); this.menu.push(o); return o; };
-    const CX = 48, CY = 104;                       // rig centre: nose 62..84, hull 84..146 (x 5..91)
+    // the rig, drill up: TB-6 (cutter 42..55, frame + hopper 54..110) with CORMORANT coupled behind (110..172)
+    const CX = 50, CY = 134;                       // rig origin = run world (90, 260)
     const g = add(this.add.graphics());
     g.fillStyle(0x05060c, 1).fillRect(0, 40, 96, CONTENT.y + CONTENT.h - 41);
     for (let i = 0; i < 24; i++) g.fillStyle(0xffffff, 0.3 + (i % 3) * 0.2).fillRect(3 + (i * 37) % 90, 42 + (i * 29) % 100, 1, 1);
-    add(this.add.image(CX, CY - 42, 'drill0').setOrigin(0.5, 0));
-    add(this.add.image(CX - 43, CY - 20, 'ship_ext').setOrigin(0));
-    // the siphon keel pod hangs under the hull (same offset as in the run)
-    const podY = CY - 20 + (L.POD.top - L.SHIP_TOP);
-    add(this.add.image(CX - 43 + (L.POD.x - L.SHIP_X), podY, 'pod_ext').setOrigin(0));
+    for (const o of rigParts(this, 260).parts) { o.x += CX; o.y += CY; add(o); }
     const g2 = add(this.add.graphics());
-    const deck = CY + 62;
-    for (const x of [8, 82]) { g2.fillStyle(0x4b4f63, 1).fillRect(x, CY + 40, 5, deck - CY - 40); for (let y = CY + 40; y < deck; y += 2) g2.fillStyle(0xffd23f, 1).fillRect(x, y, 5, 1); }
-    g2.fillStyle(0x23263a, 1).fillRect(40, podY + 19, 16, deck - podY - 19).fillStyle(0x8affa0, 1).fillRect(46, podY + 20, 4, 1);   // collar
-    g2.fillStyle(0x3a3f55, 1).fillRect(0, deck, 96, 4).fillStyle(0x1a2030, 1).fillRect(0, deck + 4, 96, CONTENT.y + CONTENT.h - deck - 5);
+    const deck = 182, sb = CY + (L.SHIP_BOTTOM - 260);   // station roof; the ship's engine end
+    for (const x of [30, 66]) { g2.fillStyle(0x4b4f63, 1).fillRect(x, sb - 6, 4, deck - sb + 6); for (let y = sb - 6; y < deck; y += 2) g2.fillStyle(0xffd23f, 1).fillRect(x, y, 4, 1); }
+    g2.fillStyle(0x23263a, 1).fillRect(43, sb + 1, 14, deck - sb - 1).fillStyle(0x8affa0, 1).fillRect(48, sb + 2, 4, 1);   // collar
+    g2.fillStyle(0x3a3f55, 1).fillRect(0, deck, 96, 3).fillStyle(0x1a2030, 1).fillRect(0, deck + 3, 96, CONTENT.y + CONTENT.h - deck - 4);
     // station side: the airlock door under the collar, Holt's kit locker beside it
-    g2.fillStyle(0x2f6a8a, 1).fillRect(41, deck + 5, 14, 20);
-    for (let i = 0; i < 5; i++) g2.fillStyle(i % 2 ? 0x1a1a1a : 0xffd23f, 1).fillRect(39, deck + 5 + i * 4, 2, 4).fillRect(55, deck + 5 + i * 4, 2, 4);
-    g2.fillStyle(0x5a6a7a, 1).fillRect(24, deck + 6, 12, 19).fillStyle(0x7a8a9a, 1).fillRect(25, deck + 7, 10, 1);
-    g2.fillStyle(0x2a3040, 1).fillRect(26, deck + 10, 8, 1).fillRect(26, deck + 13, 8, 1).fillRect(33, deck + 16, 1, 3);
-    this.addT(48, 44, 'TAP A PART', 6, GREY, 0.5);
+    g2.fillStyle(0x2f6a8a, 1).fillRect(43, deck + 4, 14, 15);
+    for (let i = 0; i < 4; i++) g2.fillStyle(i % 2 ? 0x1a1a1a : 0xffd23f, 1).fillRect(41, deck + 4 + i * 4, 2, 4).fillRect(57, deck + 4 + i * 4, 2, 4);
+    g2.fillStyle(0x5a6a7a, 1).fillRect(10, deck + 4, 12, 15).fillStyle(0x7a8a9a, 1).fillRect(11, deck + 5, 10, 1);
+    g2.fillStyle(0x2a3040, 1).fillRect(12, deck + 8, 8, 1).fillRect(12, deck + 11, 8, 1).fillRect(19, deck + 13, 1, 3);
+    this.addT(79, deck + 5, 'TAP A', 6, GREY, 0.5);
+    this.addT(79, deck + 12, 'PART', 6, GREY, 0.5);
     // hotspots over the actual part locations (base px) + their callouts in the right column
     const H = {
-      drill:  { x: 13, y: 60, w: 70, h: 24, c: GOLD },       // the nose
-      helm:   { x: 5, y: 84, w: 43, h: 31, c: CYAN },        // cockpit window (top-left)
-      hull:   { x: 48, y: 84, w: 43, h: 31, c: 0xff9a4a },   // plating (top-right)
-      engine: { x: 5, y: 115, w: 43, h: 29, c: RED },        // vents (bottom-left)
-      tools:  { x: 48, y: 115, w: 43, h: 29, c: GREEN },     // tool hatch (bottom-right)
-      siphon: { x: 20, y: 144, w: 56, h: 24, c: 0x4fe0c0 },  // the keel pod under the hull
-      kit:    { x: 20, y: deck + 3, w: 40, h: 24, c: VIOLET }, // Holt's locker by the airlock
+      drill:  { x: 8, y: 40, w: 84, h: 24, c: GOLD },       // the TB-6 cutterhead
+      hull:   { x: 8, y: 64, w: 84, h: 36, c: 0xff9a4a },   // the TB-6 frame + hopper (DRILL FRAME)
+      tools:  { x: 2, y: 112, w: 32, h: 24, c: GREEN },     // the left mandible (TOOLS is just inboard)
+      helm:   { x: 64, y: 128, w: 32, h: 24, c: CYAN },     // the cockpit pod
+      siphon: { x: 2, y: 136, w: 32, h: 24, c: 0x4fe0c0 },  // the hose port + reel on the left flank
+      engine: { x: 34, y: 156, w: 34, h: 24, c: RED },      // reactor dome + the engine arc
+      kit:    { x: 0, y: 177, w: 32, h: 24, c: VIOLET },    // Holt's locker by the airlock
     };
     const order = ['drill', 'helm', 'hull', 'engine', 'tools', 'siphon', 'kit'];
     order.forEach((id, i) => {
@@ -520,8 +519,6 @@ export class DockUIScene extends Phaser.Scene {
       add(this.add.rectangle(tx, ty, 3, th, h.c, 1).setOrigin(0));
       this.tags[id] = { x: tx, y: ty, w: tw, h: th, btn: b };
     });
-    this.addT(48, 52, 'TO SWAP IT', 6, GREY, 0.5);
-    this.addT(48, deck + 28, 'DOCKED ONLY', 6, DIM, 0.5);
   }
 
   startContract(planet) {

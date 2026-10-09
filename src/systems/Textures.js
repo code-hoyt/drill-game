@@ -1,5 +1,5 @@
-// All placeholder art is generated here at boot: no external assets.
-import { LAYOUT as L, ROOM_GEOM, SIPHON } from '../config.js';
+// Placeholder art is generated here at boot. The ship hull itself is a PNG (assets/ships/, see ShipArt.js).
+import { LAYOUT as L } from '../config.js';
 
 function rng(seed) { // mulberry32
   return () => {
@@ -47,6 +47,17 @@ const CREW = {
   // seen from behind, on the ladder
   crew_climb1: ['..hhh..', '.hhhhh.', '.hhhhh.', 's.hhh.s', 's.sss.s', '.sssss.', '..sss..', '..sss..', '..d.d..', '..d.d..', '.b...b.'],
   crew_climb2: ['..hhh..', '.hhhhh.', '.hhhhh.', 's.hhh..', 's.sss.s', '.sssss.', '..sss.s', '..sss..', '..d.d..', '.d...d.', '.b...b.'],
+};
+
+// Holt seen from above (top-down interior), facing UP; the Crew rotates him in 90 degree steps.
+// h helmet, v visor (front), s jacket, a arms, d boots
+const TD_PAL = { h: '#e8e8f0', v: '#4fc3f7', s: '#f2a33a', a: '#c97a22', d: '#3b3b4a' };
+const CREW_TD = {
+  holt_td_idle:  ['..hvh..', '..hhh..', '.sssss.', 'aasssaa', '.sssss.', '..d.d..'],
+  holt_td_walk1: ['..hvh..', '..hhh..', 'asssss.', '.sssssa', '.sssss.', '..d....'],
+  holt_td_walk2: ['..hvh..', '..hhh..', '.ssssa.', 'asssss.', '.sssss.', '....d..'],
+  holt_td_work1: ['a.hvh.a', 'a.hhh.a', '.sssss.', '.sssss.', '.sssss.', '..d.d..'],
+  holt_td_work2: ['.ahvha.', '..hhh..', 'asssssa', '.sssss.', '.sssss.', '..d.d..'],
 };
 
 const ICON_SYMBOLS = {
@@ -193,94 +204,37 @@ export function createTextures(scene) {
     // dock collar (y 232..236) where the conveyor chute leaves
     px(36, Y(232), OUT, 18, 4); px(37, Y(232), DK, 16, 3); px(37, Y(232), YEL, 16, 1);
   });
-  // coupling (static): folded clamp arms from the ship's top corners to the rear frame, umbilicals. 90x30 at (45, 212)
-  canvas(scene, 'coupling', 90, 30, (ctx, px) => {
-    const OUT = '#14161c', ARM = '#b89a48', LIT = '#e0c26a';
-    const seg = (x0, y0, x1, y1, c) => { const n = Math.max(Math.abs(x1 - x0), Math.abs(y1 - y0)); for (let i = 0; i <= n; i++) px(Math.round(x0 + (x1 - x0) * i / n), Math.round(y0 + (y1 - y0) * i / n), c, 2, 2); };
-    for (const m of [1, -1]) {
-      const bx = m > 0 ? 7 : 81, ex = m > 0 ? 3 : 85, tx = m > 0 ? 11 : 77;   // base on the ship roof, elbow out, claw on the frame
-      seg(bx, 28, ex, 15, OUT); seg(ex, 15, tx, 2, OUT); seg(bx, 27, ex, 14, ARM); seg(ex, 14, tx, 1, LIT);
-      px(ex - 1, 13, OUT, 4, 4); px(ex, 14, '#ffd23f', 2, 2);                   // elbow joint
-      px(tx - 2, 0, OUT, 6, 3); px(tx - 1, 0, ARM, 4, 2);                      // claw on the frame
-    }
-    // umbilicals: power (left, red) + coolant (right, blue), sagging from the hopper to the ship roof
-    const hose = (pts, c, d) => { for (let i = 0; i < pts.length - 1; i++) { seg(pts[i][0], pts[i][1], pts[i + 1][0], pts[i + 1][1], d); } for (let i = 0; i < pts.length - 1; i++) { const [a, b] = [pts[i], pts[i + 1]]; const n = Math.max(Math.abs(b[0] - a[0]), Math.abs(b[1] - a[1])); for (let j = 0; j <= n; j++) px(Math.round(a[0] + (b[0] - a[0]) * j / n), Math.round(a[1] + (b[1] - a[1]) * j / n), c); } };
-    hose([[16, 9], [14, 18], [18, 25], [22, 28]], '#d0503a', '#5a1a14');
-    hose([[73, 9], [76, 18], [72, 25], [68, 28]], '#4a9ad8', '#163a5a');
-    px(20, 27, OUT, 5, 3); px(65, 27, OUT, 5, 3);                                // roof sockets
-    // conveyor chute: collar (x 82..98) down to the ship roof
-    px(40, 24, OUT, 10, 6); px(41, 24, '#2a2e38', 8, 6); px(40, 24, '#6b7386', 1, 6); px(49, 24, '#6b7386', 1, 6);
+  // Stations, top-down (FTL style), drawn facing UP (the console at the top edge); Ship rotates each to its wall.
+  canvas(scene, 'st_helm', 10, 6, (ctx, px) => {
+    px(0, 0, '#14161c', 10, 4); px(1, 0, '#2a2e3a', 8, 3); px(1, 1, '#4fc3f7', 3, 1); px(6, 1, '#8affa0', 3, 1);   // twin screens
+    px(4, 2, '#ffd23f', 2, 2); px(4, 2, '#fff2a8', 1, 1);                                                         // throttle
+    px(3, 4, '#3a3f55', 4, 2);                                                                                    // seat
   });
-
-  // Ship exterior plating (covers the interior in the outside view). 2 decks tall.
-  canvas(scene, 'ship_ext', L.SHIP_W, L.SHIP_BOTTOM - L.SHIP_TOP, (ctx, px) => {
-    const w = L.SHIP_W, h = L.SHIP_BOTTOM - L.SHIP_TOP;
-    const rel = (r) => ({ x: r.x - L.SHIP_X, cx: Math.round(r.cx - L.SHIP_X), ceil: r.ceil - L.SHIP_TOP, floor: r.floorY - L.SHIP_TOP });
-    const room = (id) => rel(ROOM_GEOM.find((r) => r.id === id));
-    const deckSeam = L.DECKS.top.floor - L.SHIP_TOP + 1;
-    px(0, 0, '#2b1712', w, h);
-    px(1, 1, '#b5532f', w - 2, h - 2);
-    for (let x = 1; x < w - 1; x += 14) px(x, 1, '#7a3320', 1, h - 2);
-    px(1, deckSeam, '#7a3320', w - 2, 2);                 // deck seam
-    px(1, deckSeam + 2, '#d77a4f', w - 2, 1);
-    for (let x = 4; x < w - 3; x += 7) { px(x, 3, '#e3936a'); px(x, deckSeam - 2, '#e3936a'); px(x, h - 4, '#e3936a'); }
-    px(1, 1, '#d77a4f', w - 2, 1);
-    px(1, h - 3, '#5a2416', w - 2, 2);
-    // central spine over the hub
-    px(L.HUB.x - L.SHIP_X, 1, '#8f3f24', L.HUB.w, h - 4);
-    // cockpit porthole over the HELM, small one over the DRILL room
-    const helm = room('helm'), drill = room('drill');
-    px(helm.cx - 5, helm.ceil + 6, '#2b1712', 10, 10); px(helm.cx - 4, helm.ceil + 7, '#ffd27a', 8, 8); px(helm.cx - 3, helm.ceil + 8, '#fff2c4', 3, 2);
-    px(drill.cx - 3, drill.ceil + 8, '#2b1712', 6, 6); px(drill.cx - 2, drill.ceil + 9, '#9ad0ff', 4, 4);
-    // engine vents (bottom-left)
-    const eng = room('engine');
-    for (let i = 0; i < 3; i++) px(eng.x + 4, eng.ceil + 8 + i * 4, '#3d1e15', 14, 2);
-    // hatch over TOOLS (bottom-right)
-    const tls = room('tools');
-    px(tls.x + 12, tls.ceil + 3, '#7a3320', 14, 20); px(tls.x + 13, tls.ceil + 4, '#c96a42', 12, 18); px(tls.x + 22, tls.ceil + 12, '#3d1e15', 2, 2);
-    // hose ports on both flanks (bottom-deck level): the siphon hose runs out of these to a wall pocket
-    const py = SIPHON.PORT_Y - L.SHIP_TOP;
-    for (const x of [0, w - 3]) { px(x, py - 3, '#1b1c25', 3, 7); px(x + (x ? 0 : 1), py - 2, '#8d91a6', 2, 5); px(x + (x ? 0 : 1), py - 1, '#2a9a8a', 2, 3); }
+  canvas(scene, 'st_drill', 12, 5, (ctx, px) => {
+    px(0, 0, '#14161c', 12, 4); px(1, 0, '#2a2e3a', 10, 3); px(2, 1, '#d8b04a', 3, 1); px(6, 1, '#4ad66d', 2, 1); px(9, 1, '#ff9a3d', 1, 1);
+    px(5, 3, '#3a3f55', 2, 2);
   });
-  // keel pod exterior (the SIPHON seat's blister under the hub)
-  canvas(scene, 'pod_ext', L.POD.w, 19, (ctx, px) => {
-    const w = L.POD.w;
-    px(0, 0, '#2b1712', w, 19); px(1, 1, '#b5532f', w - 2, 16); px(1, 1, '#d77a4f', w - 2, 1); px(1, 15, '#5a2416', w - 2, 2);
-    for (let x = 5; x < w - 3; x += 9) px(x, 4, '#e3936a');
-    px(w / 2 - 6, 6, '#2b1712', 12, 6); px(w / 2 - 5, 7, '#2a9a8a', 10, 4); px(w / 2 - 4, 7, '#7ff0e0', 3, 1);   // tank window
+  canvas(scene, 'st_engine', 12, 5, (ctx, px) => {
+    px(0, 0, '#14161c', 12, 4); px(1, 0, '#3a2a2e', 10, 3); px(2, 1, '#ff5a3d', 2, 1); px(5, 1, '#4f8b82', 2, 1); px(8, 1, '#ffd23f', 2, 1);
+    px(0, 4, '#6d7184', 12, 1);
   });
-  // SIPHON seat: pump with a pressure gauge and a hose reel (8x11)
-  canvas(scene, 'st_siphon', 8, 11, (ctx, px) => {
-    px(1, 0, '#2a2a33', 7, 6); px(2, 1, '#d8dbe8', 5, 4); px(4, 2, '#c0202a', 1, 2); px(3, 3, '#2a2a33', 3, 1);   // gauge
-    px(2, 6, '#2a9a8a', 6, 5); px(3, 7, '#7ff0e0', 1, 3); px(0, 8, '#555a6e', 2, 1);                              // pump body + hose
+  canvas(scene, 'st_tools', 10, 5, (ctx, px) => {
+    px(0, 0, '#3a2a22', 10, 4); px(1, 1, '#6a5a4a', 8, 2); px(2, 1, '#c0c4d0', 3, 1); px(6, 2, '#ff9a3d', 2, 1); px(8, 0, '#8d91a6', 2, 2);
   });
-
-  // Stations (12x14)
-  canvas(scene, 'st_engine', 12, 14, (ctx, px) => {
-    px(0, 2, '#2a2a33', 12, 12); px(1, 3, '#6d7184', 10, 10);
-    px(2, 5, '#1b1b22', 8, 6); for (let i = 0; i < 3; i++) px(3, 6 + i * 2, '#ff6b3d', 6, 1);
-    px(4, 0, '#8d91a6', 2, 3); px(8, 0, '#8d91a6', 2, 3);
+  canvas(scene, 'st_siphon', 8, 6, (ctx, px) => {
+    px(0, 0, '#1b1c25', 8, 4); px(1, 0, '#2a9a8a', 6, 3); px(2, 1, '#d8dbe8', 2, 1); px(5, 1, '#7ff0e0', 1, 1);   // pump + gauge
+    px(2, 4, '#3a3f55', 4, 2);
   });
-  canvas(scene, 'st_drill', 12, 14, (ctx, px) => {
-    px(1, 0, '#2a2a33', 10, 9); px(2, 1, '#3fb6a8', 8, 6); px(3, 2, '#bff5ee', 2, 1); px(3, 4, '#1d6f66', 6, 1);
-    px(5, 9, '#555a6e', 2, 3); px(2, 12, '#6d7184', 8, 2);
-  });
-  canvas(scene, 'st_tools', 12, 14, (ctx, px) => {
-    px(0, 6, '#6b4a2b', 12, 2); px(1, 8, '#4a3220', 2, 6); px(9, 8, '#4a3220', 2, 6);
-    px(2, 2, '#c0c4d0', 2, 4); px(1, 1, '#c0c4d0', 4, 2); px(7, 3, '#e0c040', 4, 3); px(8, 2, '#a08020', 2, 1);
-  });
-
-  canvas(scene, 'st_helm', 12, 14, (ctx, px) => {
-    // console with viewscreen + throttle lever, pilot seat in front
-    px(0, 0, '#2a2a33', 10, 8); px(1, 1, '#2d4a7a', 8, 5); px(2, 2, '#9ad0ff', 2, 1); px(2, 4, '#4f86c0', 5, 1);
-    px(10, 2, '#555a6e', 1, 6); px(9, 1, '#ff6b3d', 3, 2);         // lever
-    px(1, 8, '#555a6e', 9, 2);                                      // desk
-    px(3, 10, '#7a3320', 5, 2); px(4, 12, '#3b3b4a', 1, 2); px(6, 12, '#3b3b4a', 1, 2); // seat
+  // hold contents (tiled by the fill level) and the bunk
+  canvas(scene, 'bunk_td', 14, 14, (ctx, px) => {
+    px(0, 0, '#2a2433', 14, 14); px(1, 1, '#5a3a4a', 7, 12); px(1, 1, '#c8c0b0', 7, 3); px(2, 5, '#77312f', 5, 7);   // cot
+    px(10, 2, '#3a3f55', 3, 5); px(10, 9, '#4a505d', 3, 4); px(11, 10, '#ffd27a', 1, 1);                          // locker + lamp
   });
   pixelMap(scene, 'lock', ['.###.', '#...#', '#...#', '#####', '##.##', '##.##', '#####'], { '#': '#ff5a5a' });
 
   // Crew frames
   Object.entries(CREW).forEach(([k, rows]) => pixelMap(scene, k, rows, CREW_PAL));
+  Object.entries(CREW_TD).forEach(([k, rows]) => pixelMap(scene, k, rows, TD_PAL));
 
   // Alert icons for HUD (11x11) and world bubble
   const iconColors = { heat: '#d9412b', bit: '#d98a2b', hull: '#c42b55', rock: '#8a5ad9', hard: '#3a6ad9', ore: '#b8901a', jam: '#56627e', surge: '#b0369a', liq: '#1f8a7c', spill: '#c07a1a' };

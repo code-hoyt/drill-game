@@ -1,10 +1,12 @@
-// Side pockets ([C] Cletus): glowing liquid pockets in the LEFT or RIGHT bore wall. Full stop with the
-// pocket level with the hose port on that flank (the alignment window), then Holt holds PUMP at the
-// SIPHON seat (keel pod). The tank fills, the pocket drains, a hose runs from the hull to the wall.
+// Side pockets ([C] Cletus): glowing liquid pockets in the bore wall on the ship's SIPHON SIDE (CORMORANT:
+// left, where the hose port + reel are; SHIPS.<id>.siphonSide). Full stop with the pocket level with the
+// port (the alignment window), then Holt holds PUMP at the SIPHON seat by the port. The tank fills, the
+// pocket drains, the hose reels out of the port to the wall. (One port, one wall: a hose reaching across
+// the drill unit's bore would foul the clamps, so ?side= is coerced to the ship's side.)
 // Line PRESSURE builds with sustained pumping (faster on volatile pockets) and falls when released;
 // at BURST_AT the line bursts: part of the pocket is lost and the pump locks out for a few seconds.
 // Drive past without pumping: POCKET MISSED. Full tank: no pumping (skip it, or sell at a relay).
-import { TUNING as T, LAYOUT as L, SIPHON as S } from '../config.js';
+import { TUNING as T, LAYOUT as L, SIPHON as S, SHIP } from '../config.js';
 import { FONT_KEY } from './PixelFont.js';
 
 const PPM = T.PX_PER_METER;
@@ -48,7 +50,8 @@ export class Pockets {
     return 'small';
   }
 
-  spawn(type = this.pickType(), side = Math.random() < 0.5 ? 'left' : 'right', y = S.SPAWN_Y) {
+  spawn(type = this.pickType(), side = SHIP.siphonSide, y = S.SPAWN_Y) {
+    side = SHIP.siphonSide;   // pockets only matter on the port side; any other request is coerced
     const def = S.TYPES[type];
     const p = { id: nextId++, type, def, side, x: S.POCKET_X[side], y, state: 'ahead', vol: def.vol, pumped: 0, lost: 0,
       crPerL: (def.value * this.sys.payMult) / def.vol, alerted: false };
@@ -101,10 +104,11 @@ export class Pockets {
         const lost = p.vol * S.BURST_LOSS;
         p.vol -= lost; p.lost += lost; s.bursts += 1;
         this.lockT = S.BURST_LOCKOUT_S; this.pressure = S.PRESS_AFTER_BURST; this.holdT = 0; this.warned = false;
-        const hx = (p.side === 'left' ? L.SHIP_X : L.SHIP_X + L.SHIP_W) + (p.x - (p.side === 'left' ? L.SHIP_X : L.SHIP_X + L.SHIP_W)) / 2;
+        const hx = (L.SIPHON_PORT.x + p.x) / 2;
         this.spray.setParticleTint(p.def.tint);
         this.spray.explode(18, hx, S.PORT_Y);
-        this.spray.explode(14, L.POD.stationX - 3, L.POD.floor - 6);   // sprays the pod deck
+        const seat = L.ROOMS.find((r) => r.id === 'siphon');
+        this.spray.explode(14, seat.st[0] + 3, seat.st[1]);   // sprays the seat (inside view)
         out.push({ kind: 'burst', v: p, lost });
       }
       if (p.vol <= 0.01) { p.vol = 0; p.state = 'drained'; s.pocketsTapped += 1; out.push({ kind: 'drained', v: p }); }
@@ -144,8 +148,8 @@ export class Pockets {
     const p = this.current;
     if (p) {
       const d = this.dist(p), left = p.side === 'left';
-      const flank = left ? L.SHIP_X : L.SHIP_X + L.SHIP_W;
-      // alignment window: a bracket on that flank around the hose port, shown as the pocket closes in
+      const flank = left ? L.SHIP_X : L.SHIP_X + L.SHIP_W;   // the bore edge on that side
+      // alignment window: a bracket on the bore edge level with the hose port, shown as the pocket closes in
       if (d < 60) {
         const y0 = S.PORT_Y - S.WINDOW_AHEAD * PPM, y1 = S.PORT_Y + S.WINDOW_PAST * PPM, inWin = this.inWindow(p);
         const flash = inWin && p.state !== 'stopped' && Math.floor(time / 150) % 2 === 0;
@@ -165,7 +169,7 @@ export class Pockets {
     // the hose (hull port -> pocket), with liquid running in while pumping
     const hp = this.hoseP;
     if (hp && this.hoseK > 0) {
-      const left = hp.side === 'left', x0 = left ? L.SHIP_X - 1 : L.SHIP_X + L.SHIP_W + 1, x1 = hp.x + (left ? 9 : -9);
+      const left = hp.side === 'left', x0 = L.SIPHON_PORT.x + (left ? -2 : 2), x1 = hp.x + (left ? 9 : -9);
       const xe = x0 + (x1 - x0) * this.hoseK, ye = S.PORT_Y + (hp.y - S.PORT_Y) * this.hoseK;
       h.lineStyle(3, 0x23252f, 1).lineBetween(x0, S.PORT_Y, xe, ye);
       h.lineStyle(1, 0x8d91a6, 1).lineBetween(x0, S.PORT_Y - 0.5, xe, ye - 0.5);

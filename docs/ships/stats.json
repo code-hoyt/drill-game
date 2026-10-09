@@ -1,0 +1,138 @@
+{
+ "1-cormorant": {
+  "avg": 1.56,
+  "trips": [
+   [
+    "HELM",
+    "DRILL CONSOLE",
+    1.18
+   ],
+   [
+    "HELM",
+    "ENGINE/REACTOR",
+    1.56
+   ],
+   [
+    "HELM",
+    "TOOLS",
+    1.58
+   ],
+   [
+    "HELM",
+    "SIPHON",
+    1.97
+   ],
+   [
+    "DRILL CONSOLE",
+    "ENGINE/REACTOR",
+    1.5
+   ]
+  ],
+  "full": 0.4,
+  "half": 4.2,
+  "stop": 8.0,
+  "top": 1.0
+ },
+ "2-brakeman": {
+  "avg": 1.57,
+  "trips": [
+   [
+    "HELM",
+    "DRILL CONSOLE",
+    1.67
+   ],
+   [
+    "HELM",
+    "ENGINE/REACTOR",
+    1.62
+   ],
+   [
+    "HELM",
+    "TOOLS",
+    1.46
+   ],
+   [
+    "HELM",
+    "SIPHON",
+    1.46
+   ],
+   [
+    "DRILL CONSOLE",
+    "ENGINE/REACTOR",
+    1.62
+   ]
+  ],
+  "full": 1.75,
+  "half": 5.08,
+  "stop": 8.4,
+  "top": 1.0
+ },
+ "3-sister-june": {
+  "avg": 2.05,
+  "trips": [
+   [
+    "HELM",
+    "DRILL CONSOLE",
+    2.67
+   ],
+   [
+    "HELM",
+    "ENGINE/REACTOR",
+    2.0
+   ],
+   [
+    "HELM",
+    "TOOLS",
+    0.88
+   ],
+   [
+    "HELM",
+    "SIPHON",
+    2.71
+   ],
+   [
+    "DRILL CONSOLE",
+    "ENGINE/REACTOR",
+    2.0
+   ]
+  ],
+  "full": 0.0,
+  "half": 4.23,
+  "stop": 8.74,
+  "top": 0.968421052631579
+ },
+ "4-patience": {
+  "avg": 1.23,
+  "trips": [
+   [
+    "HELM",
+    "DRILL CONSOLE",
+    1.0
+   ],
+   [
+    "HELM",
+    "ENGINE/REACTOR",
+    1.15
+   ],
+   [
+    "HELM",
+    "TOOLS",
+    1.19
+   ],
+   [
+    "HELM",
+    "SIPHON",
+    1.06
+   ],
+   [
+    "DRILL CONSOLE",
+    "ENGINE/REACTOR",
+    1.74
+   ]
+  ],
+  "full": 0.43,
+  "half": 4.46,
+  "stop": 8.5,
+  "top": 1.0
+ }
+}

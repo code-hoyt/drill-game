@@ -61,7 +61,7 @@ Working draft v0.3 (2026-10-07). This version folds in all of Cletus's answers s
 ## 3. Run structure
 
 - **[C]** Runs are endless. **Drill integrity** is the lose condition and depth is the score (the ship has no integrity meter; see "The drill and the ship" below).
-- **[C]** The current mechanics stay: the helm, engine, drill, and tools stations on a 2x2 two-deck ship, plus heat, bit wear, boulders, hard rock, and a throttle that locks when nobody is at the helm.
+- **[C]** The current mechanics stay: the helm, engine, drill, tools and siphon stations aboard Holt's ship (CORMORANT, a top-down ring-corridor layout; see 4.5), plus heat, bit wear, boulders, hard rock, and a throttle that locks when nobody is at the helm.
 - **[C]** There's a break every 1000 m, and the interval is tunable.
 - **[C]** You can cash out at relays.
 - **[C]** Losing the drill keeps 1/3 of the ship's HOLD; the drill's HOPPER goes down with it.
@@ -69,21 +69,21 @@ Working draft v0.3 (2026-10-07). This version folds in all of Cletus's answers s
 
 ### [C] The drill and the ship: two machines (Kessa-4, v0.11)
 
-Holt's ship is the same box ship as before (2x2 decks, keel pod). The **DRILL** is a separate Meridian-leased boring unit (stencilled TB-6) clamped to the ship's roof: cutterhead and disc cutters, a shield with gripper pads, four thrust rams, a rear frame, the ore **HOPPER**, and a dock collar. Two folded clamp arms hold it, and two umbilicals (red power, blue coolant) plus a conveyor chute run between them. **The ship powers the drill.**
+Holt's ship is **CORMORANT** (see 4.5; she replaced the old box ship). The **DRILL** is a separate Meridian-leased boring unit (stencilled TB-6) whose collar seats in the ship's recessed throat: cutterhead and disc cutters, a shield with gripper pads, four thrust rams, a rear frame, the ore **HOPPER**, and a dock collar. Two folded clamp arms hold it, and two umbilicals (red power, blue coolant) plus a conveyor chute run between them. **The ship powers the drill.**
 
 - **Only the drill has integrity.** The old HULL meter is now **DRILL INTEGRITY** (HUD `DRILL`, relay `+N DRILL` repairs, the plating parts add max DRILL). Heat, a dead bit, rams, collapses and surge blowouts all damage the drill. When it hits 0 the run is lost. (Internally the field is still `hull`, with `integrity` aliases.)
 - **Hopper -> conveyor -> hold.** Everything you cut lands in the drill's capped **HOPPER** (120 units): cuttings (1 unit per metre, valued at the metre pay), vein ore (SMALL 10 / RICH 20 / FINE 24 units per vein) and scrap. A conveyor moves it continuously into the ship's **HOLD**, which is what you keep. Siphoned liquid goes straight to the ship's tank, and relays sell it into the hold.
 - **Power split.** The ship's reactor has a fixed output (100). The drill draws power in proportion to its real speed (95 at full speed); the conveyor gets the rest at 0.08 units/s per spare unit. Full speed: 0.4 u/s against ~10 u/s coming in, so the hopper fills in ~12 s. 50%: 4.2 u/s against 5 in (slow creep). ~45% is break-even. A full stop gives the conveyor everything: 8 u/s, so a full hopper empties in ~15 s. The HUD shows the split as a vertical bar beside the throttle (CNV green on top, DRL orange below) and as a horizontal bar under the HELM slider.
 - **Spill.** A full hopper **spills** new cuttings (lost, counted): `HOPPER FULL: SPILLING! EASE OFF` toast, `HOP SPILL!` flashing red in the top bar, a spill icon, ore spilling off the hopper lip, and floating `SPILL` pops. This is the new pacing pressure: flat-out driving earns fast but wastes ore unless you ease off or stop now and then.
 - **Relays** clamp in and auto-unload the hopper into the hold (`HOPPER UNLOADED: N U, +X CR TO HOLD`).
-- **Breakaway (drill loss).** The clamps release, the umbilicals snap, the ship backs off, flips and burns out up the bore, and the wrecked drill is left sparking. 2.4 s × ANIM_SCALE (1.2 s with `?anim=0`), skippable after the grace. Then the ascent shows the ship on its own.
+- **Breakaway (drill loss).** The clamps release, the umbilicals snap, the ship leaves the bore in its own style (per ship, `breakaway` in `SHIPS`: CORMORANT backs off, **flips** and burns out on her mains; heavy or wide hulls **reverse** straight out on their retro jets, nose still to the drill; `?breakaway=flip|reverse` forces either), and the wrecked drill is left sparking. 2.4 s × ANIM_SCALE (1.2 s with `?anim=0`), skippable after the grace. Then the ascent shows the ship on its own.
 - **"The lost drill comes out of your paycheck."** You bank 1/3 of the HOLD (after the tank is sold into it). The other 2/3 is the **DRILL WRITE-OFF**, and whatever was still in the hopper is **HOPPER LOST W/ DRILL**. The game-over summary shows SHIP HOLD, ORE / LIQUID, the write-off, the lost hopper and the banked total. A cash-out moves the hopper into the hold first and banks it +10%.
 - **Vein collapse** loses half that vein's value: from the hopper first, the rest docked from the hold (the conveyor usually empties the hopper at a stop, so a hopper-only loss would be negligible).
-- **Interior:** DRL is now the **drill console**: its default readout is `HOPPER n/120  BELT x.x/S`, and a wall monitor shows the hopper level, belt motion and the conveyor's power share. The hopper, collar and conveyor chute are visible above the ship in the inside view.
+- **Interior:** DRL is now the **drill console**: its default readout is `HOPPER n/120  BELT x.x/S`, and a monitor on the console's wall shows the hopper level, belt motion and the conveyor's power share. The hopper and collar are visible above the cutaway in the inside view, and the HOLD in the middle of the cutaway shows its fill level.
 - **Parts:** the HULL slot is now **DRILL FRAME**. New depth-gated trade-offs: **BIG HOPPER** (DRILL FRAME, 650 cr, 1000 m): hopper 180, conveyor ×0.75. **HIGH-DRAW CUTTER** (drill head, 800 cr, 2500 m): +20% top speed, bit wear −20%, but draws 1.5× power, so the conveyor gets nothing at full speed.
-- **Tuning:** one `POWER` block in `src/config.js`: `REACTOR 100, DRILL_DRAW 95, DRAW_EXP 1, CONVEYOR_RATE 0.08, HOPPER_CAP 120, ORE_PER_M 1, SPILL_FX_S 0.5`.
+- **Tuning:** one `POWER` block in `src/config.js`: `REACTOR 100, DRILL_DRAW 95, DRAW_EXP 1, CONVEYOR_RATE 0.08, HOPPER_CAP 120, ORE_PER_M 1, SPILL_FX_S 0.5`. Its ship numbers now come from the active ship's entry in `SHIPS` (CORMORANT's equal the old values).
 - **Save v5:** `rigsLost` became `drillsLost` (the dock stats read `DRILLS LOST (BILLED)`); older saves migrate silently and depth-reached parts unlock.
-- **Follow-up:** the space and dock shots of the cutscenes still show the old drill-nosed rig; the surface shots use the new drill unit.
+- Every cutscene shot (surface, space, dock), the concourse bay, the rig bay and the title draw the same rig: the TB-6 with CORMORANT coupled behind (`src/systems/ShipArt.js`).
 
 ### Between relays: ore veins and decision events (prototype on Kessa-4, after Cletus's "boring after relay 1" note)
 
@@ -109,10 +109,10 @@ The leg between relays used to be meter upkeep (vent, fix bit, patch). Two addit
 - Calm cues: `ALL STOP` in the bottom bar, an `ALL STOP: HOLDING` chip (or `STOPPED AT VEIN`), alert icons dimmed and no longer blinking, room `!` bubbles dimmed, the red hull light off, and rock dust settling in the bore for a couple of seconds. Everything fades back on throttle-up.
 - The only cost of stopping is lost time; nothing pays while you're stopped.
 
-**[C] Side pockets + the SIPHON seat (Kessa-4).** Valuable liquid pockets sit in the LEFT or RIGHT bore wall, beside the rig rather than ahead of the drill: a second kind of full-stop moment, with its own seat and its own gamble.
-- **Warning:** a pocket spawns above the screen (~80 m before it lines up), glowing in its colour in the wall outside the bore. It comes with a toast (`RICH POCKET LEFT: STOP BESIDE IT`), a droplet icon, and a top-right chip `RICH POCKET L 38M` (the chip shows whichever of vein/pocket is closer). Inside 60 m an alignment bracket appears on that hull flank around the **hose port**, with a dashed line from the pocket to the hull.
+**[C] Side pockets + the SIPHON seat (Kessa-4).** Valuable liquid pockets sit in the bore wall beside the rig rather than ahead of the drill: a second kind of full-stop moment, with its own seat and its own gamble. **They form only in the wall on the ship's siphon side** (`siphonSide` per ship; CORMORANT: left, where her one hose port and reel are). That's the simplest sensible rule: one port, one wall. A hose reaching across the drill unit's bore would foul the clamps, so `?side=right` is coerced to the ship's side.
+- **Warning:** a pocket spawns above the screen (~80 m before it lines up), glowing in its colour in the wall outside the bore. It comes with a toast (`RICH POCKET LEFT: STOP BESIDE IT`), a droplet icon, and a top-right chip `RICH POCKET L 38M` (the chip shows whichever of vein/pocket is closer). Inside 60 m an alignment bracket appears on the bore edge level with the **hose port**, with a dashed line from the pocket to the hull.
 - **Alignment window:** the pocket's centre must be 4 m ahead of the port to 3 m past it, at a full stop (speed 0). Drive past (or through at speed) and it's `POCKET MISSED`, with no payout and no penalty. Once stopped, the hose runs out from the port to the wall, and **GO TO SIPHON** replaces the pilot button in the bottom bar (one tap sends Holt).
-- **The SIPHON seat is a keel pod** under the hub, down the ladder through a grate in the bottom deck. It's a fifth station (`SIP`), not a re-use of TLS/DRL. Why a keel pod: the 2x2 already uses 86 of the 90 visible px at 2x zoom, so a side room would break the inside view. A pod under the hub keeps the 2x2 intact, and the inside camera moved down 14 px so the drill tip and the pod floor are both visible. Walks: HELM → SIP ~1.2 s, ENG/TLS ~0.8 s. Holt must be in the seat to pump.
+- **The SIPHON seat** sits by the hose port on CORMORANT's port side, off the ring corridor. It's a fifth station (`SIP`). Walks: HELM → SIP ~1.85 s (the long trip: out of the pod and round the ring), TLS → SIP ~1.07 s. Holt must be in the seat to pump.
 - **Pumping:** hold **PUMP** (SIPHON panel: `TANK` and `PRESS` gauges). Liquid flows at 20 L/s into the tank, the pocket's liquid level visibly drops, and the hose shows flow. **PRESSURE** rises with sustained pumping (18/s × the type's factor, escalating +25% per second held) and falls 30/s when you let go. A warning toast shows at 75.
 - **Burst at 100:** the line bursts. 30% of what's left in the pocket is lost, the deck sprays, the pump locks for 3 s, and pressure drops to 40. **There's no hull damage:** it's a pure greed cost, consistent with "a full stop is safe; the only risk is your own gamble."
 - **Types:** SMALL (40 L, 60 cr, drains in 2 s with no burst risk), RICH (70 L, 150 cr; pumping straight through bursts at ~68 L, so take one breather), VOLATILE (rare, 50 L, 260 cr; pressure ×2.2, bursts after ~2 s, so pump in short pulses). Value scales with the segment pay. Rich and volatile get more common each leg. Pockets come every 160–260 m (×0.9 per leg) from 110 m on.
@@ -307,16 +307,16 @@ It suits careful players, and it's a trap on fast planets.
 - **Summary after docking:** shown in the content area. Closing it, or tapping any concourse spot, dismisses it.
 - **Holt's kit:** it doesn't change concourse walking (that's a run stat).
 
-**[C] Rig bay (garage).** From the airlock. It fits the content area: the rig's exterior at 1x, drill up, with the siphon keel pod under the hull, the airlock door and Holt's locker below it, and a column of seven colour-keyed callouts (slot + fitted part) beside it. You tap the real part locations, or their callouts:
-- drill nose → drill head
-- cockpit porthole → helm
-- plating → hull
-- vents → engine
-- tool hatch → tools
-- keel pod → siphon
+**[C] Rig bay (garage).** From the airlock. It fits the content area: the rig at 1x, drill up (the TB-6 with CORMORANT coupled behind it), the station clamps, the airlock door and Holt's locker below it, and a column of seven colour-keyed callouts (slot + fitted part) beside it. You tap the real part locations, or their callouts:
+- the TB-6 cutterhead → drill head
+- the TB-6 frame + hopper → drill frame
+- the cockpit pod → helm
+- the reactor dome + engine arc → engine
+- the left mandible (TOOLS is just inboard) → tools
+- the hose port + reel on the left flank → siphon
 - Holt's locker by the airlock → kit
 
-Callouts show what's fitted (one line each, so seven fit), the hotspots are thumb-sized (at least 40×24 base px), and swapping only works while docked.
+Callouts show what's fitted (one line each, so seven fit), the hotspots are thumb-sized (at least 32×24 base px, about 70×52 CSS px on a 390 px phone), and swapping only works while docked.
 
 **Transitions:**
 - **Contract start:** Holt walks to the airlock and rides up. The descent opens on the bay framing and turns out to the drill-down station view.
@@ -324,6 +324,60 @@ Callouts show what's fitted (one line each, so seven fit), the hotspots are thum
 - **Pacing:** one multiplier, `ANIM_SCALE` (config), stretches every cutscene beat. It's currently 2 (about 9.2 s each) while Cletus evaluates the feel. The lift and skip grace stretch only modestly.
 
 **Later:** a survey office (planet licences, M3) can join the concourse as a sixth spot. The concourse can slowly gain personal clutter around the bunk as you progress. That's the melancholy home beat, and it shows progression without numbers.
+
+### 4.5 Ships ([C] CORMORANT is Holt's ship; the others are future ships)
+
+Holt's ship is the tug that couples on behind the leased TB-6 and powers it. Every ship shares the coupling face: two folded clamp arms with orange jaw pads, a red power and a teal coolant umbilical, a hazard-framed conveyor intake under the drill's collar, forward retro jets, a siphon port with a hose reel on one flank, module mounts, nav lights and plenty of wear. Art direction: scrappy used-future (gunmetal, bleached cream, olive, dirty teal, oxblood; orange only as an accent). **No Firefly/Wren long exposed neck** on any of them.
+
+**[C] Ships are smaller than drills.** The drill keeps its framing and the ship is drawn at ~70% scale (CORMORANT is 62×62 px behind the 90 px TB-6): a little tug pushing a big drill. The inside view is a separate zoomed schematic, so the interior is laid out at the full concept scale and stays readable. (The bottom bar grew to 1.75x height for thumbs, so the outside camera sits 8 px lower: drill tip at screen y 160 instead of 168, and the ship's engine glow still ends above the bar.)
+
+**Per-ship stats** live in `SHIPS` in `src/config.js` (`reactor`, `drillDraw`, `drawExp`, `conveyorRate`, `hopperCap`, `holdCap`, `holdCapProposed`, `flipMs`, `breakaway`, `siphonSide`). `SHIP_ID` picks the active ship and `POWER` is derived from it, so a future ship slots in with its own numbers. **Hold caps are not enforced yet:** `holdCap` is `null` (the hold is unlimited); the proposed caps are design numbers only. The cutaway's hold gauge reads against the proposed cap.
+
+**Breakaway style** (`breakaway`; aesthetics only, the timeline and payout are the same): `'flip'` turns 180° in the bore and burns out on the mains (light, round hulls); `'reverse'` lights the retro jets on the face and backs straight out down the bore, nose still to the drill, slower and heavier. Debug: `?breakaway=flip|reverse`.
+
+Concept art for all four is in `docs/ships/` (`<n>-<ship>-ingame.png` in the bore at 3x, `-hero.png` with callouts, `.gif` animated, `-interior.png` floor plan, plus `contact-sheet.png`, `interiors.png` and `stats.json`). The concepts were drawn at full size with the rig lifted 32 px; the game keeps the drill framing and shrinks the ship instead. The in-game CORMORANT art is generated by `tools/ships/cormorant.py` into `assets/ships/` (preview: `docs/ships/cormorant-ingame-art-3x.png`).
+
+| Ship | Reactor | Belt (u/s per spare power) | Conveyor full / half / stop (u/s) | Hold (proposed cap) | Breakaway | Flip | Average walk |
+|---|---|---|---|---|---|---|---|
+| **Cormorant** (in game) | 100 | 0.080 | 0.4 / 4.2 / 8.0 | 600 | flip | 0.5 s | 1.69 s (in game) |
+| Brakeman | 120 | 0.070 | 1.75 / 5.1 / 8.4 | 450 | reverse | n/a | 1.57 s |
+| Sister June | 92 | 0.095 | 0 (top speed 97%) / 4.2 / 8.7 | 900 | reverse | n/a | 2.05 s |
+| Patience | 100 | 0.085 | 0.43 / 4.46 / 8.5 | 350 | flip | 0.7 s | 1.23 s |
+
+Average walk = five key trips (HELM to DRILL, ENGINE, TOOLS and SIPHON, plus DRILL to ENGINE) at 48 px/s.
+
+#### CORMORANT (in game): "A survey saucer with a throat that swallows the drill collar."
+- **Look:** a bleached-cream saucer (a Magpie remix with a YT-1300 cue). Two forward mandibles frame a recessed coupling throat where the TB-6's collar seats; the right mandible tip is a gunmetal replacement plate. The cockpit pod sits off to the right on a short strut. Reactor dome aft-left with pulsing teal vents, an engine arc with three bells at the stern, an oxblood rim stripe, the siphon port + hose reel on the left flank, a sensor dish on one mount.
+- **History:** a decommissioned Meridian survey saucer Holt bought at a scrap auction. He cut the survey bay out to make the throat, so the drill collar seats inside the hull.
+- **Stats:** reactor 100, belt 0.08, hopper 120: the old POWER block exactly, so she's the reference ship. Proposed hold 600 (not enforced). Siphon side: left.
+- **Breakaway: flip.** The mandibles let go cleanly and the disc spins on its axis.
+- **Quirks:** the helm is out in the pod, so every trip from it starts with the crawl tube. HELM → TOOLS (1.96 s) and HELM → SIPHON (1.85 s) cross the ring.
+- **Interior (in game, top-down FTL style):** a ring corridor round the central HOLD (it shows its fill level), the DRILL console forward behind the conveyor intake, TOOLS and the SIPHON seat on the port side, a bunk aft-starboard, ENGINE/REACTOR across the stern, and the HELM in the cockpit pod through a short crawl tube. The tube counts as climbing, so the kit parts' climb speed still matters there. Holt walks the corridor graph: every trip is doorway → ring (the shorter way round) → doorway, axis-aligned.
+- **Game-scale fixes:** at 70% the details are simplified (fewer greebles, no stencil), the cockpit pod is kept large with a readable canopy, and the engine glow is drawn by the game and stops above the bottom bar.
+
+#### BRAKEMAN (future): "Ex-army recovery tractor. Big reactor, straight corridors, slow to turn."
+- **Look:** a faded-olive armoured brick with a chamfered nose (an Old Sarge remix): a heavy docking-ring nose with thick clamp arms, a slit canopy front-left, NO STEP hold doors behind the ring, a painted-over roundel, a big "07" and tally marks, a louvred reactor housing with teal glow through the slats, sponsons (a mismatched cream armour skirt on the left, the siphon port on the right), three engine bells under a heat shield.
+- **History:** an army recovery tractor built to pull wrecked walkers out of trenches, hence the oversized reactor and a coupling ring rated far beyond the TB-6. Holt bought it as surplus; the old unit number never quite comes off.
+- **Stats:** reactor 120 (even flat out the conveyor still moves 1.75 u/s), belt 0.07, break-even at 50%, proposed hold 450. Siphon side: right.
+- **Breakaway: reverse.** A heavy recovery tractor doesn't turn in a bore: she grinds back out on her retros, slowly, so a late breakaway is riskier.
+- **Quirks:** the old belt means a full stop drains no faster than the others.
+- **Interior:** one cross passage behind the helm, hold and drill console, then a spine aft to the engine room. Tools and siphon are off the spine, bunk and lockers aft. Trips are mid-length (1.5–1.7 s) but always the same simple shape.
+
+#### SISTER JUNE (future): "Two hulls, one swappable hold container slung between. Big haul, long walks."
+- **Look:** a catamaran: two hulls joined by a coupling beam forward and a reactor beam aft. The left hull is the original dirty teal; the right hull is bleached cream, salvaged from her sister ship (hence the name). The oxblood hold container "JUNE" hangs on a truss between them (you can see the bore floor through it), with an empty second cradle underneath. Reactor drum on the aft beam, one engine per hull, bridge glazing in the left nose, the drill-console blister in the right nose, the siphon port on the right flank, a lamp module on a rail mount.
+- **History:** a twin-hull ore lighter that lost a hull in a docking accident; the replacement came off a scrapped sister ship. Holt got her cheap because nobody else wanted to walk her.
+- **Stats:** reactor 92 (top speed ~97%; the conveyor gets nothing flat out), the fastest belt (0.095: a stop drains 8.7 u/s), the biggest proposed hold (900, and the container could be swapped). Siphon side: right.
+- **Breakaway: reverse.** She's a catamaran, too wide to flip in the bore, so she backs straight out on her retros.
+- **Quirks:** the worst walks (HELM → DRILL 2.67 s over the forward catwalk, HELM → SIPHON 2.71 s). The hard-mode ship.
+- **Interior:** two long corridors (one per hull) joined by forward and aft catwalks. Left hull: helm, bunk, tools. Right hull: drill console, siphon, lockers. The hold container is reached from the forward catwalk.
+
+#### PATIENCE (future): "A tugboat-shaped work tug: picture window on the hopper, lantern on a stick."
+- **Look:** dirty teal with a broad bow and a tapered stern, like a harbour tug (a Lamplighter remix): a wide glazed brow looking straight at the TB-6's hopper, a chipped oxblood stripe, a netted olive crate on a dorsal mount, a folded magnet arm, a reactor stack with radiator fins aft, two engine pods on outrigger struts, a lantern boom front-left and the siphon port on the left flank.
+- **History:** a yard tug that pushed drills around Meridian's surface yard for 20 years. Holt crewed her for a decade; when the yard went automated he bought her for scrap price.
+- **Stats:** reactor 100, belt 0.085, the smallest proposed hold (350), the shortest walks (1.23 s). Siphon side: left.
+- **Breakaway: flip** (my call). She's the smallest hull and narrower than the bore even with her outriggers, and the outrigger engines give her the torque to spin quickly (0.7 s). A tug that pirouettes is in character. If the outriggers end up wider than the bore in final art, switch her to reverse: it's one field.
+- **Quirks:** DRILL → ENGINE is her one long trip (1.74 s). She's the easy ship, the natural starter.
+- **Interior:** one small loop round a belly hold. Helm and drill console sit side by side under the brow (the vein routine is a two-step shuffle), bunk and tools either side of the hold, siphon aft-left at the port, engine/reactor at the stern.
 
 ## 5. Missions and planets
 

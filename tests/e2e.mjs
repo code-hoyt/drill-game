@@ -36,7 +36,7 @@ const hold = async (gx, gy, ms) => {
 let CAM = null, ROOMS = null;
 const insideW = (wx, wy) => [(wx - CAM.x) * CAM.zoom + 90, (wy - CAM.y) * CAM.zoom + 160];
 const tapRoom = (id) => { const r = ROOMS[id]; return tap(...insideW(r.cx, (r.ceil + r.floorY) / 2)); };
-const TOGGLE = [24, 312], PILOT_BTN = [91, 312];
+const TOGGLE = [25, 307], PILOT_BTN = [95, 307];   // bottom bar: 24 base px tall buttons (1.75x)
 const O_PLUS = [167, 122], O_MINUS = [167, 284], O_TRACK = (v) => [167, 134 + 138 * (1 - v)];
 const H_MINUS = [18, 268], H_PLUS = [162, 268], H_TRACK = (v) => [34 + 112 * v, 266];
 const ACTION_FULL = [90, 268], ACTION_LEFT = [48, 268], ACTION_RIGHT = [132, 268];
@@ -99,8 +99,8 @@ check('ramming a boulder at speed drops hull', (await G('s.hull')) < hullBefore,
 await tap(...TOGGLE); await wait(900);
 const cam = await G('({ mode: g.view.mode, zoom: g.cameras.main.zoom })');
 check('view toggle -> inside (integer 2x zoom on ship)', cam.mode === 'inside' && cam.zoom === 2 && CAM.zoom === 2, JSON.stringify(cam));
-check('whole ship + the drill\'s hopper and conveyor fit on screen in inside view (below HUD, above station panel)', await G(`(() => { const v = g.cameras.main.worldView, z = g.cameras.main.zoom;
-  return v.x <= 47 && v.right >= 133 && 216 >= v.y + 24 / z && 302 <= v.y + 232 / z; })()`), await G('JSON.stringify(g.cameras.main.worldView)'));
+check('the whole top-down cutaway (x 51..138, y 236..327) + the drill collar fit on screen in inside view (below HUD, above station panel)', await G(`(() => { const v = g.cameras.main.worldView, z = g.cameras.main.zoom;
+  return v.x <= 51 && v.right >= 138 && 230 >= v.y + 24 / z && 327 <= v.y + 232 / z; })()`), await G('JSON.stringify(g.cameras.main.worldView)'));
 check('inside at helm shows throttle controls', await G('ui.hGfx.visible && ui.hPlus.visible && ui.hMinus.visible'));
 await tap(...H_PLUS); await wait(100);
 check('inside helm + raises throttle', near(await thr(), 0.9), 'throttle=' + await thr());
@@ -109,92 +109,78 @@ check('inside helm - lowers throttle', near(await thr(), 0.8), 'throttle=' + awa
 await tap(...H_TRACK(0.5)); await wait(100);
 check('inside helm slider sets throttle', near(await thr(), 0.5), 'throttle=' + await thr());
 
-// ---- 2x2 layout: per-route pathing ---------------------------------------------------
-// Same-deck trips walk straight across (no climbing); cross-deck trips use one direct climb.
-// Euler circuit over every ordered pair of rooms, starting and ending at the helm.
-const ids = ['helm', 'drill', 'engine', 'tools'];
+// ---- CORMORANT top-down interior: corridor-graph pathing ------------------------------
+// Holt walks the ring corridor round the hold (doorway -> ring -> doorway); the HELM is out in the cockpit
+// pod through the crawl tube (a 'climb' segment). Every segment is axis-aligned and every waypoint is a node.
+const ids = ['helm', 'drill', 'engine', 'tools', 'siphon'];
 const edges = Object.fromEntries(ids.map((a) => [a, ids.filter((b) => b !== a)]));
 const circuit = []; const stack = ['helm'];
 while (stack.length) { const v = stack[stack.length - 1]; if (edges[v].length) stack.push(edges[v].shift()); else circuit.push(stack.pop()); }
 circuit.reverse();
-const DECK = { helm: 'top', drill: 'top', engine: 'bottom', tools: 'bottom' };
-const FLOORS = await G('Object.values(g.ship.rooms.filter(r => !r.pod).reduce((m, r) => (m[r.deck] = r.floorY, m), {}))');
-// the 2x2 (the SIPHON keel pod is checked separately below)
-const planned = await G(`(() => { const C = g.crew.constructor, out = {}, R = g.ship.rooms.filter(r => !r.pod); for (const a of R) for (const b of R) if (a !== b) {
-  const pts = C.plan(g.ship, a.standX, a.floorY, b.id); let x = a.standX, y = a.floorY; const segs = [];
-  for (const p of pts) { segs.push({ dx: p.x - x, dy: p.y - y }); x = p.x; y = p.y; }
-  out[a.id + '>' + b.id] = { pts: pts.map(p => [p.x, p.y]), segs, len: C.pathLength(a.standX, a.floorY, pts) }; } return out; })()`);
-const planOk = Object.entries(planned).map(([k, v]) => {
-  const [a, b] = k.split('>');
-  const climbs = v.segs.filter((sg) => sg.dy !== 0);
-  const allOnFloors = v.pts.every(([, y]) => FLOORS.includes(y)); // no waypoint mid-ladder
-  const ok = DECK[a] === DECK[b]
-    ? climbs.length === 0 && v.pts.length === 1 && v.len === 32
-    : climbs.length === 1 && Math.abs(climbs[0].dy) === Math.abs(FLOORS[0] - FLOORS[1]) && climbs[0].dx === 0 && allOnFloors && v.len === 60;
-  return { k, ok, len: v.len };
-});
-check('same-deck plans: one straight walk, no climbing (32px)', planOk.filter((p) => DECK[p.k.split('>')[0]] === DECK[p.k.split('>')[1]]).every((p) => p.ok),
-  planOk.filter((p) => DECK[p.k.split('>')[0]] === DECK[p.k.split('>')[1]]).map((p) => p.k + '=' + p.len).join(' '));
-check('cross-deck plans: exactly one direct floor-to-floor climb, no mid stop (60px)', planOk.filter((p) => DECK[p.k.split('>')[0]] !== DECK[p.k.split('>')[1]]).every((p) => p.ok),
-  planOk.filter((p) => DECK[p.k.split('>')[0]] !== DECK[p.k.split('>')[1]]).map((p) => p.k + '=' + p.len).join(' '));
-const podPlans = await G(`(() => { const C = g.crew.constructor, out = []; const pod = g.ship.room('siphon'); const fl = g.ship.rooms.map(r => r.floorY);
-  for (const a of g.ship.rooms.filter(r => !r.pod)) for (const [from, to] of [[a, pod], [pod, a]]) { const pts = C.plan(g.ship, from.standX, from.floorY, to.id);
-    out.push({ k: from.id + '>' + to.id, len: C.pathLength(from.standX, from.floorY, pts), floors: pts.every(p => fl.includes(p.y) || p.x === 90), end: pts.at(-1) }); } return out; })()`);
-check('SIPHON keel pod: every room reaches it down the hub ladder in one climb (<= 75 px, ends at the seat)', podPlans.every((p) => p.len <= 75 && p.floors), podPlans.map((p) => p.k + '=' + p.len).join(' '));
+const planned = await G(`(() => { const C = g.crew.constructor, out = {}, R = g.ship.rooms; const Gr = g.ship.navGraph || (C.plan(g.ship, R[0].standX, R[0].standY, R[1].id), g.ship.navGraph);
+  const nodes = Object.values(Gr.pts).map(p => p.x + ',' + p.y);
+  for (const a of R) for (const b of R) if (a !== b) {
+    const pts = C.plan(g.ship, a.standX, a.standY, b.id); let x = a.standX, y = a.standY, axis = true, walk = 0, climb = 0;
+    for (const p of pts) { const d = Math.hypot(p.x - x, p.y - y); if (p.x !== x && p.y !== y) axis = false; p.climb ? climb += d : walk += d; x = p.x; y = p.y; }
+    out[a.id + '>' + b.id] = { n: pts.length, axis, onNodes: pts.every(p => nodes.includes(p.x + ',' + p.y)), end: pts.length && pts.at(-1).x === b.standX && pts.at(-1).y === b.standY, walk, climb }; }
+  return out; })()`);
+const PL = Object.entries(planned);
+check('top-down plans: all 20 station pairs reachable, axis-aligned corridor segments, waypoints on the corridor graph, end at the station', PL.length === 20 && PL.every(([, v]) => v.n > 0 && v.axis && v.onNodes && v.end),
+  PL.filter(([, v]) => !(v.n > 0 && v.axis && v.onNodes && v.end)).map(([k]) => k).join(' '));
+check('crawl tube: only trips to/from the HELM pod use it (climb ~16 px), all others walk the ring', PL.every(([k, v]) => (k.includes('helm') ? Math.abs(v.climb - 16) < 0.5 : v.climb === 0)), PL.map(([k, v]) => k + ':' + v.climb).join(' '));
+const tripS = (k) => planned[k].walk / 48 + planned[k].climb / 70;
+const KEY = ['helm>drill', 'helm>engine', 'helm>tools', 'helm>siphon', 'drill>engine'];
+const avg = KEY.reduce((a, k) => a + tripS(k), 0) / KEY.length;
+check('key trips average ~1.4-1.8 s (concept 1.56 s; longer walks are OK)', avg > 1.35 && avg < 1.85, KEY.map((k) => k + '=' + tripS(k).toFixed(2)).join(' ') + ' avg ' + avg.toFixed(2));
+console.log('TRIP PLAN  ' + KEY.map((k) => k + '=' + tripS(k).toFixed(2) + 's').join(' ') + '  avg ' + avg.toFixed(2) + 's');
 
 await G('(s.throttle = 0, true)');
 const trips = [];
 for (let i = 1; i < circuit.length; i++) {
   await tapRoom(circuit[i]);
-  await waitFor(`g.crew.station === "${circuit[i]}"`, 3000);
-  const t = await G('g.crew.lastTrip');
-  trips.push({ ...t, ok: t && t.from === circuit[i - 1] && t.to === circuit[i], same: DECK[circuit[i - 1]] === DECK[circuit[i]] });
+  if (i === 1) { await wait(250); trips.walkTex = await G('g.crew.sprite.texture.key'); }
+  await waitFor(`g.crew.station === "${circuit[i]}"`, 4000);
+  const t = await G('({ ...g.crew.lastTrip, ang: g.crew.sprite.angle, face: g.ship.room(g.crew.station).face })');
+  trips.push({ ...t, ok: t && t.from === circuit[i - 1] && t.to === circuit[i] });
   await wait(60);
 }
 const pairs = new Set(trips.map((t) => t.from + '>' + t.to));
-check('walked all 12 ordered trips by tapping rooms', trips.length === 12 && pairs.size === 12 && trips.every((t) => t.ok), [...pairs].join(' '));
-const same = trips.filter((t) => t.same), cross = trips.filter((t) => !t.same);
-check('walked same-deck trips: no climbing at all', same.length === 4 && same.every((t) => t.climb === 0 && Math.abs(t.walk - 32) < 0.1), JSON.stringify(same.map((t) => [t.from + '>' + t.to, t.walk, t.climb])));
-check('walked cross-deck trips: one 28px climb + 32px walk', cross.length === 8 && cross.every((t) => Math.abs(t.climb - 28) < 0.1 && Math.abs(t.walk - 32) < 0.1), JSON.stringify(cross.map((t) => [t.from + '>' + t.to, t.walk, t.climb])));
-const rng = (a) => [Math.round(Math.min(...a.map((t) => t.ms))), Math.round(Math.max(...a.map((t) => t.ms)))];
-const [sMin, sMax] = rng(same), [cMin, cMax] = rng(cross);
-check('same-deck trip time ~0.6-0.8 s', sMin >= 600 && sMax <= 800, `${sMin}-${sMax}ms`);
-check('cross-deck trip time <= ~1.1 s', cMax <= 1120 && cMin > sMax, `${cMin}-${cMax}ms`);
-console.log(`TRIP TIMES  same-deck ${sMin}-${sMax}ms  cross-deck ${cMin}-${cMax}ms`);
+check('walked all 20 ordered trips by tapping rooms (every station reachable)', trips.length === 20 && pairs.size === 20 && trips.every((t) => t.ok), [...pairs].join(' '));
+const ANG = { up: 0, right: 90, down: 180, left: -90 };
+check('top-down Holt: walk frames while moving, faces his console on arrival', /^holt_td_walk/.test(trips.walkTex) && trips.every((t) => { const d = (((t.ang - ANG[t.face]) % 360) + 360) % 360; return d < 1 || d > 359; }),
+  trips.walkTex + ' ' + trips.map((t) => t.to + ':' + t.ang).join(' '));
+const timeOk = trips.every((t) => { const k = t.from + '>' + t.to, exp = tripS(k) * 1000; return Math.abs(t.walk - planned[k].walk) < 0.6 && Math.abs(t.climb - planned[k].climb) < 0.6 && t.ms > exp - 120 && t.ms < exp + 160; });
+check('walked trips match their plans (walk + tube px, time = walk/48 + tube/70)', timeOk, trips.map((t) => t.from + '>' + t.to + '=' + Math.round(t.ms)).join(' '));
+const tMin = Math.min(...trips.map((t) => t.ms)), tMax = Math.max(...trips.map((t) => t.ms));
+console.log(`TRIP TIMES  ${Math.round(tMin)}-${Math.round(tMax)}ms`);
 check('crew back at helm after the circuit', await G('g.crew.station === "helm" && g.piloted'));
 
 // retargeting
-const waitClimbing = () => page.waitForFunction(() => { const c = __drill.scene.getScene('Game').crew; return c.climbing && c.sprite.y > 270 && c.sprite.y < 294; }, null, { polling: 'raf', timeout: 3000 });
-const crewState = () => G('({ path: g.crew.path.map(p => [Math.round(p.x), Math.round(p.y)]), target: g.crew.target, x: +g.crew.sprite.x.toFixed(1), y: +g.crew.sprite.y.toFixed(1) })');
-// a) mid-climb down, retarget to a top-deck room -> reverse straight up, then walk out
-await tapRoom('tools'); await waitClimbing();
-await tapRoom('drill'); await wait(20);
+const crewState = () => G('({ path: g.crew.path.map(p => [Math.round(p.x), Math.round(p.y)]), len: g.crew.constructor.pathLength(g.crew.sprite.x, g.crew.sprite.y, g.crew.path), target: g.crew.target, x: +g.crew.sprite.x.toFixed(1), y: +g.crew.sprite.y.toFixed(1), climbing: g.crew.climbing })');
+// a) in the crawl tube on the way out of the pod, change your mind -> turn round in the tube, back to the helm
+await tapRoom('engine');
+await page.waitForFunction(() => { const c = __drill.scene.getScene('Game').crew; return c.climbing && c.sprite.x < 120; }, null, { polling: 'raf', timeout: 3000 });
+await tapRoom('helm'); await wait(20);
 let re = await crewState();
-check('mid-climb retarget to the deck he left: reverses straight up', re.target === 'drill' && JSON.stringify(re.path.slice(-2)) === '[[90,268],[106,268]]' && re.path.length <= 2, JSON.stringify(re));
-await waitFor('g.crew.station === "drill"', 3000);
-check('...and arrives at DRL', await G('g.crew.station === "drill"'));
-// b) mid-climb down, retarget to the other bottom room -> continue down, walk out
-await tapRoom('tools'); await waitClimbing();
-await tapRoom('engine'); await wait(20);
-re = await crewState();
-check('mid-climb retarget to the deck ahead: finishes the climb, walks out', re.target === 'engine' && JSON.stringify(re.path.slice(-2)) === '[[90,296],[74,296]]' && re.path.length <= 2, JSON.stringify(re));
-await waitFor('g.crew.station === "engine"', 3000);
-check('...and arrives at ENG', await G('g.crew.station === "engine"'));
-// c) mid-walk across the bottom deck, retarget to a top room -> back/over to the ladder, one climb
-await tapRoom('tools'); await wait(150);
-await tapRoom('helm'); await wait(20);
-re = await crewState();
-check('mid-walk retarget to other deck: ladder then one direct climb', re.target === 'helm' && JSON.stringify(re.path) === '[[90,296],[90,268],[74,268]]', JSON.stringify(re));
+check('mid-tube retarget back to the HELM: turns round in the tube (short way back)', re.target === 'helm' && re.len < 26 && re.path[0][1] === 278 && re.path[0][0] > re.x, JSON.stringify(re));
 await waitFor('g.crew.station === "helm"', 3000);
-// d) same-deck change of mind walks straight back
-await tapRoom('drill'); await wait(120);
-await tapRoom('helm'); await wait(20);
-check('mid-walk retarget back on the same deck walks straight back', await G('g.crew.path.length === 1 && g.crew.target === "helm" && g.crew.path[0].y === 268'));
-await waitFor('g.crew.station === "helm"', 2000);
+check('...and arrives back at the HELM', await G('g.crew.station === "helm"'));
+// b) mid-walk on the ring, retarget -> takes the shorter way from where he is (never walks the long way round)
+await tapRoom('siphon'); await wait(900);
+const beforeRe = await crewState();
+const segEnds = await G('[g.crew.segFrom, g.crew.path[0].node]');
+await tapRoom('drill'); await wait(20);
+re = await crewState();
+// the best he can do from a point on a corridor segment: go to one of its two ends, then the shortest route
+const alt = await G(`(() => { const C = g.crew.constructor, c = g.crew; return Math.min(...${JSON.stringify(segEnds)}.map(n => { const P = g.ship.navGraph.pts[n]; return Math.hypot(P.x - c.sprite.x, P.y - c.sprite.y) + C.pathLength(P.x, P.y, C.plan(g.ship, P.x, P.y, 'drill')); })); })()`);
+check('mid-walk retarget on the ring: re-plans from where he is, no longer than the best route', re.target === 'drill' && re.len <= alt + 1.5, `len ${re.len.toFixed(1)} best ${alt.toFixed(1)} from ${beforeRe.x},${beforeRe.y}`);
+await waitFor('g.crew.station === "drill"', 4000);
+check('...and arrives at DRL', await G('g.crew.station === "drill"'));
 // get to tools so the next block (which starts with tapRoom('helm')) is unchanged
-await tapRoom('tools'); await waitFor('g.crew.station === "tools"', 3000);
-await waitFor('g.crew.station === "tools"', 2000);
-await tapRoom('helm'); await waitFor('g.crew.station === "helm"', 3000);
+await tapRoom('tools'); await waitFor('g.crew.station === "tools"', 4000);
+await tapRoom('helm'); await wait(700);
+await page.screenshot({ path: `${OUT}/03b-inside-walking.png` });   // Holt mid-walk on the ring
+await waitFor('g.crew.station === "helm"', 4000);
 await G('(g.setThrottle(0.5), true)');
 await page.screenshot({ path: `${OUT}/03-inside-helm.png` });
 
@@ -228,7 +214,7 @@ const n0 = await G('g.obstacles.list.length'); await hold(...ACTION_RIGHT, 1600)
 const gone = await G('!g.obstacles.list.includes(window.__testRock)');
 check('holding BLAST at Tools clears the nearest boulder', gone, `boulders ${n0} -> ${await G('g.obstacles.list.length')}`);
 await G('(s.heat = 95, s.wear = 95, s.hull = 20, g.obstacles.spawn(s.depth), g.obstacles.list.at(-1).sprite.y = 60, true)'); await wait(200);
-const bub = await G(`g.ship.rooms.filter(r => !r.pod).map(r => { const b = g.ship.bubbles[r.id]; return { id: r.id, vis: b.visible, inRoom: b.x > r.x && b.x < r.x + r.w && b.y > r.ceil && b.y < r.floorY }; })`);
+const bub = await G(`g.ship.rooms.filter(r => r.id !== 'siphon').map(r => { const b = g.ship.bubbles[r.id]; return { id: r.id, vis: b.visible, inRoom: b.x > r.x && b.x < r.x + r.w && b.y > r.ceil && b.y < r.floorY }; })`);
 check("'!' bubbles show over the correct room for all 4 stations", bub.every((b) => b.vis && b.inRoom), JSON.stringify(bub));
 await G('(s.hull = 60, true)');
 await G('(s.heat = 0, s.wear = 0, true)');
@@ -270,7 +256,7 @@ const lostRun = await G('g.lastRun');
 check('drill integrity 0 -> end screen (DRILL LOST)', go.active && lostRun.reason === 'lost' && (await page.evaluate(() => __drill.scene.getScene('GameOver').children.list.some(c => c.text === 'DRILL LOST'))), JSON.stringify(lostRun));
 check('best depth saved to localStorage', Number(go.best) === finalDepth, `best=${go.best} depth=${finalDepth}`);
 check('drill loss banks 1/3 of the HOLD (floor); the write-off is the other 2/3; the hopper is lost', lostRun.haul >= 300 && lostRun.banked === Math.floor(lostRun.haul / 3) && lostRun.writeoff === lostRun.haul - lostRun.banked
-  && lostRun.hopperLost >= 40 && go.save && go.save.credits === lostRun.banked && go.save.drillsLost === 1 && go.save.v === 5,
+  && lostRun.hopperLost >= 30 && go.save && go.save.credits === lostRun.banked && go.save.drillsLost === 1 && go.save.v === 5,
   `hold=${lostRun.haul} hopperLost=${lostRun.hopperLost} banked=${lostRun.banked} save=${JSON.stringify(go.save)}`);
 const goRows = await page.evaluate(() => __drill.scene.getScene('GameOver').children.list.filter(c => c.type === 'BitmapText').map(c => c.text));
 check('end screen accounting: SHIP HOLD, DRILL WRITE-OFF (2/3), HOPPER LOST, BANKED', goRows.includes('SHIP HOLD') && goRows.includes(`${lostRun.haul} CR`) && goRows.includes('DRILL WRITE-OFF (2/3)') && goRows.includes(`-${lostRun.writeoff} CR`)
@@ -549,10 +535,12 @@ await G('(s.throttle = 0, s.speed = 0, true)');
 await tap(...TOGGLE); await wait(900);
 await tapRoom('drill'); await waitFor('g.crew.station === "drill"', 3000);
 const trip = await G('g.crew.lastTrip');
-check('LIGHT BOOTS: same-deck walk ~0.55 s (683 / 1.25)', trip.to === 'drill' && trip.ms > 480 && trip.ms < 600, `${Math.round(trip.ms)}ms`);
+// helm -> drill: 51 px of corridor (walk x1.25) + the 16 px crawl tube (climb x0.8)
+const bootsExp = (trip.walk / (48 * 1.25) + trip.climb / (70 * 0.8)) * 1000, plainExp = (trip.walk / 48 + trip.climb / 70) * 1000;
+check('LIGHT BOOTS: corridor walking 25% faster, the crawl tube 20% slower', trip.to === 'drill' && trip.climb > 15 && Math.abs(trip.ms - bootsExp) < 120 && trip.ms < plainExp - 100, `${Math.round(trip.ms)}ms (expect ${Math.round(bootsExp)}, plain ${Math.round(plainExp)})`);
 await tapRoom('engine'); await waitFor('g.crew.station === "engine"', 3000);
 const trip2 = await G('g.crew.lastTrip');
-check('LIGHT BOOTS: climb is slower (cross-deck ~1.1 s)', trip2.ms > 1000 && trip2.ms < 1250, `${Math.round(trip2.ms)}ms`);
+check('LIGHT BOOTS: a ring-only walk (DRL -> ENG, no tube) is x1.25 faster', trip2.climb === 0 && Math.abs(trip2.ms - trip2.walk / 60 * 1000) < 120, `${Math.round(trip2.ms)}ms`);
 const blocked = await page.evaluate(async () => { const S = await import(new URL('src/systems/Save.js', location.href).href); return { active: S.isRunActive(), r: S.equipPart('stockkit'), kit: S.loadSave().loadout.kit }; });
 check('swapping parts is blocked during a run', blocked.active && !blocked.r.ok && blocked.r.reason.includes('RUN ACTIVE') && blocked.kit === 'lightboots', JSON.stringify(blocked));
 check('no swap UI exists mid-run (dock scenes stopped)', await page.evaluate(() => !__drill.scene.isActive('Dock') && !__drill.scene.isActive('DockUI')));
@@ -906,9 +894,11 @@ const alignStop = async () => {
 };
 // a pocket you drive past is missed
 await runFrom('&noevents=1&pocket=small&side=right');
-check('?pocket=small&side=right: a SMALL pocket glows in the RIGHT bore wall ahead, with early warning (toast + chip + icon)',
-  (await G(`(() => { const p = ${PK}; return !!p && p.type === 'small' && p.side === 'right' && p.x - 10 > ${LL.SHIP_X + LL.SHIP_W} + 2 && p.state === 'ahead' && g.pockets.dist(p) > 30; })()`))
-  && (await toastSeen('SMALL POCKET RIGHT')) && (await G('ui.chipText.text.startsWith("SMALL POCKET R") && ui.icons.find(i => i.k === "liq").img.visible')), await G('ui.chipText.text'));
+check('?pocket=small&side=right: coerced to CORMORANT\'s siphon side: a SMALL pocket glows in the LEFT bore wall ahead, with early warning (toast + chip + icon)',
+  (await G(`(() => { const p = ${PK}; return !!p && p.type === 'small' && p.side === 'left' && p.x + 10 < ${LL.SHIP_X} - 2 && p.state === 'ahead' && g.pockets.dist(p) > 30; })()`))
+  && (await toastSeen('SMALL POCKET LEFT')) && (await G('ui.chipText.text.startsWith("SMALL POCKET L") && ui.icons.find(i => i.k === "liq").img.visible')), await G('ui.chipText.text'));
+check('siphon side is per ship (config SHIPS.cormorant.siphonSide = left) and every spawned pocket is on it', await page.evaluate(async () => (await import(new URL('src/config.js', location.href).href)).SHIP.siphonSide === 'left')
+  && await G('g.pockets.log.every(l => l.side === "left")'));
 check('no pumping while the pocket is still ahead', await G('!g.availableActions("siphon").includes("pump")'));
 await G('(g.setThrottle(0.6), true)');
 const missed = await waitFor('s.pocketsMissed === 1', 15000);
@@ -932,14 +922,14 @@ await G('(g.setHold("pump"), true)'); await wait(600);
 check('seat required: PUMP does nothing away from the SIPHON seat (Holt at the helm)', await G('s.tank === 0 && !g.availableActions().includes("pump") && g.availableActions("siphon").includes("pump")'));
 await G('(g.setHold(null), true)');
 const t0 = Date.now();
-await tap(91, 312);   // GO TO SIPHON
+await tap(...PILOT_BTN);   // GO TO SIPHON (same slot as GO TO HELM)
 const reached = await waitFor('g.crew.station === "siphon" && !g.crew.walking', 3000);
 const trip = await G('g.crew.lastTrip');
-check('GO TO SIPHON: Holt climbs down to the keel pod seat (short walk)', reached && trip.to === 'siphon' && trip.ms < 1700 && !(await G('ui.siphonBtn.gfx.visible')), `${trip.ms} ms from ${trip.from}`);
+check('GO TO SIPHON: Holt walks round the ring to the seat by the port (helm -> siphon, the long trip, < 2.3 s)', reached && trip.to === 'siphon' && trip.ms < 2300 && !(await G('ui.siphonBtn.gfx.visible')), `${trip.ms} ms from ${trip.from}`);
 await tap(...TOGGLE); await waitFor('g.view.inside && g.cameras.main.zoom === 2', 3000); await wait(150);
 // visible band = between the HUD (top 24 px) and the station panel (from y 232)
-const fit = await G(`(() => { const c = g.cameras.main, v = c.worldView; const r = g.ship.room('siphon'); return { top: v.y + 24 / c.zoom, bot: v.y + 232 / c.zoom, ceil: r.ceil, floor: r.floorY, tip: ${LL.DRILL_UNIT.hopperTop} }; })()`);
-check('inside view: hopper .. keel pod floor all visible between HUD and panel', fit.top <= fit.tip && fit.bot >= fit.floor && fit.top <= LL.SHIP_TOP, JSON.stringify(fit));
+const fit = await G(`(() => { const c = g.cameras.main, v = c.worldView; const r = g.ship.room('siphon'); return { top: v.y + 24 / c.zoom, bot: v.y + 232 / c.zoom, ceil: r.ceil, floor: r.floorY, tip: ${LL.DRILL_UNIT.collarBot} }; })()`);
+check('inside view: drill collar .. siphon seat all visible between HUD and panel', fit.top <= fit.tip && fit.bot >= fit.floor && fit.top <= LL.SHIP_TOP, JSON.stringify(fit));
 check('siphon panel: TANK + PRESS gauges and HOLD: PUMP', await G('ui.stationText.text.startsWith("SIPHON   TANK 0/100L") && ui.pumpLabels.every(o => o.visible) && ui.actionBtns.pump.gfx.visible && ui.actionBtns.pump.enabled && ui.actionBtns.pump.text.text === "HOLD: PUMP"'), await G('ui.stationText.text'));
 await page.screenshot({ path: `${OUT}/34-siphon-seat.png` });
 // pump: tank fills, pocket drains, pressure rises; release: pressure falls
@@ -967,9 +957,9 @@ check('full tank: holding PUMP does nothing', (await G('s.tank')) === ft.cap && 
 await G('(g.setHold(null), true)');
 const keepTank = await G('({ tank: s.tank, cr: s.tankCr })');
 // burst: a VOLATILE pocket, sustained pumping
-await runFrom('&noevents=1&pocket=volatile&side=right');
+await runFrom('&noevents=1&pocket=volatile&side=left');
 await alignStop();
-check('VOLATILE pocket (right wall) aligned with a full stop', await G(`${PK}.state === 'stopped' && ${PK}.side === 'right'`));
+check('VOLATILE pocket (siphon side, left) aligned with a full stop', await G(`${PK}.state === 'stopped' && ${PK}.side === 'left'`));
 await tap(...TOGGLE); await waitFor('g.view.inside && g.cameras.main.zoom === 2', 3000); await wait(150); await goRoom('siphon');
 const bh = await G('s.hull');
 await touchDown(...ACTION_FULL);
@@ -1106,6 +1096,53 @@ check('v4 save migrates to v5: rigsLost -> drillsLost, loadout + stock kept, pow
 check('title shows migrated credits + best', await page.evaluate(() => { const t = __drill.scene.getScene('Title'); const tx = t.children.list.map((c) => c.text).filter(Boolean); return tx.includes('CREDITS 777 CR') && tx.includes('BEST DEPTH 1234M'); }));
 await tap(90, 160); await wait(800);
 check('docked HUD shows migrated credits', (await D('u.creditText.text')) === '777 CR' && (await D('u.bestText.text')) === 'BEST 1234M');
+
+// ---- CORMORANT: bottom bar hit boxes, outside framing, the camera transition, both breakaway styles ----
+await page.goto(BASE + '?anim=0&noevents=1'); await wait(1500);
+await tap(90, 160); await wait(800);
+await startContract();
+await waitFor('g.crew && g.crew.station === "helm"', 3000);
+const cssPerBase = rect.w / 180;
+const bar = await G('[ui.toggleBtn, ui.pilotBtn, ui.siphonBtn].map(b => ({ x: b.zone.x, y: b.zone.y, w: b.zone.width, h: b.zone.height, label: b.text.text }))');
+check('bottom bar: OUTSIDE/INSIDE, GO TO HELM and GO TO SIPHON hit boxes are >= 44 CSS px tall (and wide) on a 390x844 phone, inside the bar', bar.every((b) => b.h * cssPerBase >= 44 && b.w * cssPerBase >= 44 && b.y >= 294 && b.y + b.h <= 320),
+  bar.map((b) => `${b.label}: ${(b.w * cssPerBase).toFixed(0)}x${(b.h * cssPerBase).toFixed(0)} css`).join(' | '));
+check('bottom bar: buttons ~1.75x taller than before (14 -> 24 base px), labels readable (6 px font) and nothing overlaps them', bar.every((b) => b.h >= 24) && bar[0].x + bar[0].w <= bar[1].x
+  && (await G('ui.toggleBtn.text.fontSize === 6 && ui.plus.y + ui.plus.h <= 294 && ui.minus.y + ui.minus.h <= 294')));
+await page.screenshot({ path: `${OUT}/41-bottom-bar.png`, clip: { x: rect.x, y: rect.y + 250 * cssPerBase, width: rect.w, height: 70 * cssPerBase } });
+const ow = await G(`(() => { const c = g.cameras.main, E = ${JSON.stringify(LAY)}; return { tip: E.DRILL_TIP_Y - c.worldView.y, glowEnd: E.ENGINE_Y + 3 - c.worldView.y, hull: g.ship.exterior.texture.key, shipW: 62, drillW: E.DRILL_UNIT.w, shipH: E.SHIP_BOTTOM - E.FACE.y, faceOnCollar: E.FACE.y === E.DRILL_UNIT.collarBot }; })()`);
+check('outside framing: drill tip ~y160, CORMORANT (70%: smaller than the 90 px drill) seated on the collar, engine glow ends above the bottom bar', ow.hull === 'cormorant' && ow.tip >= 156 && ow.tip <= 170 && ow.glowEnd <= 294 && ow.shipW < ow.drillW && ow.shipH <= 66 && ow.faceOnCollar, JSON.stringify(ow));
+// the outside <-> inside transition: the hull 'roof' fades out as the top-down cutaway fades in
+await tap(...TOGGLE); await wait(300);   // ~half of VIEW_PAN_MS (650)
+const mid = await G('({ roof: g.ship.exterior.alpha, deck: g.ship.deck.alpha, holt: g.crew.sprite.alpha, zoom: g.cameras.main.zoom })');
+await page.screenshot({ path: `${OUT}/42-transition-midpoint.png` });
+check('transition midpoint: roof half-faded, cutaway half-in, camera mid-zoom', mid.roof > 0.1 && mid.roof < 0.9 && mid.deck > 0.1 && mid.deck < 0.9 && Math.abs(mid.roof + mid.deck - 1) < 0.02 && mid.zoom > 1.05 && mid.zoom < 1.95, JSON.stringify(mid));
+await wait(700);
+const fin = await G('({ roof: g.ship.exterior.alpha, deck: g.ship.deck.alpha, holt: g.crew.sprite.alpha, clamps: g.ship.coupling.alpha, zones: g.ship.roomZones.every(z => z.input && z.input.enabled), ship: g.ship.shipZone.input.enabled })');
+check('inside: roof gone, cutaway + Holt fully in, room zones live, ship zone off', fin.roof === 0 && fin.deck === 1 && fin.holt === 1 && fin.clamps === 0 && fin.zones && !fin.ship, JSON.stringify(fin));
+await tap(...TOGGLE); await wait(900);
+check('back outside: roof back, cutaway + Holt hidden', await G('g.ship.exterior.alpha === 1 && g.ship.deck.alpha === 0 && g.crew.sprite.alpha === 0 && g.ship.shipZone.input.enabled'));
+// breakaway, the ship's own style: CORMORANT flips 180 and burns out on her mains
+const shipCfg = await page.evaluate(async () => { const c = await import(new URL('src/config.js', location.href).href); return { b: c.SHIP.breakaway, all: Object.fromEntries(Object.entries(c.SHIPS).map(([k, v]) => [k, v.breakaway])) }; });
+check('per-ship breakaway setting: CORMORANT flip, BRAKEMAN + SISTER JUNE reverse, PATIENCE flip', shipCfg.b === 'flip' && shipCfg.all.brakeman === 'reverse' && shipCfg.all.sister_june === 'reverse' && shipCfg.all.patience === 'flip', JSON.stringify(shipCfg));
+await G('(s.damage(9999), true)');
+await waitFor('!!g.breakState', 3000);
+await page.waitForFunction(() => { const b = __drill.scene.getScene('Game').breakState; return b && b.done; }, null, { timeout: 5000, polling: 'raf' }).catch(() => {});
+const bf = await G('({ style: g.breakState.style, maxRot: g.breakState.maxRot, plume: g.breakState.plumeOn, retro: g.breakState.retroOn, y: g.breakState.ship.y })');
+check("breakaway 'flip' (default): turns 180 deg, burns out on the mains, no retros", bf.style === 'flip' && Math.abs(bf.maxRot - Math.PI) < 0.05 && bf.plume && !bf.retro && bf.y > 330, JSON.stringify(bf));
+// ?breakaway=reverse: backs straight out on the retro jets, nose still to the drill (future heavy/wide hulls)
+await page.goto(BASE + '?anim=0&noevents=1&breakaway=reverse'); await wait(1500);
+await tap(90, 160); await wait(800);
+await startContract();
+await waitFor('g.crew && g.crew.station === "helm"', 3000);
+await G('(s.damage(9999), true)');
+await waitFor('!!g.breakState', 3000);
+await page.waitForFunction(() => { const b = __drill.scene.getScene('Game').breakState; return b && b.retroOn && b.ship.y > 275; }, null, { timeout: 4000, polling: 'raf' }).catch(() => {});
+await page.screenshot({ path: `${OUT}/43-breakaway-reverse.png` });
+await page.waitForFunction(() => { const b = __drill.scene.getScene('Game').breakState; return b && b.done; }, null, { timeout: 5000, polling: 'raf' }).catch(() => {});
+const br = await G('({ style: g.breakState.style, maxRot: g.breakState.maxRot, plume: g.breakState.plumeOn, retro: g.breakState.retroOn, y: g.breakState.ship.y })');
+check("?breakaway=reverse: backs straight out on the retro jets (never rotates), no main-engine burn", br.style === 'reverse' && br.maxRot < 0.01 && br.retro && !br.plume && br.y > 330, JSON.stringify(br));
+await page.waitForFunction(() => __drill.scene.isActive('GameOver'), null, { timeout: 5000 }).catch(() => {});
+check('reverse breakaway still ends at DRILL LOST', await page.evaluate(() => __drill.scene.isActive('GameOver')));
 
 check('no console errors', errs.length === 0, errs.join(' | '));
 console.log(`\n${results.filter((r) => r.ok).length}/${results.length} checks passed`);

@@ -1,10 +1,12 @@
 import { createPixelFont } from '../systems/PixelFont.js';
 import { createTextures } from '../systems/Textures.js';
+import { preloadShipArt } from '../systems/ShipArt.js';
 import { loadSave, applyUrlShortcuts } from '../systems/Save.js';
 
-// Generates all placeholder art + the pixel font, then shows the title.
+// Loads the ship hull PNGs, generates the rest of the art + the pixel font, then shows the title.
 export class BootScene extends Phaser.Scene {
   constructor() { super('Boot'); }
+  preload() { preloadShipArt(this); }
   create() {
     createPixelFont(this);
     createTextures(this);

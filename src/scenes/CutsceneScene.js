@@ -1,4 +1,4 @@
-// Transition cutscenes (4.6 s x ANIM_SCALE, default 2 = ~9.2 s, + a short concourse beat; tap to skip after a ~0.5 s grace). Reuses the rig textures (ship_ext + drill).
+// Transition cutscenes (4.6 s x ANIM_SCALE, default 2 = ~9.2 s, + a short concourse beat; tap to skip after a ~0.5 s grace). Reuses the rig art (CORMORANT + TB-6, ShipArt.js).
 // Orientation: the run (and the docked interior) show the rig drill-UP, flipped for the phone. Outside
 // (the surface, space) it is drill-DOWN. The camera rotates 180 degrees to bridge the two:
 //   ascent : run view (drill up, rock above) -> camera turns as the rig is winched out of the bore (or, after
@@ -9,15 +9,17 @@
 //            toward the planet -> cut to the surface, the drill bites -> camera turns as it sinks in, landing
 //            in the run view.
 // Only the main camera rotates; "TAP TO SKIP" and captions live on a separate, unrotated UI camera.
-import { GAME_W, GAME_H, LAYOUT as L } from '../config.js';
+import { GAME_W, GAME_H, LAYOUT as L, breakawayStyle } from '../config.js';
+import { rigParts, hullImage, SHIP_TEX } from '../systems/ShipArt.js';
 import { FONT_KEY } from '../systems/PixelFont.js';
 import { CONCOURSE } from './DockScene.js';
 import { animScale, GRACE_MS, CUTSCENE_MS } from '../systems/Settings.js';
 
 const SURFACE_Y = 204;
 const PORT_Y = 64;          // bottom of the station's docking port
-const RIG_TOP = 42;         // rig container: ship top is 42 px above centre once flipped (drill down)
-const RUN_CY = 100;         // rotated 180 deg, a camera centred RUN_CY below the rig puts it where the run draws it
+const RIG_TOP = L.SHIP_BOTTOM - 260;   // rig container: the ship's engine end is 38 px above centre once flipped (drill down)
+const SHIP_HALF = Math.round((L.SHIP_BOTTOM - L.FACE.y) / 2);   // hull centre -> coupling face
+const RUN_CY = 260 - L.OUTSIDE_CAM.y;   // rotated 180 deg, a camera centred RUN_CY below the rig puts it where the run draws it
 const SPACE_RIG = 0.45;    // rig scale in the space shots
 const DOCK_ZOOM = 1 / SPACE_RIG;  // rotated + zoomed so the docked rig lands exactly where the concourse draws it
 // camera centre that puts a space-shot rig (centre y) at the concourse's rig position, drill up
@@ -36,6 +38,7 @@ export class CutsceneScene extends Phaser.Scene {
     this.data_ = data;
     this.kind = data.kind;
     this.vehicle = data.vehicle || 'rig';
+    this.style = data.style || breakawayStyle();   // how a broken-away ship left the bore ('flip' | 'reverse')
     this.done = false;
     this.t0 = performance.now();
     this.camTween = null;
@@ -98,32 +101,26 @@ export class CutsceneScene extends Phaser.Scene {
 
   // ---- props -------------------------------------------------------------------------
   /**
-   * The rig, turned 180 deg (not mirrored): drill down; the camera's 180 deg turn restores the run's look.
-   * unit = true: the leased DRILL UNIT + coupling as in the run (surface shots); false: the box ship with its
-   * old nose (the space + docking shots, matching the concourse bay).
+   * The rig (TB-6 drill unit + clamps + CORMORANT, the same parts the run draws), turned 180 deg (not
+   * mirrored): drill down; the camera's 180 deg turn restores the run's look. Used in every shot.
    */
-  makeRig(scale, unit = false) {
+  makeRig(scale) {
     const c = this.add.container(90, 0);
-    const oy = 260;   // container origin = run world y 260 (ship top 240 sits at -20)
-    if (unit) {
-      const DU = L.DRILL_UNIT;
-      this.drillImg = this.add.image(0, L.DRILL_TIP_Y - oy, 'cutter0').setOrigin(0.5, 0);
-      this.drillFrames = 'cutter';
-      c.add([this.add.image(DU.x - 90, DU.frameTop - oy, 'coupling').setOrigin(0), this.add.image(DU.x - 90, DU.bodyTop - oy, 'drillunit').setOrigin(0), this.drillImg]);
-    } else {
-      this.drillImg = this.add.image(0, -42, 'drill0').setOrigin(0.5, 0);
-      this.drillFrames = 'drill';
-      c.add(this.drillImg);
-    }
-    c.add(this.add.image(-43, -20, 'ship_ext').setOrigin(0));
+    const { parts, cutter } = rigParts(this, 260);   // container origin = run world y 260
+    this.drillImg = cutter;
+    this.drillFrames = 'cutter';
+    c.add(parts);
     c.setScale(-scale, -scale);
     return c;
   }
-  /** The ship alone (after a breakaway): plating + keel pod, flipped like it left the run (engine first). */
+  /**
+   * The ship alone (after a breakaway), keeping the attitude it left the run in: a 'flip' ship turned 180
+   * and burned out engine-first; a 'reverse' ship backed out nose-first on its retros. Origin = hull centre.
+   */
   makeShip(scale) {
     const c = this.add.container(90, 0);
-    c.add([this.add.image(-43, -31, 'ship_ext').setOrigin(0), this.add.image(L.POD.x - 90, L.POD.top - L.SHIP_TOP - 31, 'pod_ext').setOrigin(0)]);
-    c.setScale(scale, scale);
+    c.add(hullImage(this, SHIP_TEX.hull, 0, -SHIP_HALF));
+    c.setScale(this.style === 'reverse' ? -scale : scale);
     return c;
   }
 
@@ -225,10 +222,10 @@ export class CutsceneScene extends Phaser.Scene {
       v = this.makeShip(1);
       v.y = y0;
       this.surface.add(v);
-      this.trail.startFollow(v, 0, 34); this.trail.start();
+      this.trail.startFollow(v, 0, SHIP_HALF + 2); this.trail.start();
       this.tweens.add({ targets: v, y: -60, duration: d(1800), ease: 'Quad.easeIn' });
     } else {
-      v = this.makeRig(1, true);
+      v = this.makeRig(1);
       v.y = y0;
       this.surface.add(v);
       const drawCable = () => this.cable.clear().lineStyle(1, 0xcfcfdf, 1).lineBetween(90, 112, 90, v.y - RIG_TOP);
@@ -247,7 +244,7 @@ export class CutsceneScene extends Phaser.Scene {
       sv.y = 340;
       this.space.add(sv);
       this.spaceVehicle = sv;
-      const top = shipOnly ? 31 * 0.45 : RIG_TOP * 0.45;
+      const top = shipOnly ? SHIP_HALF * 0.45 : RIG_TOP * 0.45;
       this.trail.startFollow(sv, 0, shipOnly ? 14 : 20); this.trail.start();
       this.tweens.add({ targets: sv, y: PORT_Y + top, duration: d(1700), ease: 'Cubic.easeOut' });
     });
@@ -283,7 +280,7 @@ export class CutsceneScene extends Phaser.Scene {
     this.at(1500, () => this.children.list.filter((c) => c.type === 'BitmapText' && c.text === 'UNDOCKED').forEach((c) => c.destroy()));
     this.at(1900, () => {
       this.cut(false);
-      const rig = this.makeRig(1, true);    // the leased drill unit was coupled on at the surface yard
+      const rig = this.makeRig(1);
       rig.y = -100;
       this.surface.add(rig);
       this.rig = rig;

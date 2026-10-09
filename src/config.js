@@ -83,7 +83,7 @@ export const TUNING = {
   // Same-deck trip: 32 px straight across the deck (over the ladder grate) = 32/48 = ~0.67 s.
   // Cross-deck trip: 16 px to the ladder + 28 px direct climb + 16 px out = 32/48 + 28/70 = ~1.07 s.
   CREW_WALK_SPEED: 48,     // world px / s on deck floors
-  CREW_CLIMB_SPEED: 70,    // world px / s on the hub ladder
+  CREW_CLIMB_SPEED: 70,    // world px / s in the crawl tube to the cockpit pod (kit parts: climbMul)
   START_ROOM: 'helm',      // where the crew member stands when a run starts
   PILOT_REQUIRED: true,    // throttle only responds while the crew is at the HELM
   LOCK_TOAST_COOLDOWN: 900,// ms between "NO PILOT" toasts when tapping a locked throttle
@@ -100,12 +100,41 @@ export const TUNING = {
 //   speed  50%: draw 47.5, conveyor 4.2 u/s vs  5 u/s in -> fills slowly (+0.8 u/s, ~2.5 min from empty)
 //   speed ~45%: break-even.  Below that the hopper drains while you drill.
 //   full stop : conveyor 8 u/s -> a full 120 u hopper empties in 15 s
+// ---- Ships ([C] Cletus): per-ship stats, so future ships slot in ---------------------------------
+// One entry per hull. Only CORMORANT has art + an interior so far; the others are design data
+// (docs/DESIGN.md "Future ships"). POWER below is derived from the active ship.
+//   breakaway: 'flip'    = turns 180 deg in the bore and burns out on its mains (light hulls)
+//              'reverse' = backs straight out on its retro jets, nose still to the drill (heavy / wide hulls)
+//   holdCap  : proposed hold capacity (units). NOT enforced yet (the hold is unlimited); null = no cap.
+//   siphonSide: the flank with the hose port + reel; side pockets only form on that wall for this hull.
+export const SHIPS = {
+  cormorant: { name: 'CORMORANT', cls: 'REMIXED SURVEY SAUCER', implemented: true,
+    reactor: 100, drillDraw: 95, drawExp: 1, conveyorRate: 0.08, hopperCap: 120,
+    holdCap: null, holdCapProposed: 600, flipMs: 500, breakaway: 'flip', siphonSide: 'left' },
+  brakeman: { name: 'BRAKEMAN', cls: 'EX-MILITARY RECOVERY TRACTOR', implemented: false,
+    reactor: 120, drillDraw: 95, drawExp: 1, conveyorRate: 0.07, hopperCap: 120,
+    holdCap: null, holdCapProposed: 450, flipMs: 1100, breakaway: 'reverse', siphonSide: 'right' },
+  sister_june: { name: 'SISTER JUNE', cls: 'CATAMARAN ORE BARGE', implemented: false,
+    reactor: 92, drillDraw: 95, drawExp: 1, conveyorRate: 0.095, hopperCap: 120,
+    holdCap: null, holdCapProposed: 900, flipMs: 900, breakaway: 'reverse', siphonSide: 'right' },
+  patience: { name: 'PATIENCE', cls: 'TAPERED TUG', implemented: false,
+    reactor: 100, drillDraw: 95, drawExp: 1, conveyorRate: 0.085, hopperCap: 120,
+    holdCap: null, holdCapProposed: 350, flipMs: 700, breakaway: 'flip', siphonSide: 'left' },
+};
+export const SHIP_ID = 'cormorant';
+export const SHIP = SHIPS[SHIP_ID];
+/** Breakaway style for this run: the ship's own, or ?breakaway=flip|reverse (playtests / tests). */
+export function breakawayStyle() {
+  try { const q = new URLSearchParams(location.search).get('breakaway'); if (q === 'flip' || q === 'reverse') return q; } catch { /* no window */ }
+  return SHIP.breakaway;
+}
+
 export const POWER = {
-  REACTOR: 100,             // ship reactor output (power units). x reactorMul (parts)
-  DRILL_DRAW: 95,           // drill draw at 100% (stock) speed. draw = DRILL_DRAW x realSpeed^DRAW_EXP x drawMul, capped at output
-  DRAW_EXP: 1,
-  CONVEYOR_RATE: 0.08,      // hopper units moved / s per spare power unit (x convMul): 100 spare -> 8 u/s
-  HOPPER_CAP: 120,          // hopper units (x hopperMul)
+  REACTOR: SHIP.reactor,    // ship reactor output (power units). x reactorMul (parts)
+  DRILL_DRAW: SHIP.drillDraw, // drill draw at 100% (stock) speed. draw = DRILL_DRAW x realSpeed^DRAW_EXP x drawMul, capped at output
+  DRAW_EXP: SHIP.drawExp,
+  CONVEYOR_RATE: SHIP.conveyorRate, // hopper units moved / s per spare power unit (x convMul): 100 spare -> 8 u/s
+  HOPPER_CAP: SHIP.hopperCap, // hopper units (x hopperMul)
   ORE_PER_M: 1,             // cuttings: units per metre drilled, worth PAY_PER_METER x pay mult each
   SPILL_FX_S: 0.5,          // spill feedback lingers this long after the last spilled unit
 };
@@ -141,8 +170,8 @@ export const ORE = {
 
 // ---- Side pockets + the SIPHON seat ([C] Cletus) -----------------------------------------------
 // Glowing liquid pockets in the LEFT or RIGHT bore wall. Full stop with the pocket level with the hose
-// port on that side of the hull (the alignment window), then Holt sits at the SIPHON seat (keel pod,
-// down the ladder from the hub) and holds PUMP: the tank fills, the pocket drains. Line PRESSURE builds
+// port on that side of the hull (the alignment window), then Holt sits at the SIPHON seat (beside the
+// port, off the ring corridor) and holds PUMP: the tank fills, the pocket drains. Line PRESSURE builds
 // the longer you hold (faster on volatile pockets) and falls when you let go; at 100 the line bursts:
 // part of what's left in the pocket is lost and the pump is locked out for a few seconds (no hull hit:
 // a full stop stays safe, the gamble only costs liquid and time). The tank is on the SHIP (not the drill's
@@ -153,8 +182,10 @@ export const SIPHON = {
   GAP: [160, 260],          // metres between pockets (x GAP_LEG_MUL^leg)
   GAP_LEG_MUL: 0.9,
   SPAWN_Y: -40,             // spawned above the screen: ~82 m of warning before it reaches the port
-  PORT_Y: 284,              // hose ports on both hull sides, bottom-deck level: line the pocket up here
+  PORT_Y: 274,              // CORMORANT's hose port (left flank, LAYOUT.SIPHON_PORT): line the pocket up here
   POCKET_X: { left: 30, right: 150 },   // pocket centre, in the bore wall beside the hull
+  // Pockets only form in the wall on the ship's siphon side (SHIP.siphonSide): the hose reels out of one
+  // port, and a hose reaching across the drill unit's bore would foul the clamps. ?side= is coerced.
   WINDOW_AHEAD: 4, WINDOW_PAST: 3,      // alignment window (m) around the port
   CLEAR_M: 25,              // no ore-vein stop within 25 m of a pocket stop (and no boulders arriving there)
   TANK: 100,                // litres (x tankMul from the SIPHON slot part)
@@ -223,66 +254,68 @@ export const ANIM_TIMING = {
 
 // World layout (world units = base pixels; the world is one screen wide).
 //
-// The ship is a 2-deck, 2x2 grid of rooms around a central hub column with a
-// ladder. Same-deck trips walk straight across the deck (a grate covers the
-// ladder shaft on the top deck); cross-deck trips walk to the ladder, climb
-// directly floor-to-floor, then walk out.
+// CORMORANT (top-down, FTL style). A remixed survey saucer coupled behind the leased TB-6: the drill's
+// collar seats in the recessed THROAT between the two mandibles. Inside, a RING CORRIDOR runs round
+// the central HOLD; the DRILL console is forward (behind the conveyor intake), TOOLS and the SIPHON seat
+// (by the hose port) on the left, ENGINE/REACTOR aft, a bunk on the right and the HELM out in the cockpit
+// pod, reached through a short crawl tube. Holt walks the corridor graph (NAV) between stations.
+// The INTERIOR is a separate zoomed schematic: it is laid out at the full concept scale (world 52..137 x
+// 236..327) round the same coupling face, and only shows in the inside view (the 70% hull fades out).
 //
-//      ^^^^^^^^^^^^   DRILL UNIT (leased TB-6): cutterhead at DRILL_TIP_Y, shield + grippers,
-//      |  shield    |   thrust rams, rear frame, HOPPER (ore fill window), dock collar
-//       \ hopper  /
-//   clamps + umbilicals + conveyor chute
-//   +------+--+------+
-//   | HELM |  | DRL  |   top deck   (nearest the drill)
-//   |------|==|------|   == = grate over the ladder shaft, ## = ladder
-//   | ENG  |##| TLS  |   bottom deck
-//   +------+--+------+
-//        |SIP|##  |       keel pod: the SIPHON seat, down the ladder through a grate in the bottom deck
-//        +---------+
+//            ^^^^^^^^^^^^  TB-6 drill unit (cutterhead at DRILL_TIP_Y .. collar 236)
+//        clamp \ [throat] / clamp
+//           +--+--DRL--+--+
+//        TLS |  |  HOLD  |  |__tube__(HELM)  <- cockpit pod
+//        SIP |  |        |  | BUNK
+//           +--+--------+--+
+//                 ENG
+//              (o) (o) (o)   engine arc
 export const LAYOUT = {
-  SHIP_X: 47, SHIP_W: 86, SHIP_TOP: 240, SHIP_BOTTOM: 302,
-  DRILL_TIP_Y: 168,        // cutterhead face: obstacles touching this y collide with the drill (was 218 on the old nose)
-  DRILL_W: 70,             // old nose texture (dock bay + space shots of the cutscenes)
-  // the separate drill unit above the box ship (world y): the inside view (y 213+) shows hopper, collar + conveyor
+  SHIP_X: 45, SHIP_W: 90,   // the bore span the rig occupies (tunnel 43..137, vein/pocket brackets on these flanks)
+  SHIP_TOP: 236, SHIP_BOTTOM: 298,   // coupling face .. engine bells. [C] Ships are SMALLER than drills: the hull
+                                     // is drawn at ~70% (62x62 px) behind the 90 px TB-6, a little tug pushing a big drill
+  FACE: { x: 90, y: 236 },  // the ship origin: every Cormorant PNG is drawn round it
+  ART: { w: 100, h: 96, ox: 50, oy: 26 },    // assets/ships/cormorant.png + _clamps.png frame: the origin sits at (ox, oy)
+  DECK_ART: { w: 100, h: 126, ox: 49, oy: 26 },   // cormorant_deck.png: the interior cutaway, at full concept scale
+  DRILL_TIP_Y: 168,        // cutterhead face: obstacles touching this y collide with the drill
+  DRILL_W: 70,
+  // the separate drill unit above the ship (world y): its collar seats in the ship's throat at 236
   DRILL_UNIT: { x: 45, w: 90, cutterTop: 168, bodyTop: 180, ramsTop: 202, frameTop: 212, hopperTop: 216, hopperBot: 232, collarBot: 236,
     hopperWin: { x: 70, y: 219, w: 40, h: 9 } },
-  DECKS: {
-    top:    { ceil: 242, floor: 268 },
-    bottom: { ceil: 271, floor: 296 },
-  },
-  ROOM_W: 33,              // each room; rooms are separated from the hub by 2px walls
-  HUB: { x: 84, w: 12, cx: 90 }, // ladder shaft column (ladder at cx)
-  STAND_OFFSET: 16,        // horizontal distance hub centre -> every crew stand spot
+  INTAKE: { x: 85, y: 236, w: 11, h: 6 },   // conveyor intake mouth in the throat (ore pips run collar -> hold)
+  SIPHON_PORT: { x: 62, y: 274 },           // hose port on the left flank (reel just inboard)
+  ENGINES: [80, 90, 100],                   // bell centres (x); bells end at y 298 (screen 290), the 3 px glow stays above the bottom bar (294)
+  ENGINE_Y: 298,
+  CAPS: { y: 239, x: [64, 116] },           // nav lights on the mandible tips (red port / green starboard)
   PATH_MIN_X: 62, PATH_MAX_X: 118, // boulder spawn column (in front of drill)
+  // stations: room rect (x, y, w, h), the console (st) and where Holt stands at it (stand), which way he faces
   ROOMS: [
-    { id: 'helm',   label: 'HELM', name: 'HELM',   deck: 'top',    side: 'left',  bg: '#2a2a40' },
-    { id: 'drill',  label: 'DRL',  name: 'DRILL',  deck: 'top',    side: 'right', bg: '#24303d' },
-    { id: 'engine', label: 'ENG',  name: 'ENGINE', deck: 'bottom', side: 'left',  bg: '#3a2629' },
-    { id: 'tools',  label: 'TLS',  name: 'TOOLS',  deck: 'bottom', side: 'right', bg: '#283a29' },
+    { id: 'helm',   label: 'HELM', name: 'HELM',   x: 125, y: 271, w: 12, h: 14, st: [131, 273], stand: [131, 278], face: 'up',   node: 'tube', bg: '#2a2a40' },
+    { id: 'drill',  label: 'DRL',  name: 'DRILL',  x: 75,  y: 243, w: 30, h: 11, st: [92, 245],  stand: [92, 250],  face: 'up',   node: 'f',    bg: '#24303d' },
+    { id: 'engine', label: 'ENG',  name: 'ENGINE', x: 70,  y: 300, w: 40, h: 19, st: [90, 316],  stand: [90, 309],  face: 'down', node: 'a',    bg: '#3a2629' },
+    { id: 'tools',  label: 'TLS',  name: 'TOOLS',  x: 54,  y: 259, w: 18, h: 17, st: [57, 267],  stand: [63, 267],  face: 'left', node: 'p',    bg: '#283a29' },
+    { id: 'siphon', label: 'SIP',  name: 'SIPHON', x: 52,  y: 282, w: 20, h: 15, st: [55, 290],  stand: [61, 290],  face: 'left', node: 'pa',   bg: '#1d3236' },
   ],
-  // keel pod under the hub (the ship is 86 of the 90 px the 2x inside view can show, so a side pod won't fit)
-  POD: { x: 66, w: 48, top: 299, ceil: 300, floor: 315, standX: 100, stationX: 107 },
-  OUTSIDE_CAM: { x: 90, y: 160, zoom: 1 },
-  INSIDE_CAM:  { x: 90, y: 281, zoom: 2 },  // integer zoom: the 86px-wide ship fills 172 of 180px; y fits the drill's hopper + conveyor .. keel pod
+  HOLD: { x: 80, y: 261, w: 20, h: 32 },    // central hold (shows the fill level)
+  BUNK: { x: 108, y: 284, w: 14, h: 14 },
+  // corridor graph: the ring (centre lines x 76/104, y 257/296, 7 px wide) + the crawl tube to the pod
+  NAV: {
+    nodes: { f: [90, 257], nw: [76, 257], ne: [104, 257], p: [76, 267], pa: [76, 290], sw: [76, 296], a: [90, 296], se: [104, 296],
+      s: [104, 278], t0: [108, 278], tube: [124, 278] },
+    edges: [['nw', 'f'], ['f', 'ne'], ['nw', 'p'], ['p', 'pa'], ['pa', 'sw'], ['sw', 'a'], ['a', 'se'], ['se', 's'], ['s', 'ne'],
+      ['s', 't0'], ['t0', 'tube', 'climb']],   // 'climb' = the crawl tube (CREW_CLIMB_SPEED x climbMul)
+    width: 7,
+  },
+  OUTSIDE_CAM: { x: 90, y: 168, zoom: 1 },  // drill tip at screen 160; the small hull ends at screen 290, above the (taller) bottom bar at 294
+  INSIDE_CAM:  { x: 93, y: 291, zoom: 2 },  // integer zoom: world 48..138 x 223..327 between the HUD and the station panel
 };
 
-/** Derived room geometry (shared by Ship, Crew and Textures). */
-export const ROOM_GEOM = LAYOUT.ROOMS.map((r) => {
-  const d = LAYOUT.DECKS[r.deck];
-  const left = r.side === 'left';
-  const x = left ? LAYOUT.HUB.x - 2 - LAYOUT.ROOM_W : LAYOUT.HUB.x + LAYOUT.HUB.w + 2;
-  const w = LAYOUT.ROOM_W;
-  return {
-    ...r, x, w, ceil: d.ceil, floorY: d.floor, cx: x + w / 2,
-    stationX: left ? x + 14 : x + w - 14,
-    standX: LAYOUT.HUB.cx + (left ? -1 : 1) * LAYOUT.STAND_OFFSET,
-    faceLeft: left, // the station is on the outer side of the room
-  };
-}).concat([(() => {
-  const P = LAYOUT.POD;
-  return { id: 'siphon', label: 'SIP', name: 'SIPHON', deck: 'pod', side: 'right', pod: true, bg: '#1d3236',
-    x: P.x + 1, w: P.w - 2, ceil: P.ceil, floorY: P.floor, cx: P.x + P.w / 2, stationX: P.stationX, standX: P.standX, faceLeft: false };
-})()]);
+/** Derived room geometry (shared by Ship, Crew, Textures and the UI). Rect: x, w, ceil (top), floorY (bottom). */
+export const ROOM_GEOM = LAYOUT.ROOMS.map((r) => ({
+  ...r, ceil: r.y, floorY: r.y + r.h, cx: r.x + r.w / 2, cy: r.y + r.h / 2,
+  stationX: r.st[0], stationY: r.st[1], standX: r.stand[0], standY: r.stand[1],
+  faceLeft: r.face === 'left',
+}));
 
 export const STORAGE_KEY = 'drill.bestDepth';
 

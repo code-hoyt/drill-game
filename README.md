@@ -38,23 +38,23 @@ ES modules don't load over `file://`, so you need a server.
 | **QUARTERMASTER** | shelves of parts, crates, the quartermaster bot at the counter | The parts vendor: rotating stock (6 per page, < PREV / NEXT >), reroll, LOCKED list (7 per page), buy screen. |
 | **HOLT'S BUNK** | bunk bed, locker, codex shelf | Holt's log (stats, next unlock) with a **CODEX SHELF** button (stub until M4). The loadout lives in the rig bay. |
 
-**Rig bay (garage-style parts screen).** It fits the content area: the rig's exterior at 1x (as in the bay view), drill up, on the left, with the airlock door and Holt's locker under it. The siphon keel pod hangs under the hull. Seven **callouts** run down the right, one per slot, showing the slot name and the part fitted (green when it isn't the stock part). Each slot has its own colour, used both on its callout and on the pulsing corner brackets of its hotspot on the rig:
-* the **drill nose**: drill head
-* the **cockpit porthole**, top-left: helm
-* the **plating**, top-right: hull
-* the **vents**, bottom-left: engine
-* the **tool hatch**, bottom-right: tools
-* the **keel pod** under the hull: siphon
+**Rig bay (garage-style parts screen).** It fits the content area: the rig (the TB-6 drill coupled to the CORMORANT, a small saucer tug, drawn smaller than the drill) drill up on the left, held by two station clamps over the collar, with the airlock door and Holt's locker under it. Seven **callouts** run down the right, one per slot, showing the slot name and the part fitted (green when it isn't the stock part). Each slot has its own colour, used both on its callout and on the pulsing corner brackets of its hotspot on the rig:
+* the **drill unit** (cutterhead and body): drill head
+* the **saucer hull**: hull
+* the **tool bay** on the left flank: tools
+* the **cockpit pod** on the right prong: helm
+* the **siphon port + hose reel** on the left flank: siphon
+* the **engine cluster** at the stern: engine
 * **Holt's locker** by the airlock door below the rig: Holt's kit
 
-Hotspots: drill nose 70×24 base px, the cockpit/plating quadrants 43×31, the vent/hatch quadrants 43×29, the keel pod 56×24, and the kit locker 40×24. At 390×844 that's at least about 87×52 screen px. Callouts are 80×22 (one line per part). Tapping a hotspot or its callout opens that slot's swap list, with each owned part's upside and downside (paged if it doesn't fit); **<** returns to the bay. Swapping only works while docked.
+Hotspots (base px): drill 84×24, hull 84×36, tools/helm/siphon/kit 32×24, engines 34×24. At 390×844 that's at least about 69×52 screen px. Callouts are 80×22 (one line per part). Tapping a hotspot or its callout opens that slot's swap list, with each owned part's upside and downside (paged if it doesn't fit); **<** returns to the bay. Swapping only works while docked.
 
 
 | View | Controls |
 |---|---|
 | **Outside** (drill face) | Throttle slider on the right (drag/tap), or the `+` / `-` buttons. **This only works while someone is at the HELM.** The green part of the track is "safe to hit a boulder" speed. Tap the ship or **INSIDE** to go in. |
 | **Inside** (cutaway) | Tap a room (HELM / DRL on the top deck, ENG / TLS on the bottom deck) to walk there. At the HELM the action area is a horizontal throttle (drag, or `-` / `+`). At other stations you **hold** the action button. **OUTSIDE** goes back. |
-| **Bottom bar** (both views) | View toggle, pilot status (`PILOT AT HELM` / `PILOT EN ROUTE...` / a **`NO PILOT: GO TO HELM`** button), and the current speed setting (with a lock icon when nobody is piloting). |
+| **Bottom bar** (both views, y 294–320; buttons 24 base px ≈ 52 CSS px tall at 390×844) | View toggle, pilot status (`PILOT AT HELM` / `PILOT EN ROUTE...` / a **`NO PILOT: GO TO HELM`** button), and the current speed setting (with a lock icon when nobody is piloting). |
 
 Optional desktop keys: `W/S` or arrow keys for throttle (only when piloted), `Space` to toggle the view, `1/2/3/4` to pick a room (HELM/DRL/ENG/TLS), `E` (hold) for the primary action, `Q` (hold) to blast, `R`/`Enter` to restart.
 
@@ -68,20 +68,19 @@ Optional desktop keys: `W/S` or arrow keys for throttle (only when piloted), `Sp
   * Tapping a locked throttle (slider or +/-) shakes it, shows `NO PILOT! TAP GO TO HELM`, and flashes the GO TO HELM button. That button is a one-tap shortcut that walks the crew back to the helm (you can stay outside and watch the throttle unlock when they arrive).
   * The HELM's room gets a `!` bubble when a boulder is ahead and the throttle is above the safe ramming speed.
   * Set `PILOT_REQUIRED: false` to go back to the old "throttle anywhere" behaviour.
-* **Ship layout (2 decks, 2x2 rooms around a hub)**:
+* **Ship layout (CORMORANT, top-down FTL-style interior)**: outside, the 70% saucer hull sits coupled behind the TB-6 (the throat seats the collar between the two prongs). Inside, the roof fades out (same camera transition) to a top-down cutaway drawn at full scale:
   ```
-          /\        drill nose
-   +------+--+------+
-   | HELM |  | DRL  |   top deck (nearest the drill)
-   |------|==|------|   == grate deck plate over the ladder shaft
-   | ENG  |##| TLS  |   bottom deck   (## = ladder)
-   +------+--+------+
+            [ DRILL ]          forward console behind the conveyor intake
+     +---- ring corridor ----+
+   [TOOLS] |    HOLD    |  ==tube== [HELM]   cockpit pod on the right prong
+   [SIPH]  |  (fill %)  | [BUNK]
+     +-------------------+
+           [ ENGINE/REACTOR ]  stern
   ```
-  * **Same-deck trips** (HELM↔DRL, ENG↔TLS) walk straight across the floor, over the grate on the top deck, with no climbing: 32 px at `CREW_WALK_SPEED` 48, about **0.68 s**.
-  * **Cross-deck trips** (all other pairs) walk 16 px to the ladder, climb directly floor to floor (28 px at `CREW_CLIMB_SPEED` 70, with no stop), then walk 16 px out: 60 px, about **1.07 s**. The diagonal trips (e.g. HELM↔TLS) take the same time as the straight-down ones (HELM↔ENG), because every stand spot is `STAND_OFFSET` = 16 px from the ladder.
-  * **Retargeting** re-plans from where the crew is:
-    * On a deck, same-deck targets mean walking straight there (including turning straight back); other-deck targets mean walking to the ladder and climbing once.
-    * On the ladder, the crew continues or reverses straight to the deck the new target is on, then walks out.
+  * Holt walks a node graph (ring corridor round the hold, doorways at the corners) with shortest-path routing at `CREW_WALK_SPEED` 48. The crawl tube to the helm pod counts as climbing (`CREW_CLIMB_SPEED` 70, so climb-speed kit still matters). Key trips measure 0.97–1.97 s (average ~1.7 s).
+  * **Retargeting** re-plans from where he is: mid-corridor he heads for whichever end of his current segment gives the shorter route; mid-tube he continues or reverses.
+  * The HOLD shows a fill level (conveyed ore vs the ship's proposed hold size; the cap itself is not enforced yet).
+  * Per-ship stats (reactor, drill draw, conveyor, hopper, breakaway style, siphon side) live in `SHIPS` in `src/config.js`; see DESIGN.md §4.5 for the four planned ships.
 * **Ore veins ([C], v0.9)**: seams of ore cross the bore ahead (one every 120–200 m, a little more often each leg). You get an early alert ~70 m out (toast, ore icon, top-right chip `RICH VEIN 38M`). Inside 45 m, stop-window brackets show at the drill tip: the vein's centre line has to be 4 m ahead to 2 m past the tip.
   * **Full stop** there (speed 0) → `STOPPED AT VEIN`. Walk to **DRL** and **hold EXTRACT**: ore flows into the drill's hopper (SMALL 50 / RICH 140 / FINE 330 per vein × the pay multiplier, over 3/5/6 s).
   * Extracting raises the vein's **RISK** (instability; purely greed-driven: faster the more you've taken, no random tremors, with a warning at 70). Let go and it bleeds off. At 100 it **collapses**: drill damage and half of that vein's value lost (from the hopper first, then the hold).
@@ -94,9 +93,9 @@ Optional desktop keys: `W/S` or arrow keys for throttle (only when piloted), `Sp
   * Heat cools 6/s faster than passive.
   * Cues: `ALL STOP` in the bottom bar and an `ALL STOP: HOLDING` chip. Alarms dim and stop blinking, the red hull light goes off, and dust settles; it all fades back on throttle-up.
   * The only cost is lost time (no pay while stopped). Discrete choices (a vein collapse, rocking a jam) still cost. Tuning is in `CALM` in `src/config.js`.
-* **Side pockets + SIPHON seat ([C], v0.10)**: glowing liquid pockets in the LEFT or RIGHT bore wall (every 160–260 m from 110 m on, a bit more often each leg). Warning ~80 m out: toast `RICH POCKET LEFT: STOP BESIDE IT`, a droplet icon, and the chip `RICH POCKET L 38M`. Inside 60 m an alignment bracket shows on that hull flank around the **hose port**.
+* **Side pockets + SIPHON seat ([C], v0.10)**: glowing liquid pockets in the bore wall on the ship's siphon side (LEFT for the Cormorant) (every 160–260 m from 110 m on, a bit more often each leg). Warning ~80 m out: toast `RICH POCKET LEFT: STOP BESIDE IT`, a droplet icon, and the chip `RICH POCKET L 38M`. Inside 60 m an alignment bracket shows on the bore wall beside the **hose port** on the Cormorant's left flank.
   * **Full stop** with the pocket 4 m ahead to 3 m past the port → `STOPPED AT POCKET`. The hose runs out to the wall, and **GO TO SIPHON** appears in the bottom bar. Drive past and it's `POCKET MISSED` (no penalty).
-  * The **SIPHON seat (SIP)** is a keel pod under the hub: down the ladder through a grate in the bottom deck (HELM → SIP ~1.2 s). Holt must be in the seat.
+  * The **SIPHON seat (SIP)** is on the port side of the ring, by the hose reel (HELM → SIP ~1.9 s). Holt must be in the seat.
   * **Hold PUMP**: 20 L/s into the tank, the pocket drains, the hose shows flow. **PRESS** rises the longer you hold (escalating) and falls 30/s when you let go. At 100 the **line bursts**: 30% of what's left in the pocket is lost, the deck sprays, and the pump locks for 3 s. No drill damage; it's purely your gamble.
   * Types: SMALL 40 L / 60 cr (safe), RICH 70 L / 150 cr (one breather needed), VOLATILE (rare) 50 L / 260 cr with pressure ×2.2 (short pulses). Value × the pay multiplier.
   * **Tank** 100 L (2–3 small pockets). Full tank = no pumping (`TANK FULL: SKIP IT`). The tank is on the ship. **Relays sell the tank** into the hold (`SOLD n L LIQUID`). On drill loss the tank is sold into the hold before the 1/3 is kept. The split reads `CUT n ORE n LIQ n` at relays and `ORE nV / LIQUID nP` at the end.
@@ -220,7 +219,7 @@ src/
     Pockets.js             side pockets: spawn, alignment window at the hose port, pumping/tank/pressure/burst, pocket + hose + bracket drawing
     Veins.js               ore veins: spawn, stop window, extraction, instability/collapse, lost/scrap, on-screen markers
     Events.js              decision events director (fires removed in v0.11): drill jam (rock/free), power surge (overclock/shut down/blowout)
-    Ship.js                drill unit (cutterhead, rams, hopper, collar) + coupling (clamps, umbilicals, conveyor) + DRL monitor; ship visuals: 2-deck 2x2 cutaway + hub ladder + SIPHON keel pod, stations, exterior, drill, room tap zones
+    Ship.js                drill unit (cutterhead, rams, hopper, collar) + coupling (clamps, umbilicals, conveyor) + DRL monitor; ship visuals: CORMORANT hull art + top-down interior (ring corridor, hold gauge, crawl tube, stations), exterior, drill, room tap zones
     Crew.js                crew member: hub-routed path planning, walk/climb/work animation
     ViewController.js      camera pan/zoom between outside and inside
     PixelFont.js           runtime-generated 3x5 bitmap font ('pixel')
@@ -269,7 +268,7 @@ docs/DESIGN.md             game design doc
 | `HARD_*` | start 120 m, 35% per 60 m, heat×2, wear×3, cap 0.7 | hard rock bands |
 | `HEAT/WEAR_ALERT`, `HULL_ALERT` | 70 / 70 / 35 | alert thresholds |
 | `CREW_WALK_SPEED` | 48 | crew speed on deck floors (world px/s); same-deck trip about 0.68 s |
-| `CREW_CLIMB_SPEED` | 70 | crew speed on the hub ladder; cross-deck trip about 1.07 s |
+| `CREW_CLIMB_SPEED` | 70 | crew speed in the helm crawl tube |
 | `START_ROOM` | `'helm'` | where the crew starts each run |
 | `PILOT_REQUIRED` | true | throttle only works with the crew at the helm |
 | `LOCK_TOAST_COOLDOWN` | 900 | ms between "NO PILOT" toasts when you tap a locked throttle |
@@ -281,7 +280,7 @@ docs/DESIGN.md             game design doc
 | `REPAIR_COST_BASE` / `REPAIR_COST_GROWTH` / `REPAIR_STEP` | 4 / 1.5 / 10 | drill repair price per point at relay 1, growth per relay, small repair button size |
 | `BOOST_CHOICES` | 3 | supplies offered per relay |
 
-`LAYOUT` holds the geometry: the drill unit (`DRILL_UNIT`: cutter tip at y 168, hopper 216–232, collar to 236) above an 86×62 px ship, deck ceilings and floors (`DECKS`), `ROOM_W` 33, the hub/ladder column (`HUB`), and `STAND_OFFSET`. It also holds the two camera targets: `OUTSIDE_CAM` at zoom 1, and `INSIDE_CAM` at **integer zoom 2**, which fits the whole ship between the HUD and the station panel so every pixel is the same size. `ROOM_GEOM` (derived) gives each room's x, floor, station and stand spot, and is shared by the ship, the crew, and the exterior art.
+`LAYOUT` holds the geometry: the drill unit (`DRILL_UNIT`: cutter tip at y 168, hopper 216–232, collar to 236) above the CORMORANT (coupling face at 90,236, 70% hull 236–298, hull art frames `ART`/`DECK_ART`), the interior `ROOMS` (rect, station, stand spot, facing, nav node) and the `NAV` graph. It also holds the two camera targets: `OUTSIDE_CAM` at zoom 1, and `INSIDE_CAM` at **integer zoom 2**, which fits the whole interior between the HUD and the station panel. `ROOM_GEOM` (derived) gives each room's centre, station and stand spot. Hull art is generated by `tools/ships/cormorant.py` into `assets/ships/`.
 
 ## Testing
 
@@ -303,7 +302,7 @@ docs/DESIGN.md             game design doc
   * Every walk is ≤ 1.05 s; measured 0.23–0.46 s between neighbours and 0.91 s board → bunk.
   * With every panel open, all panel objects stay inside the content area (22–202), and the five concourse columns stay live and uncovered.
   * Tapping the active spot closes to the bay view, and tapping again reopens. X closes. On the codex, tapping the bunk returns to the log. Tapping the rig walks to the airlock.
-* Rig bay: 7 thumb-sized hotspots plus 7 callouts (incl. the siphon keel pod), each opening its own slot list. Callouts show the equipped parts and update after a swap. Equipping heavy plating (hull) and wide-cut (drill nose) from the bay persists.
+* Rig bay: 7 thumb-sized hotspots plus 7 callouts (incl. the siphon port), each opening its own slot list. Callouts show the equipped parts and update after a swap. Equipping heavy plating (hull) and wide-cut (drill nose) from the bay persists.
 * Quartermaster paging: 12 offers show 6 per page. NEXT shows the other 6 (all 12 reachable, no repeats) and PREV goes back. The buy screen and slot lists fit the content area.
 * Vendor stock: 12 offers, 2 per slot, never stock or owned parts; it's randomized across draws and refreshed per contract.
 * Shortcuts: `?credits=` and `?stock=` work.
@@ -338,7 +337,7 @@ docs/DESIGN.md             game design doc
 **Side pockets + SIPHON coverage (v0.10)**:
 * `?pocket=small&side=right`: spawns in the right wall (outside the bore) with toast, chip and icon; no PUMP while it's ahead; driving past gives `POCKET MISSED`.
 * `?pocket=rich&side=left`: the alignment bracket and chip count down; in the window while moving, PUMP is still off; a full stop in the window gives `STOPPED AT POCKET`, the hose runs out, and GO TO SIPHON shows.
-* Seat required: PUMP at the helm does nothing. GO TO SIPHON walks Holt to the keel pod (~1.2 s). Inside, the drill tip to the pod floor are all visible; the panel shows TANK/PRESS and HOLD: PUMP.
+* Seat required: PUMP at the helm does nothing. GO TO SIPHON walks Holt to the siphon seat (< 2.3 s). Inside, the whole interior is visible; the panel shows TANK/PRESS and HOLD: PUMP.
 * Holding PUMP fills the tank ~20 L/s, drains the pocket by the same amount, builds pressure; release drops pressure and stops flow. Outside, the hose and flow are drawn.
 * Full tank: pumping stops exactly at capacity, `TANK FULL`, PUMP disabled, chip `TANK FULL: SKIP IT`.
 * Volatile pocket: sustained pumping bursts the line; 30% of the remainder is lost, 3 s lockout, hold released, no drill damage; PUMP works again after, and it can be pumped dry.

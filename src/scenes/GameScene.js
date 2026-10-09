@@ -1,5 +1,5 @@
 // The world: terrain, boulders, the ship and its crew. Owns the simulation.
-import { TUNING as T, LAYOUT as L, ORE, EVENTS as E, CALM, SIPHON, loadBest, saveBest } from '../config.js';
+import { TUNING as T, LAYOUT as L, ORE, EVENTS as E, CALM, SIPHON, SHIP, breakawayStyle, loadBest, saveBest } from '../config.js';
 import { Veins } from '../systems/Veins.js';
 import { Pockets } from '../systems/Pockets.js';
 import { EventDirector } from '../systems/Events.js';
@@ -9,6 +9,7 @@ import { Obstacles } from '../systems/Obstacles.js';
 import { Ship } from '../systems/Ship.js';
 import { Crew } from '../systems/Crew.js';
 import { ViewController } from '../systems/ViewController.js';
+import { SHIP_TEX, hullImage } from '../systems/ShipArt.js';
 import { FONT_KEY } from '../systems/PixelFont.js';
 import { drawBoosts } from '../data/boosts.js';
 import { RELAY_PING, relayMessage, CASHOUT_LINE, BREAKAWAY_LINE } from '../data/dispatch.js';
@@ -17,7 +18,7 @@ import { ANIM, animScale, GRACE_MS } from '../systems/Settings.js';
 
 // Hold-actions per station. The HELM has none: its action area is the throttle itself.
 // DRL is the remote DRILL CONSOLE (bit wear, EXTRACT at a vein, FREE THE BIT on a jam). TLS patches drill integrity.
-// SIPHON (keel pod): PUMP, stopped with a side pocket lined up with a hose port.
+// SIPHON (seat by the hose port): PUMP, stopped with a side pocket lined up with the port.
 export const STATION_ACTIONS = { engine: ['vent'], helm: [], drill: ['repair', 'extract', 'freebit'], tools: ['patch', 'blast'], siphon: ['pump'] };
 
 export class GameScene extends Phaser.Scene {
@@ -182,7 +183,7 @@ export class GameScene extends Phaser.Scene {
       this.leftRun = true;
       if (!ANIM) { this.scene.launch('GameOver', this.lastRun); return; }
       this.scene.stop('UI');
-      this.scene.start('Cutscene', { kind: 'ascent', vehicle: reason === 'cashout' ? 'rig' : 'ship', summary: this.lastRun });
+      this.scene.start('Cutscene', { kind: 'ascent', vehicle: reason === 'cashout' ? 'rig' : 'ship', style: this.breakState ? this.breakState.style : undefined, summary: this.lastRun });
     };
     if (reason === 'cashout') {
       this.cameras.main.fadeOut(ANIM ? 800 : 700, 0, 0, 0);
@@ -212,36 +213,47 @@ export class GameScene extends Phaser.Scene {
       tint: [0xffe27a, 0xff9a3d, 0xffffff], frequency: 70, quantity: 2,
     }).setDepth(20);
     this.wreckSparks.addEmitZone({ type: 'random', source: new Phaser.Geom.Rectangle(DU.x + 6, L.DRILL_TIP_Y + 4, DU.w - 12, 30) });
-    // stand-in for the ship (plating + keel pod) that can back off, flip and burn out
-    const cy = (L.SHIP_TOP + L.POD.top + 19) / 2;
-    const ship = this.add.container(90, cy).setDepth(42);
-    ship.add([this.add.image(L.SHIP_X - 90, L.SHIP_TOP - cy, 'ship_ext').setOrigin(0), this.add.image(L.POD.x - 90, L.POD.top - cy, 'pod_ext').setOrigin(0)]);
+    // stand-in for the ship that can leave the bore: per-ship style (SHIPS.<id>.breakaway, ?breakaway= overrides)
+    //   flip   : back off, turn 180 deg, burn out on the mains (light hulls; CORMORANT)
+    //   reverse: retro jets on the face fire and it backs straight out, nose still to the drill (heavy / wide hulls)
+    const style = breakawayStyle(), F = L.FACE, half = Math.round((L.SHIP_BOTTOM - F.y) / 2), cy = F.y + half;
+    const ship = this.add.container(F.x, cy).setDepth(42);
+    ship.add(hullImage(this, SHIP_TEX.hull, 0, F.y - cy));
     for (const o of sh.shipObjects()) o.setVisible(false);
     const plume = this.add.particles(0, 0, 'px2', {
       speed: { min: 10, max: 30 }, lifespan: 420, alpha: { start: 0.9, end: 0 }, scale: { start: 1.5, end: 3 },
       tint: [0xffd23f, 0xff8a3d, 0x7fe0ff], frequency: 18, emitting: false,
     }).setDepth(41);
+    // retro jets (reverse): short blue-white jets off the mandible fronts, pointing at the drill
+    const retro = this.add.particles(0, 0, 'px', {
+      speedY: { min: -60, max: -30 }, speedX: { min: -6, max: 6 }, lifespan: 260, alpha: { start: 1, end: 0 },
+      tint: [0xe6f8ff, 0x7fd0ff, 0x3a7ad9], frequency: 12, quantity: 2, emitting: false,
+    }).setDepth(41);
+    retro.addEmitZone({ type: 'random', source: { getRandomPoint: (pt) => { const x = Math.random() < 0.5 ? -19 : 19; pt.x = ship.x + x + (Math.random() - 0.5) * 10; pt.y = ship.y - half + 1; return pt; } } });
     const caption = this.add.bitmapText(90, 120, FONT_KEY, 'DRILL LOST: BREAKAWAY', 6).setOrigin(0.5).setTint(0xff4a4a).setDepth(50);
     const skip = this.add.bitmapText(176, 310, FONT_KEY, 'TAP TO SKIP', 6).setOrigin(1, 0).setTint(0x6a6278).setDepth(50).setAlpha(0);
-    const B = this.breakState = { clamp: 0, snap: 0, ship, plume, t0: this.time.now, done: false };
+    const B = this.breakState = { clamp: 0, snap: 0, ship, plume, retro, style, t0: this.time.now, done: false, maxRot: 0, retroOn: false, plumeOn: false };
+    const lerp = (a, b, t) => a + (b - a) * t;
     const drawCoupling = () => {
-      const g = sh.breakGfx.clear(), roof = ship.y - (cy - L.SHIP_TOP);
-      // clamp arms swing open off the frame, folding back onto the ship roof (they ride with the ship)
-      for (const m of [1, -1]) {
-        if (ship.rotation > 0.4) break;
-        const bx = 90 - m * 38, ex = bx - m * (4 + 10 * B.clamp), tx = bx + m * (4 - 14 * B.clamp);
-        const ty = roof - 27 + 22 * B.clamp;
-        g.lineStyle(2, 0x14161c, 1).lineBetween(bx, roof, ex, roof - 13).lineBetween(ex, roof - 13, tx, ty);
-        g.lineStyle(1, 0xb89a48, 1).lineBetween(bx, roof, ex, roof - 13).lineBetween(ex, roof - 13, tx, ty);
+      const g = sh.breakGfx.clear(), face = ship.y - half, attached = Math.abs(ship.rotation) < 0.4;
+      B.maxRot = Math.max(B.maxRot, Math.abs(ship.rotation));
+      // clamp arms swing open off the drill frame and fold back onto the hull (they ride with the ship)
+      if (attached) for (const m of [1, -1]) {
+        const rx = ship.x + m * 22, ry = face + 4;
+        const jx = lerp(90 + m * 44, ship.x + m * 30, B.clamp), jy = lerp(215, face - 4, B.clamp);
+        const ex = lerp(90 + m * 40, ship.x + m * 34, B.clamp), ey = lerp(230, face, B.clamp);
+        g.lineStyle(3, 0x0c0b10, 1).lineBetween(rx, ry, ex, ey).lineBetween(ex, ey, jx, jy);
+        g.lineStyle(1, 0x646b79, 1).lineBetween(rx, ry, ex, ey).lineBetween(ex, ey, jx, jy);
+        g.fillStyle(0xd9822b, 1).fillRect(Math.round(jx) - 1, Math.round(jy) - 2, 3, 4);
       }
       // umbilicals: whole, then snapped (stubs whip on the drill, frayed ends on the ship)
-      const hoses = [[61, 221, 67, roof, 0xd0503a], [118, 221, 113, roof, 0x4a9ad8]];
+      const hoses = [[61, 224, ship.x - 15, face + 6, 0xc9473c], [119, 224, ship.x + 15, face + 6, 0x4aa3c8]];
       for (const [x0, y0, x1, y1, c] of hoses) {
         if (B.snap < 1) g.lineStyle(2, c, 1).lineBetween(x0, y0, x1, y1);
         else {
           const wob = Math.sin(this.time.now / 60 + x0) * 3;
           g.lineStyle(2, c, 1).lineBetween(x0, y0, x0 + wob, y0 + 8);
-          if (ship.rotation < 0.4) g.lineStyle(2, c, 1).lineBetween(x1, y1, x1 - wob, y1 - 4);
+          if (attached) g.lineStyle(2, c, 1).lineBetween(x1, y1, x1 - wob, y1 - 4);
         }
       }
       // conveyor chute torn off the collar
@@ -253,16 +265,25 @@ export class GameScene extends Phaser.Scene {
     at(150, () => this.tweens.add({ targets: B, clamp: 1, duration: d(300), ease: 'Back.easeOut', onUpdate: drawCoupling }));
     at(450, () => {
       B.snap = 1; drawCoupling();
-      this.boom.explode(14, 64, 230); this.boom.explode(14, 116, 230);
+      this.boom.explode(14, 61, 226); this.boom.explode(14, 119, 226);
       cam.shake(d(150), 0.01);
     });
-    at(600, () => this.tweens.add({ targets: ship, y: cy + 18, duration: d(450), ease: 'Sine.easeOut', onUpdate: drawCoupling }));
-    at(1050, () => this.tweens.add({ targets: ship, rotation: Math.PI, duration: d(500), ease: 'Sine.easeInOut', onUpdate: drawCoupling }));
-    at(1550, () => {
-      plume.startFollow(ship, 0, -34); plume.start();
-      this.tweens.add({ targets: ship, y: 440, duration: d(700), ease: 'Quad.easeIn', onUpdate: drawCoupling });
-    });
-    at(2250, () => plume.stop());
+    if (style === 'reverse') {
+      // heavy: the retros light, it creeps off the collar, then backs out down the bore, gathering speed
+      at(550, () => { retro.start(); B.retroOn = true; cam.shake(d(1200), 0.004); });
+      at(600, () => this.tweens.add({ targets: ship, y: cy + 10, duration: d(800), ease: 'Sine.easeInOut', onUpdate: drawCoupling }));
+      at(1400, () => this.tweens.add({ targets: ship, y: 440, duration: d(900), ease: 'Cubic.easeIn', onUpdate: drawCoupling }));
+      at(2250, () => retro.stop());
+    } else {
+      const flip = SHIP.flipMs || 500;
+      at(600, () => this.tweens.add({ targets: ship, y: cy + 18, duration: d(450), ease: 'Sine.easeOut', onUpdate: drawCoupling }));
+      at(1050, () => this.tweens.add({ targets: ship, rotation: Math.PI, duration: d(flip), ease: 'Sine.easeInOut', onUpdate: drawCoupling }));
+      at(1050 + flip, () => {
+        plume.startFollow(ship, 0, -half); plume.start(); B.plumeOn = true;
+        this.tweens.add({ targets: ship, y: 440, duration: d(Math.max(400, 1200 - flip)), ease: 'Quad.easeIn', onUpdate: drawCoupling });
+      });
+      at(2250, () => plume.stop());
+    }
     const finish = () => { if (B.done) return; B.done = true; B.skipped = this.time.now - B.t0 < d(2400) - 5; B.ms = Math.round(this.time.now - B.t0); done(); };
     at(2400, finish);
     this.time.delayedCall(GRACE_MS, () => { if (!B.done) skip.setAlpha(1); });
@@ -409,7 +430,7 @@ export class GameScene extends Phaser.Scene {
     if (events.includes('restart')) this.toast('ENGINE BACK ONLINE', 0x8affa0);
     this.updateCalm(dt, s);
     const st = this.ship.room(this.crew.station || 'drill');
-    this.ship.sparks.setPosition(st.stationX, st.floorY - 9);
+    this.ship.sparks.setPosition(st.stationX, st.stationY);
     this.ship.sparks.emitting = this.crew.working && this.hold !== 'pump';
     this.crew.update(dt);
 

@@ -1,14 +1,14 @@
 import { GAME_W, GAME_H, loadBest } from '../config.js';
 import { loadSave } from '../systems/Save.js';
 import { FONT_KEY } from '../systems/PixelFont.js';
+import { rigParts } from '../systems/ShipArt.js';
 
 export class TitleScene extends Phaser.Scene {
   constructor() { super('Title'); }
   create() {
     this.bg = this.add.tileSprite(0, 0, GAME_W, GAME_H, 'rock').setOrigin(0);
     this.add.rectangle(0, 0, GAME_W, GAME_H, 0x000000, 0.45).setOrigin(0);
-    this.add.image(GAME_W / 2, 150, 'drill0').setOrigin(0.5, 0);
-    this.add.image(GAME_W / 2, 172, 'ship_ext').setOrigin(0.5, 0);
+    this.add.container(GAME_W / 2, 140 + 69, rigParts(this, 260).parts).setScale(0.75);   // TB-6 + CORMORANT at 3/4: tip y 140 .. engines y 237
     const t = (y, s, str, tint = 0xffffff) => this.add.bitmapText(GAME_W / 2, y, FONT_KEY, str, s).setOrigin(0.5).setTint(tint);
     t(60, 24, 'DRILL', 0xffb347);
     t(88, 6, 'AN ENDLESS DIG INTO AN ALIEN WORLD', 0xb8b0c8);

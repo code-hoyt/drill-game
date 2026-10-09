@@ -9,10 +9,11 @@ import { Button } from '../ui/Button.js';
 
 const VTRACK = { x: 160, y: 134, w: 14, h: 138 }; // outside view: vertical slider
 const PBAR = { x: 146, y: 134, w: 5, h: 138 };     // outside view: power split, beside the slider
-const HPBAR = { x: 34, y: 287, w: 112, h: 4 };    // inside view at HELM: power split under the slider
+const HPBAR = { x: 34, y: 281, w: 112, h: 3 };    // inside view at HELM: power split under the slider (labels end above the bar at 294)
 const HTRACK = { x: 34, y: 260, w: 112, h: 12 };  // inside view at HELM: horizontal slider
 const PANEL_Y = 232;                               // inside station panel top
-const BAR_Y = 303;                                 // bottom status bar (both views)
+const BAR_Y = 294;                                 // bottom bar (both views): [C] 1.75x taller buttons (24 base px = 52 CSS px on a 390 px phone)
+const BTN_H = 24;
 const ROOM_NAMES = Object.fromEntries(ROOM_GEOM.map((r) => [r.id, r.name]));
 
 export class UIScene extends Phaser.Scene {
@@ -61,14 +62,14 @@ export class UIScene extends Phaser.Scene {
     // --- bottom status bar (both views) -------------------------------------------
     this.add.rectangle(0, BAR_Y, GAME_W, GAME_H - BAR_Y, 0x0d0b12, 0.92).setOrigin(0);
     this.add.rectangle(0, BAR_Y, GAME_W, 1, 0x3a3348).setOrigin(0);
-    this.toggleBtn = new Button(this, 2, BAR_Y + 2, 44, 14, 'INSIDE', { onTap: () => this.g.toggleView(), color: 0x7a3320, pressColor: 0xb5532f });
-    this.pilotBtn = new Button(this, 49, BAR_Y + 2, 84, 14, 'NO PILOT: GO TO HELM', { onTap: () => this.g.sendPilot(), color: 0x8a2f24, pressColor: 0xc4503a });
-    this.pilotText = txt(91, BAR_Y + 6, '', 6).setOrigin(0.5, 0);
+    this.toggleBtn = new Button(this, 2, BAR_Y + 1, 46, BTN_H, 'INSIDE', { onTap: () => this.g.toggleView(), color: 0x7a3320, pressColor: 0xb5532f });
+    this.pilotBtn = new Button(this, 51, BAR_Y + 1, 88, BTN_H, 'NO PILOT: GO TO HELM', { onTap: () => this.g.sendPilot(), color: 0x8a2f24, pressColor: 0xc4503a });
+    this.pilotText = txt(95, BAR_Y + 10, '', 6).setOrigin(0.5, 0);
     // stopped beside a side pocket and Holt isn't at the siphon seat: one tap sends him down
-    this.siphonBtn = new Button(this, 49, BAR_Y + 2, 84, 14, 'GO TO SIPHON', { onTap: () => this.g.onRoomTap('siphon'), color: 0x1f6a64, pressColor: 0x2fa096 });
+    this.siphonBtn = new Button(this, 51, BAR_Y + 1, 88, BTN_H, 'GO TO SIPHON', { onTap: () => this.g.onRoomTap('siphon'), color: 0x1f6a64, pressColor: 0x2fa096 });
     this.siphonBtn.setVisible(false);
-    this.speedText = txt(177, BAR_Y + 6, '', 6).setOrigin(1, 0);
-    this.speedLock = this.add.image(0, BAR_Y + 5, 'lock').setOrigin(1, 0);
+    this.speedText = txt(177, BAR_Y + 10, '', 6).setOrigin(1, 0);
+    this.speedLock = this.add.image(0, BAR_Y + 9, 'lock').setOrigin(1, 0);
 
     // --- outside: vertical throttle ------------------------------------------------
     this.plus = new Button(this, 156, 114, 22, 16, '+', { size: 12, onTap: () => this.g.nudgeThrottle(T.THROTTLE_STEP) });
@@ -76,7 +77,7 @@ export class UIScene extends Phaser.Scene {
     this.vGfx = this.add.graphics();
     this.pGfx = this.add.graphics();   // power split bar (both views; drawn where the throttle is)
     this.pLabels = [txt(PBAR.x + 3, PBAR.y - 8, 'CNV', 6, 0x4ad66d).setOrigin(0.5, 0), txt(PBAR.x + 3, PBAR.y + PBAR.h + 3, 'DRL', 6, 0xff8a3d).setOrigin(0.5, 0)];
-    this.hpLabels = [txt(HPBAR.x, HPBAR.y + 6, 'DRILL', 6, 0xff8a3d), txt(HPBAR.x + HPBAR.w, HPBAR.y + 6, 'CONVEYOR', 6, 0x4ad66d).setOrigin(1, 0), txt(90, HPBAR.y + 6, 'POWER', 6, 0x7a7f96).setOrigin(0.5, 0)];
+    this.hpLabels = [txt(HPBAR.x, HPBAR.y + 5, 'DRILL', 6, 0xff8a3d), txt(HPBAR.x + HPBAR.w, HPBAR.y + 5, 'CONVEYOR', 6, 0x4ad66d).setOrigin(1, 0), txt(90, HPBAR.y + 5, 'POWER', 6, 0x7a7f96).setOrigin(0.5, 0)];
     this.hpLabels.forEach((o) => o.setVisible(false));
     this.vLock = this.add.image(VTRACK.x + VTRACK.w / 2, 186, 'lock').setScale(2);
     this.vLockText1 = txt(167, 198, 'NO', 6, 0xff5a5a).setOrigin(0.5, 0);
