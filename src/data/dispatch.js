@@ -13,7 +13,8 @@ export const RELAY_FALLBACK = [
 ];
 export const RELAY_PING = 'INES: RELAY WINDOW IN 50M.';
 export const CASHOUT_LINE = "WINCHING YOU UP. GOOD HAUL. DON'T SPEND IT ALL ON STATION COFFEE.";
-export const POD_LINE = "POD'S ON THE WINCH. THE RIG'S ON THE COMPANY. YOU'RE ON ME. GET SOME SLEEP.";
+// drill lost: the ship broke away and burned home. Meridian bills the leased drill to Holt's paycheck.
+export const BREAKAWAY_LINE = "SAW THE BREAKAWAY ON THE FEED. MERIDIAN'S BILLING THE DRILL TO YOUR PAYCHECK. YOU'RE ON ME. GET SOME SLEEP.";
 
 export function relayMessage(n) {
   return RELAY_MESSAGES[n] || RELAY_FALLBACK[(n - 5) % RELAY_FALLBACK.length];

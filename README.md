@@ -15,11 +15,11 @@ ES modules don't load over `file://`, so you need a server.
 
 ## How to play
 
-**Flow:** title → **station concourse** (home) → CONTRACT BOARD: accept a contract → Holt walks to the airlock and rides the lift up into the rig → *descent cutscene* → run → relay breaks → cash out or hull loss → *ascent cutscene* → Holt rides the lift down onto the concourse → end-of-run summary in the content area above the concourse → **the concourse**.
+**Flow:** title → **station concourse** (home) → CONTRACT BOARD: accept a contract → Holt walks to the airlock and rides the lift up into the rig → *descent cutscene* → run → relay breaks → cash out or drill loss (breakaway) → *ascent cutscene* → Holt rides the lift down onto the concourse → end-of-run summary in the content area above the concourse → **the concourse**.
 
-**Transition cutscenes** (pixel art, built from the rig's own textures; **tap anywhere to skip**, after a ~0.5 s grace so a stray tap at the start doesn't skip; "TAP TO SKIP" appears when skipping is live). **Speed is one knob: `ANIM_SCALE` in `src/config.js`** (currently **2** = double length; playtest override `?animscale=1.5`). It multiplies every cutscene beat: tweens, turns, cuts, captions, flash/shake/fade. The base timeline is 4.6 s, so 2 gives 9.2 s per cutscene. The skip grace scales by the cube root (0.4 → 0.5 s), the airlock lift by the square root (0.55 → 0.78 s), and the in-run lead-ins (cash-out fade, pod launch) don't scale. The beat times below are at scale 1; double them for the current build. The run shows the rig **drill-up** (flipped for the phone), and so does the docking bay above the concourse. Outside, on the surface and in space, it's **drill-down**. The camera turns 180° to bridge the two (only the cutscene's world camera turns; the captions and every HUD stay upright):
+**Transition cutscenes** (pixel art, built from the rig's own textures; **tap anywhere to skip**, after a ~0.5 s grace so a stray tap at the start doesn't skip; "TAP TO SKIP" appears when skipping is live). **Speed is one knob: `ANIM_SCALE` in `src/config.js`** (currently **2** = double length; playtest override `?animscale=1.5`). It multiplies every cutscene beat: tweens, turns, cuts, captions, flash/shake/fade. The base timeline is 4.6 s, so 2 gives 9.2 s per cutscene. The skip grace scales by the cube root (0.4 → 0.5 s), the airlock lift by the square root (0.55 → 0.78 s), and the cash-out fade doesn't scale (the in-run breakaway does). The beat times below are at scale 1; double them for the current build. The run shows the rig **drill-up** (flipped for the phone), and so does the docking bay above the concourse. Outside, on the surface and in space, it's **drill-down**. The camera turns 180° to bridge the two (only the cutscene's world camera turns; the captions and every HUD stay upright):
 * **Descent (4.6 s × ANIM_SCALE = 9.2 s, after the boarding beat: the walk to the airlock, up to 0.9 s, plus the 0.78 s lift):** opens on exactly the concourse's bay framing (rig drill-up, station below) and the camera turns out to the station view (drill down, 0.8 s). The clamps release ("UNDOCKED") and the rig drops away toward the rust planet, which grows beneath it. Cut to the surface at dusk: the rig drops nose-first on thrusters. The drill bites (chips, shake, spinning bit), and as the rig sinks into its hole the camera follows it and turns 180° with a gentle zoom (1.15 s). It lands in the run's view: drill up, rock above, ship where the run draws it. Then a short fade into the run.
-* **Ascent (4.6 s × ANIM_SCALE = 9.2 s, after the in-run beat: 0.85 s fade on cash out, or the 1.6 s escape-pod ride on hull loss; then the 0.78 s lift on the concourse):** opens on the run's view (drill up, rock above). As the rig is winched out of the bore on the gantry cable (or the pod launches), the camera turns 180° (1.5 s) to the surface's drill-down view. Cut to space: it climbs to the station's docking port and the clamps engage ("CLAMPED"). The camera turns once more and closes in (0.65 s), ending on exactly the concourse's framing of the rig in its bay. The concourse fades in, Holt rides the airlock lift down onto the floor, and the run summary opens in the content area above the concourse.
+* **Ascent (4.6 s × ANIM_SCALE = 9.2 s, after the in-run beat: 0.85 s fade on cash out, or the 2.4 s × ANIM_SCALE breakaway on drill loss; then the 0.78 s lift on the concourse):** opens on the run's view (drill up, rock above). As the rig is winched out of the bore on the gantry cable (or, after a breakaway, the ship climbs out alone), the camera turns 180° (1.5 s) to the surface's drill-down view. Cut to space: it climbs to the station's docking port and the clamps engage ("CLAMPED"). The camera turns once more and closes in (0.65 s), ending on exactly the concourse's framing of the rig in its bay. The concourse fades in, Holt rides the airlock lift down onto the floor, and the run summary opens in the content area above the concourse.
 * `?anim=0` turns them off (the old flow: summary over the run, and straight into the run from the contract board).
 
 **Station concourse (home base).** The screen, top to bottom: HUD (0–22) | **content area** (22–202) | **concourse strip** (202–300) | bottom bar (303–320, base px).
@@ -58,7 +58,7 @@ Hotspots: drill nose 70×24 base px, the cockpit/plating quadrants 43×31, the v
 
 Optional desktop keys: `W/S` or arrow keys for throttle (only when piloted), `Space` to toggle the view, `1/2/3/4` to pick a room (HELM/DRL/ENG/TLS), `E` (hold) for the primary action, `Q` (hold) to blast, `R`/`Enter` to restart.
 
-**Debug/playtest URL params:** `?anim=0` skips the cutscenes. `?unlock=all` unlocks every part. `?credits=5000` sets your credits. `?own=all` (or `?own=widecut,plating`) owns parts. `?stock=id,id,...` forces the Quartermaster's stock. `?wipe=1` clears the save. `?depth=950` starts the run at 950 m (relay 1 is 50 m ahead). `?boosts=plate,coolant,charge` fixes the relay supply offers (ids in `src/data/boosts.js`). `?vein=small|rich|fine` puts a vein ~45 m ahead at the start of the run. `?event=fire|jam|surge` triggers that event 1.5 s in (`?event=fire:helm` picks the room). `?pocket=small|rich|volatile&side=left|right` puts a side pocket ~45 m ahead (lined up with the hose port on that side). `?noevents=1` turns off random veins, pockets and events (the tests use it). In the console, `__drill.scene.getScene('Game').debugJump(1980)` jumps mid-run and keeps the haul.
+**Debug/playtest URL params:** `?anim=0` skips the cutscenes. `?unlock=all` unlocks every part. `?credits=5000` sets your credits. `?own=all` (or `?own=widecut,plating`) owns parts. `?stock=id,id,...` forces the Quartermaster's stock. `?wipe=1` clears the save. `?depth=950` starts the run at 950 m (relay 1 is 50 m ahead). `?boosts=plate,coolant,charge` fixes the relay supply offers (ids in `src/data/boosts.js`). `?vein=small|rich|fine` puts a vein ~45 m ahead at the start of the run. `?event=jam|surge` triggers that event 1.5 s in (`?event=fire` is a no-op since fires were removed). `?pocket=small|rich|volatile&side=left|right` puts a side pocket ~45 m ahead (lined up with the hose port on that side). `?noevents=1` turns off random veins, pockets and events (the tests use it). In the console, `__drill.scene.getScene('Game').debugJump(1980)` jumps mid-run and keeps the haul.
 
 ## Mechanics
 
@@ -83,54 +83,52 @@ Optional desktop keys: `W/S` or arrow keys for throttle (only when piloted), `Sp
     * On a deck, same-deck targets mean walking straight there (including turning straight back); other-deck targets mean walking to the ladder and climbing once.
     * On the ladder, the crew continues or reverses straight to the deck the new target is on, then walks out.
 * **Ore veins ([C], v0.9)**: seams of ore cross the bore ahead (one every 120–200 m, a little more often each leg). You get an early alert ~70 m out (toast, ore icon, top-right chip `RICH VEIN 38M`). Inside 45 m, stop-window brackets show at the drill tip: the vein's centre line has to be 4 m ahead to 2 m past the tip.
-  * **Full stop** there (speed 0) → `STOPPED AT VEIN`. Walk to **DRL** and **hold EXTRACT**: ore credits flow into the haul (SMALL 50 / RICH 140 / FINE 330 per vein × the pay multiplier, over 3/5/6 s).
-  * Extracting raises the vein's **RISK** (instability; purely greed-driven: faster the more you've taken, no random tremors, with a warning at 70). Let go and it bleeds off. At 100 it **collapses**: hull damage and half of that vein's ore lost.
+  * **Full stop** there (speed 0) → `STOPPED AT VEIN`. Walk to **DRL** and **hold EXTRACT**: ore flows into the drill's hopper (SMALL 50 / RICH 140 / FINE 330 per vein × the pay multiplier, over 3/5/6 s).
+  * Extracting raises the vein's **RISK** (instability; purely greed-driven: faster the more you've taken, no random tremors, with a warning at 70). Let go and it bleeds off. At 100 it **collapses**: drill damage and half of that vein's value lost (from the hopper first, then the hold).
   * Drive through it, or overshoot the window: **VEIN LOST**, 10% scrap.
   * The relay break shows `DRILL n  ORE n`; the end screen shows `INCL. ORE (N VEINS)`.
 * **Full stop is safe ([C])**: at actual speed 0 (throttle at 0, a jam stall, or a surge shutdown):
   * No new events spawn, and the event timer pauses. It resumes with at least a 4 s grace.
-  * Fires don't spread or hurt the hull, though the room still needs EXTINGUISH.
   * A pending surge's countdown pauses (`STOPPED: COUNTDOWN PAUSED`).
-  * A jam builds no heat, there are no coolant leaks, and no hull damage ticks.
+  * A jam builds no heat, there are no coolant leaks, and no drill damage ticks.
   * Heat cools 6/s faster than passive.
   * Cues: `ALL STOP` in the bottom bar and an `ALL STOP: HOLDING` chip. Alarms dim and stop blinking, the red hull light goes off, and dust settles; it all fades back on throttle-up.
   * The only cost is lost time (no pay while stopped). Discrete choices (a vein collapse, rocking a jam) still cost. Tuning is in `CALM` in `src/config.js`.
 * **Side pockets + SIPHON seat ([C], v0.10)**: glowing liquid pockets in the LEFT or RIGHT bore wall (every 160–260 m from 110 m on, a bit more often each leg). Warning ~80 m out: toast `RICH POCKET LEFT: STOP BESIDE IT`, a droplet icon, and the chip `RICH POCKET L 38M`. Inside 60 m an alignment bracket shows on that hull flank around the **hose port**.
   * **Full stop** with the pocket 4 m ahead to 3 m past the port → `STOPPED AT POCKET`. The hose runs out to the wall, and **GO TO SIPHON** appears in the bottom bar. Drive past and it's `POCKET MISSED` (no penalty).
   * The **SIPHON seat (SIP)** is a keel pod under the hub: down the ladder through a grate in the bottom deck (HELM → SIP ~1.2 s). Holt must be in the seat.
-  * **Hold PUMP**: 20 L/s into the tank, the pocket drains, the hose shows flow. **PRESS** rises the longer you hold (escalating) and falls 30/s when you let go. At 100 the **line bursts**: 30% of what's left in the pocket is lost, the deck sprays, and the pump locks for 3 s. No hull damage; it's purely your gamble.
+  * **Hold PUMP**: 20 L/s into the tank, the pocket drains, the hose shows flow. **PRESS** rises the longer you hold (escalating) and falls 30/s when you let go. At 100 the **line bursts**: 30% of what's left in the pocket is lost, the deck sprays, and the pump locks for 3 s. No drill damage; it's purely your gamble.
   * Types: SMALL 40 L / 60 cr (safe), RICH 70 L / 150 cr (one breather needed), VOLATILE (rare) 50 L / 260 cr with pressure ×2.2 (short pulses). Value × the pay multiplier.
-  * **Tank** 100 L (2–3 small pockets). Full tank = no pumping (`TANK FULL: SKIP IT`). **Relays buy the tank** into the haul (`SOLD n L LIQUID`). On hull loss the tank counts into the haul before the 1/3 is kept. The haul split reads `DRILL n ORE n LIQ n` at relays and `INCL. LIQUID (N POCKETS)` at the end.
+  * **Tank** 100 L (2–3 small pockets). Full tank = no pumping (`TANK FULL: SKIP IT`). The tank is on the ship. **Relays sell the tank** into the hold (`SOLD n L LIQUID`). On drill loss the tank is sold into the hold before the 1/3 is kept. The split reads `CUT n ORE n LIQ n` at relays and `ORE nV / LIQUID nP` at the end.
   * Pockets keep 25 m clear of vein stops and boulders and stay out of relay approaches. Tuning is in `SIPHON` in `src/config.js`.
-* **Decision events ([P], v0.9)**, one every 30–45 s in leg 1 (22–34 s in leg 2, then 16–26 s); a relay clamp-in clears them:
-  * **FIRE** in ENG/DRL/TLS: that station is down, the room offers only **EXTINGUISH**, and it chips the hull. Left 14 s, it spreads to a neighbour (at the HELM it kills the throttle).
-  * **DRILL JAM**: the rig stalls. Rock the throttle at the HELM 0% → 60%+ ×3 (fast, costs heat and hull), or hold **FREE BIT** at DRL (3.5 s, free).
-  * **POWER SURGE** (from leg 2; the first event after relay 1): a 6 s card. **OVERCLOCK** gives ×1.4 speed and ×1.5 pay for 10 s, but runs hot. **SHUT DOWN** turns the engine off 4 s and vents heat. Ignore it and it blows out (−15 hull, +40 heat).
+* **Decision events ([P], v0.9)**, one every 36–52 s in leg 1 (24–36 s in leg 2, then 18–28 s); a relay clamp-in clears them. **[C] Fires were removed in v0.11** (no fire event, no EXTINGUISH, no blocked stations), so leg 1 is jams only:
+  * **DRILL JAM**: the rig stalls. Rock the throttle at the HELM 0% → 60%+ ×3 (fast, costs heat and drill), or hold **FREE BIT** at DRL (3.5 s, free).
+  * **POWER SURGE** (from leg 2; the first event after relay 1): a 6 s card. **OVERCLOCK** gives ×1.4 speed and ×1.5 pay for 10 s, but runs hot. **SHUT DOWN** turns the engine off 4 s and vents heat. Ignore it and it blows out down the umbilical (−15 drill, +40 heat).
   * Heat and wear chores are toned down to make room: heat 5 (was 7), leaks every 40–65 s, wear 0.10/m.
 * **Speed / depth**: real speed eases toward the throttle (quick to brake, slower to accelerate). The rock scrolls down past the ship, and depth = px scrolled / `PX_PER_METER`.
-* **Engine heat (ENG, hold VENT)**: builds with `speed² × difficulty`, has passive cooling, and is doubled in hard rock. Random **coolant leaks** add a heat spike on a timer, so crawling isn't free. At 100% the engine is capped at 40% speed and the hull takes damage every second.
-* **Drill bit wear (DRL, hold FIX DRILL BIT)**: builds per metre drilled, tripled in hard rock, and goes up with grinding and ramming. At 100% speed is capped at 50% and the hull takes damage while moving.
-* **Hull (TLS, hold PATCH)**: goes down from maxed heat, a dead bit, and rams. At 0 you get game over.
+* **Engine heat (ENG, hold VENT)**: builds with `speed² × difficulty`, has passive cooling, and is doubled in hard rock. Random **coolant leaks** add a heat spike on a timer, so crawling isn't free. At 100% the engine is capped at 40% speed and the drill takes damage every second.
+* **Drill bit wear (DRL, hold FIX DRILL BIT)**: builds per metre drilled, tripled in hard rock, and goes up with grinding and ramming. At 100% speed is capped at 50% and the drill takes damage while moving.
+* **Drill integrity (TLS, hold PATCH)**: goes down from maxed heat, a dead bit, rams, collapses and blowouts. At 0 the drill is lost (breakaway). The ship itself has no integrity meter.
 * **Boulders**: spawn ahead in the drill's path, more often and bigger with depth.
-  * Hit one **above** `RAM_SAFE_SPEED` and you **ram** it: hull damage scales with speed and boulder size, plus bit wear and a speed jolt.
-  * Hit one **at or below** it and you **grind** it: forward progress stops while the bit chews through (wear goes up, the hull is safe).
+  * Hit one **above** `RAM_SAFE_SPEED` and you **ram** it: drill damage scales with speed and boulder size, plus bit wear and a speed jolt.
+  * Hit one **at or below** it and you **grind** it: forward progress stops while the bit chews through (wear goes up, the drill is safe).
   * **TLS, hold BLAST** (1.2 s charge) fires a laser that clears the nearest boulder on screen.
   * A flashing `!` appears next to a boulder that's close while you're going too fast.
 * **Hard rock bands**: blue strata. While the tip is inside one, speed is capped at 70%, heat ×2, wear ×3.
 * **Difficulty**: `difficulty = 1 + depth / DIFF_DEPTH` multiplies heat and wear rates, shortens the gap between boulders and leaks, and makes boulders bigger. The rock colour also shifts every 350 m.
-* **Alerts**: the HUD icons (hull, heat, bit, boulder, hard rock) show in both views, along with the pilot status in the bottom bar. In the inside view, yellow `!` bubbles float over the room that needs you. A red light blinks on the hull exterior, and toast messages show up under the top bar.
-* **Earnings (haul)**: every metre pays `PAY_PER_METER` × the segment's pay multiplier. Segment 1 pays ×1.0, and each relay you push past adds `PAY_MULT_STEP` (×1.5, ×2.0, ×2.5…). The HUD shows the haul (`123 CR`) and `PAY X1.5` under the depth.
+* **Alerts**: the HUD icons (spill, drill, heat, bit, boulder, hard rock) show in both views, along with the pilot status in the bottom bar. In the inside view, yellow `!` bubbles float over the room that needs you. A red light blinks on the hull exterior, and toast messages show up under the top bar.
+* **Earnings**: every metre pays `PAY_PER_METER` × the segment's pay multiplier. Segment 1 pays ×1.0, and each relay you push past adds `PAY_MULT_STEP` (×1.5, ×2.0, ×2.5…). Cuttings, ore and scrap go into the drill's **HOPPER**; the conveyor moves them into the ship's **HOLD** (see below). The top bar shows `PAY X1.5`, `HOLD n` and `HOP n/120`.
 * **Relays (every `RELAY_INTERVAL` = 1000 m)**:
   * At 50 m out, Ines pings `INES: RELAY WINDOW IN 50M.`, and a dashed cyan `RELAY N` line scrolls toward the drill.
   * The approach is boulder-free: no boulder or hard band is spawned that would reach the drill between 50 m before and 30 m after a relay.
   * The rig stops **exactly** on the relay and clamps in. Speed and throttle go to 0 (the throttle setting is remembered), the simulation pauses, and **heat and bit wear are reset for free**.
-  * **Break screen**: Ines's dispatch message types in over radio static (tap the box to skip). You pick **1 of 3 random relay supplies**, which last the whole run and stack. Then you can buy hull from the haul (+10 or MAX). It costs `REPAIR_COST_BASE` × `REPAIR_COST_GROWTH`^(relay−1) per point: **4, 6, 9, 13.5, 20.3… CR/pt**. The screen shows the next segment's pay and a cash-out preview.
+  * **Break screen**: Ines's dispatch message types in over radio static (tap the box to skip). You pick **1 of 3 random relay supplies**, which last the whole run and stack. The hopper is unloaded into the hold (`HOPPER UNLOADED`). Then you can buy drill repairs from the hold (+10 or MAX). It costs `REPAIR_COST_BASE` × `REPAIR_COST_GROWTH`^(relay−1) per point: **4, 6, 9, 13.5, 20.3… CR/pt**. The screen shows the next segment's pay and a cash-out preview.
   * **PUSH ON**: pay goes up, and the next relay is 1000 m further. The throttle goes back to the setting it had when you arrived, wherever Holt is standing, and the rig ramps back up from the stop at the normal acceleration.
-  * **CASH OUT**: you're winched up and bank `floor(haul × 1.10)`.
-* **Relay supplies** (`src/data/boosts.js`, 3 distinct offered per relay; repeats are possible across relays): COOLANT CANISTER (vent +30%), SPARE BIT (auto-swaps when the bit hits 100%), CHARGE PACK (blast 2× faster), PLATE KIT (+15 max hull and +15 now), SCANNER TUNE-UP (boulder warnings 50% earlier), GOOD BOOTS (walk/climb +15%), HEAT SINK (heat −15%), HARDENED TEETH (wear −15%), PATCH COMPOUND (patch +40%), SHOCK STRUTS (ram damage −20%).
-* **Hull loss**: the rig is lost. The crew cab ejects as an escape pod and rides the bore back, and you bank `floor(haul / 3)`.
-* **End screen**: CASHED OUT or RIG LOST. It shows depth, best depth (`localStorage['drill.bestDepth']`), relays reached, the breakdown (haul, +10% bonus or −2/3 lost, banked, total credits), Ines's sign-off, and **NEW CONTRACT**.
-* **Loadout (7 slots, one part each)**: drill head, engine, hull, tools, helm, siphon, Holt's kit.
+  * **CASH OUT**: the hopper goes to the hold, you're winched up and bank `floor(hold × 1.10)`.
+* **Relay supplies** (`src/data/boosts.js`, 3 distinct offered per relay; repeats are possible across relays): COOLANT CANISTER (vent +30%), SPARE BIT (auto-swaps when the bit hits 100%), CHARGE PACK (blast 2× faster), SHIELD PLATES (+15 max drill and +15 now), SCANNER TUNE-UP (boulder warnings 50% earlier), GOOD BOOTS (walk/climb +15%), HEAT SINK (heat −15%), HARDENED TEETH (wear −15%), PATCH COMPOUND (patch +40%), SHOCK STRUTS (ram damage −20%).
+* **Drill loss (breakaway)**: the clamps release, the umbilicals snap, the ship backs off, flips and burns out; the wrecked drill is left sparking (skippable). You bank `floor(hold / 3)`: the lost drill comes out of your paycheck (the 2/3 DRILL WRITE-OFF) and the hopper is lost with it.
+* **End screen**: CASHED OUT or DRILL LOST. It shows depth, best depth (`localStorage['drill.bestDepth']`), relays reached, the breakdown (SHIP HOLD, ORE / LIQUID, +10% bonus and SPILLED on a cash out, or DRILL WRITE-OFF (2/3) and HOPPER LOST W/ DRILL on a loss, banked, total credits), Ines's sign-off, and **NEW CONTRACT**.
+* **Loadout (7 slots, one part each)**: drill head, engine, drill frame (was hull), tools, helm, siphon, Holt's kit.
   * Every slot starts with its stock part, which is the M1 balance. Every other part is a **sidegrade with a real downside**.
   * Parts are bought once and kept. You can swap them **only while docked**: the run locks in the loadout at contract start, and `equipPart` refuses while a run is active.
   * Effects fold into the same `mods` object as relay supplies (`src/data/parts.js` → `applyParts`).
@@ -142,14 +140,16 @@ Optional desktop keys: `W/S` or arrow keys for throttle (only when piloted), `Sp
 | | Wide-cut bit | 900 | top speed +25% | heat +35%; safe ram zone shrinks (35% → 28% throttle) |
 | | Diamond-core bit | 700 | bit wear −40% | top speed −15% |
 | | Grinder head | 600 | safe ram speed 0.35 → 0.50 | grind wear +40%; top speed −10% |
+| | High-draw cutter (2500 m) | 800 | top speed +20%, wear −20% | draws 1.5× power: the conveyor gets nothing at full speed |
 | Engine | K-9 engine (stock) | – | balanced | – |
 | | Overdrive turbine | 650 | acceleration +60% | coolant leaks hit 2× harder |
 | | Cold-loop engine | 600 | passive cooling ×2 | acceleration −30% |
-| | Bypass valve | 550 | overheated speed cap 40% → 70% | overheat hull damage ×2 |
-| Hull | Standard plate (stock) | – | 100 hull | – |
-| | Heavy plating | 800 | +40 max hull | acceleration and braking −35% |
+| | Bypass valve | 550 | overheated speed cap 40% → 70% | overheat drill damage ×2 |
+| Drill frame | Standard frame (stock) | – | 100 drill, 120 hopper | – |
+| | Heavy plating | 800 | +40 max drill | acceleration and braking −35% |
 | | Ablative skin | 700 | ram damage −40% | patching 50% slower |
-| | Light frame | 500 | acceleration and braking +35% | −25 max hull |
+| | Light frame | 500 | acceleration and braking +35% | −25 max drill |
+| | Big hopper (1000 m) | 650 | hopper 120 → 180 | conveyor ×0.75 |
 | Tools | Bench kit (stock) | – | patch + 1.2 s blast | – |
 | | Heavy charge | 750 | one blast clears every boulder in view | 3 s charge |
 | | Patch foam | 550 | patch rate +80% | no blasting at all |
@@ -214,13 +214,13 @@ src/
   systems/
     Settings.js            URL settings (?anim=0, ?animscale=N) + the derived cutscene/grace/lift durations
     Save.js                localStorage save v4 + migration, unlocks, vendor stock/reroll/buy, equip (blocked mid-run), radio log, URL shortcuts
-    ShipSystems.js         pure numbers: speed, depth, heat, wear, hull, leaks (no rendering)
+    ShipSystems.js         pure numbers: speed, depth, heat, wear, drill integrity, leaks, hopper/conveyor/hold, power split (no rendering)
     Terrain.js             scrolling rock/tunnel tiles, depth tint, hard-rock bands
     Obstacles.js           boulder spawn/scroll, ram / grind / blast
     Pockets.js             side pockets: spawn, alignment window at the hose port, pumping/tank/pressure/burst, pocket + hose + bracket drawing
     Veins.js               ore veins: spawn, stop window, extraction, instability/collapse, lost/scrap, on-screen markers
-    Events.js              decision events director: fire (spread/extinguish), drill jam (rock/free), power surge (overclock/shut down/blowout)
-    Ship.js                ship visuals: 2-deck 2x2 cutaway + hub ladder + SIPHON keel pod, stations, exterior, drill, room tap zones
+    Events.js              decision events director (fires removed in v0.11): drill jam (rock/free), power surge (overclock/shut down/blowout)
+    Ship.js                drill unit (cutterhead, rams, hopper, collar) + coupling (clamps, umbilicals, conveyor) + DRL monitor; ship visuals: 2-deck 2x2 cutaway + hub ladder + SIPHON keel pod, stations, exterior, drill, room tap zones
     Crew.js                crew member: hub-routed path planning, walk/climb/work animation
     ViewController.js      camera pan/zoom between outside and inside
     PixelFont.js           runtime-generated 3x5 bitmap font ('pixel')
@@ -228,13 +228,24 @@ src/
   ui/
     Button.js              touch button with tap + press-and-hold
 tests/e2e.mjs              Playwright phone-viewport test (see below)
-screenshots/               01-07 run + relay screens; 08 concourse (bay view), 08b concourse + NEW PARTS banner, 09/09b/09c Quartermaster (09c = page 2), 10 part swap, 11 Holt's log, 12 buy detail; 13 launch (winch out of the bore), 14 docking (clamps), 15 descent (drill bites), 16 locked parts, 17 descent mid-turn, 18 ascent mid-turn, 19 contract board, 20 Ines's window, 21 rig bay, 22 codex, 23 docking end frame (bay framing), 24 Holt steps out (lift), 25 summary in the content area (every panel shot shows the concourse below); 26 vein approaching (stop window), 27 stopped + extracting, 28 fire, 29 jam, 30 power surge, 31 relay haul split (drill/ore), 32 end screen with the ore row, 33 ALL STOP (calm cues with a fire held), 34 the SIPHON keel-pod seat (inside, stopped at a pocket), 35 outside: pocket + hose while pumping, 36 line burst (spray in the pod)
+screenshots/               01-07 run + relay screens; 08 concourse (bay view), 08b concourse + NEW PARTS banner, 09/09b/09c Quartermaster (09c = page 2), 10 part swap, 11 Holt's log, 12 buy detail; 13 launch (winch out of the bore), 14 docking (clamps), 15 descent (drill bites), 16 locked parts, 17 descent mid-turn, 18 ascent mid-turn, 19 contract board, 20 Ines's window, 21 rig bay, 22 codex, 23 docking end frame (bay framing), 24 Holt steps out (lift), 25 summary in the content area (every panel shot shows the concourse below); 26 vein approaching (stop window), 27 stopped + extracting, 29 jam, 30 power surge, 31 relay haul split (drill/ore), 32 end screen with the ore row, 33 ALL STOP (calm cues), 34 the SIPHON keel-pod seat (inside, stopped at a pocket), 35 outside: pocket + hose while pumping, 36 line burst (spray in the pod); 04a breakaway (drill lost), 37 power split at full speed, 38 hopper spill, 39 power split at a full stop, 40 inside: DRL drill console + conveyor
 docs/DESIGN.md             game design doc
 ```
 
 **Side pockets** are tuned in `src/config.js` → `SIPHON` (start depth, gaps, port position, alignment window, clearance, tank, pump rate, pressure rate/escalation/fall/warn/burst, burst loss/lockout, per-type litres/value/pressure, spawn weights per leg).
 
-**Ore veins and events** are tuned in `src/config.js` → `ORE` (gaps, stop window, scrap, decay, escalation, collapse, per-type value/secs/instability/tremor/damage, spawn weights per leg) and `EVENTS` (gaps and pool per leg, fire spread/put-out, jam rocks/fix, surge decide/overclock/shutdown/blowout).
+**Ore veins and events** are tuned in `src/config.js` → `ORE` (gaps, stop window, scrap, decay, escalation, collapse, per-type value/secs/instability/tremor/damage, spawn weights per leg) and `EVENTS` (gaps and pool per leg, jam rocks/fix, surge decide/overclock/shutdown/blowout).
+
+**Drill power + hopper** are tuned in `src/config.js` → `POWER`:
+
+| Constant | Value | Meaning |
+|---|---|---|
+| `REACTOR` | 100 | ship reactor output (fixed) |
+| `DRILL_DRAW` / `DRAW_EXP` | 95 / 1 | drill draw at full real speed (× speed^exp); the conveyor gets the rest |
+| `CONVEYOR_RATE` | 0.08 | hopper units/s per spare power unit (full stop 8 u/s; full speed 0.4 u/s) |
+| `HOPPER_CAP` | 120 | hopper units; a full hopper spills new cuttings |
+| `ORE_PER_M` | 1 | hopper units per metre cut (~10 u/s at full speed; ~45% throttle is break-even) |
+| `SPILL_FX_S` | 0.5 | how long the spill cues linger |
 
 ## Tuning constants (`src/config.js` → `TUNING`)
 
@@ -245,11 +256,11 @@ docs/DESIGN.md             game design doc
 | `DIFF_DEPTH` | 400 | +100% heat/wear rates per 400 m |
 | `HEAT_RATE` / `HEAT_COOL` | 5 (was 7) / 1.2 | heat/s at full speed (×speed²×difficulty) / passive cooling |
 | `VENT_RATE` | 35 | heat removed per second of venting |
-| `OVERHEAT_DAMAGE` / `OVERHEAT_SPEED_CAP` | 4 / 0.4 | hull/s and speed cap at max heat |
+| `OVERHEAT_DAMAGE` / `OVERHEAT_SPEED_CAP` | 4 / 0.4 | drill/s and speed cap at max heat |
 | `SPIKE_INTERVAL` / `SPIKE_AMOUNT` / `SPIKE_START_DEPTH` | 40–65 s (was 25–45) / 22 / 60 m | coolant leak events |
 | `WEAR_PER_METER` / `REPAIR_RATE` | 0.10 (was 0.15) / 30 | bit wear per metre / per second repaired |
-| `WORN_DAMAGE` / `WORN_SPEED_CAP` | 3 / 0.5 | hull/s and speed cap with a dead bit |
-| `PATCH_RATE` | 9 | hull per second patched |
+| `WORN_DAMAGE` / `WORN_SPEED_CAP` | 3 / 0.5 | drill/s and speed cap with a dead bit |
+| `PATCH_RATE` | 9 | drill integrity per second patched |
 | `RAM_SAFE_SPEED` | 0.35 | speed at/under which boulders are ground safely |
 | `RAM_DAMAGE_BASE` / `RAM_DAMAGE_SPEED` | 8 / 30 | ram damage = (8 + 30×speed) × size (0.7/1/1.4) |
 | `RAM_WEAR` / `GRIND_WEAR` / `GRIND_RATE` | 12 / 4 / 1 | wear per ram, wear/s grinding, boulder hp/s ground |
@@ -266,11 +277,11 @@ docs/DESIGN.md             game design doc
 | `RELAY_INTERVAL` | 1000 | metres between relay breaks |
 | `RELAY_WARN` / `RELAY_CLEAR_AFTER` | 50 / 30 | Ines's warning distance; the no-spawn window runs from 50 m before to 30 m after each relay |
 | `PAY_PER_METER` / `PAY_MULT_STEP` | 1 / 0.5 | credits per metre × (1 + 0.5 × relays passed) |
-| `CASHOUT_BONUS` / `HULL_LOSS_KEEP` | 0.10 / 1/3 | cash-out bonus / fraction kept when the rig is lost |
-| `REPAIR_COST_BASE` / `REPAIR_COST_GROWTH` / `REPAIR_STEP` | 4 / 1.5 / 10 | hull price per point at relay 1, growth per relay, small repair button size |
+| `CASHOUT_BONUS` / `HULL_LOSS_KEEP` | 0.10 / 1/3 | cash-out bonus / fraction of the hold kept when the drill is lost |
+| `REPAIR_COST_BASE` / `REPAIR_COST_GROWTH` / `REPAIR_STEP` | 4 / 1.5 / 10 | drill repair price per point at relay 1, growth per relay, small repair button size |
 | `BOOST_CHOICES` | 3 | supplies offered per relay |
 
-`LAYOUT` holds the ship geometry: an 86×62 px hull with a 24 px drill nose (tip at y 218), deck ceilings and floors (`DECKS`), `ROOM_W` 33, the hub/ladder column (`HUB`), and `STAND_OFFSET`. It also holds the two camera targets: `OUTSIDE_CAM` at zoom 1, and `INSIDE_CAM` at **integer zoom 2**, which fits the whole ship between the HUD and the station panel so every pixel is the same size. `ROOM_GEOM` (derived) gives each room's x, floor, station and stand spot, and is shared by the ship, the crew, and the exterior art.
+`LAYOUT` holds the geometry: the drill unit (`DRILL_UNIT`: cutter tip at y 168, hopper 216–232, collar to 236) above an 86×62 px ship, deck ceilings and floors (`DECKS`), `ROOM_W` 33, the hub/ladder column (`HUB`), and `STAND_OFFSET`. It also holds the two camera targets: `OUTSIDE_CAM` at zoom 1, and `INSIDE_CAM` at **integer zoom 2**, which fits the whole ship between the HUD and the station panel so every pixel is the same size. `ROOM_GEOM` (derived) gives each room's x, floor, station and stand spot, and is shared by the ship, the crew, and the exterior art.
 
 ## Testing
 
@@ -278,11 +289,11 @@ docs/DESIGN.md             game design doc
 * Haul pays metres × 1.0, and then × 1.5 after pushing on.
 * The approach: it jumps to 930 m, and Ines's warning fires at 50 m out. No spawns arrive in the relay window.
 * The rig stops at exactly 1000 m, with heat and wear reset and the sim paused.
-* The dispatch types out in full, and there are 3 distinct offers. Tapping PLATE KIT applies +15 max hull, and only 1 pick is allowed.
-* Repair costs 4 CR/pt at relay 1 (+10 hull costs 40) and 6 CR/pt at relay 2.
+* The dispatch types out in full, and there are 3 distinct offers. Tapping SHIELD PLATES applies +15 max drill, and only 1 pick is allowed.
+* Repair costs 4 CR/pt at relay 1 (+10 drill costs 40) and 6 CR/pt at relay 2.
 * PUSH ON resumes the run: the throttle equals the pre-relay setting, speed ramps up from 0, and the helm throttle works.
 * CASH OUT banks `floor(haul × 1.1)` into `drill.save` and sets the new best (2000 m).
-* Hull loss banks `floor(haul / 3)` and launches the escape pod.
+* Drill loss banks `floor(hold / 3)`, shows the write-off and the lost hopper, and plays the breakaway (no pod).
 * After a reload, the title shows your credits.
 
 **M2 coverage**:
@@ -300,29 +311,29 @@ docs/DESIGN.md             game design doc
 * Buying: the buy screen shows the upside and downside. BUY + EQUIP and BUY ONLY both spend credits and persist. A part that isn't in stock can't be bought.
 * Equipping survives a reload.
 * Part effects in a run:
-  * Heavy plating: 140 max hull, acceleration and braking ×0.65.
+  * Heavy plating: 140 max drill, acceleration and braking ×0.65.
   * Wide-cut: about 50 px/s at full speed, heat ×1.35, safe ram zone 28%.
   * Light boots: same-deck walk 0.55 s, slower climbs.
 * Swapping is blocked mid-run and allowed again once docked.
-* Migration: a v1 save plus the old best-depth key become v4 with credits, stats and best intact; a v3 save becomes v4 with the hand pump owned + fitted and nothing lost.
+* Migration: a v1 save plus the old best-depth key become v5 with credits, stats and best intact; v3 and v4 saves become v5 (hand pump owned + fitted, `rigsLost` → `drillsLost`, depth-reached parts open) with nothing lost.
 
 **Ore veins + events coverage (v0.9)**: the earlier flows run with `?noevents=1`, so random veins and events can't interfere. Then:
-* `?vein=rich` spawns a rich vein. Checks: the early alert (toast, chip, icon), the stop-window brackets, and no EXTRACT while moving. Braking with the outside slider stops in the window and gives `STOPPED AT VEIN`. At DRL, holding EXTRACT pays value × taken into the haul and raises RISK, and the risk bleeds off when you let go. Pushing it to 100 collapses the vein (−14 hull, half that vein's ore lost, hold released).
+* `?vein=rich` spawns a rich vein. Checks: the early alert (toast, chip, icon), the stop-window brackets, and no EXTRACT while moving. Braking with the outside slider stops in the window and gives `STOPPED AT VEIN`. At DRL, holding EXTRACT pays value × taken into the haul and raises RISK, and the risk bleeds off when you let go. Pushing it to 100 collapses the vein (−14 drill, half that vein's value lost, hold released).
 * A small vein is emptied safely (+50). Driving through one at full speed gives `VEIN LOST` with 5 scrap.
 * The relay shows `DRILL n  ORE n`, and the end screen shows `INCL. ORE (2 VEINS)`.
-* `?event=fire:engine`: the station is down and only EXTINGUISH is offered. The hull chips, holding EXTINGUISH puts it out, and left alone it spreads to a neighbour. A HELM fire kills the throttle until it's out.
-* Jam: the rig stalls. Rocking the helm slider 0 → 80% three times frees it (+heat, −6 hull). Holding FREE BIT at DRL frees it for free.
-* Surge: the card shows. OVERCLOCK gives ×1.4 speed and ×1.5 pay per metre (measured) plus heat. SHUT DOWN stops the rig and vents heat, then it restarts. Ignoring it blows out (−15 hull, +40 heat).
+* Fires are gone: `?event=fire` does nothing, there's no FIRE toast, and no leg's pool has a fire.
+* Jam: the rig stalls. Rocking the helm slider 0 → 80% three times frees it (+heat, −6 drill). Holding FREE BIT at DRL frees it for free.
+* Surge: the card shows. OVERCLOCK gives ×1.4 speed and ×1.5 pay per metre (measured) plus heat. SHUT DOWN stops the rig and vents heat, then it restarts. Ignoring it blows out (−15 drill, +40 heat).
 * Full stop is safe:
   * Over 3 s stopped, there are no event spawns (the timer is frozen) and no coolant leak.
-  * A fire holds (no spread, no hull damage) but still blocks its station.
-  * There's no hull loss with a burning room, maxed heat and a dead bit, and heat drops at about 7/s.
+  * The conveyor gets the whole reactor and drains the hopper.
+  * There's no drill integrity loss with maxed heat and a dead bit, and heat drops at about 7/s.
   * The calm cues show (`ALL STOP`, alarms dimmed and steady, hull light off).
   * A jam stall builds no heat, and a pending surge's countdown pauses.
-  * Throttle-up resumes the countdown, fire damage and spread, and the cues fade.
+  * Throttle-up resumes the countdown and damage, and the cues fade.
   * Events resume after a 4 s or longer grace.
   * Stopped at a vein, extraction risk still rises.
-* A normal run spawns veins on its own. Leg 1 events are fire and jam only. The first leg-2 event is the surge, after which all three mix. The mean gap is shorter in leg 2.
+* A normal run spawns veins on its own. Leg 1 events are jams only. The first leg-2 event is the surge, after which jams and surges mix. The mean gap is shorter in leg 2.
 
 **Side pockets + SIPHON coverage (v0.10)**:
 * `?pocket=small&side=right`: spawns in the right wall (outside the bore) with toast, chip and icon; no PUMP while it's ahead; driving past gives `POCKET MISSED`.
@@ -330,8 +341,16 @@ docs/DESIGN.md             game design doc
 * Seat required: PUMP at the helm does nothing. GO TO SIPHON walks Holt to the keel pod (~1.2 s). Inside, the drill tip to the pod floor are all visible; the panel shows TANK/PRESS and HOLD: PUMP.
 * Holding PUMP fills the tank ~20 L/s, drains the pocket by the same amount, builds pressure; release drops pressure and stops flow. Outside, the hose and flow are drawn.
 * Full tank: pumping stops exactly at capacity, `TANK FULL`, PUMP disabled, chip `TANK FULL: SKIP IT`.
-* Volatile pocket: sustained pumping bursts the line; 30% of the remainder is lost, 3 s lockout, hold released, no hull damage; PUMP works again after, and it can be pumped dry.
-* The relay sells the tank into the haul (`SOLD n L LIQUID`, `LIQ n` in the split). On hull loss the tank joins the haul before the 1/3 and the end screen shows `INCL. LIQUID`.
+* Volatile pocket: sustained pumping bursts the line; 30% of the remainder is lost, 3 s lockout, hold released, no drill damage; PUMP works again after, and it can be pumped dry.
+* The relay sells the tank into the hold (`SOLD n L LIQUID`, `LIQ n` in the split). On drill loss the tank joins the hold before the 1/3 and the end screen shows the `ORE / LIQUID` row.
+
+**Drill + ship coverage (v0.11)**:
+* Power split at 0 / 40% / 50% / 100%: a full stop gives the conveyor 8 u/s, full speed 0.4 u/s; 40% drains, 50% creeps (< 1 u/s).
+* Live: full speed fills the hopper at ~9.6 u/s; 50% creeps; a full stop drains ~8 u/s into the hold (credit for credit).
+* Spill: a full hopper spills (counted), `HOP SPILL!`, spill icon + particles, `HOPPER FULL: SPILLING` toast.
+* HUD: `HOLD n` / `HOP n/120` match the state; the CNV/DRL power bar beside the throttle and the DRILL/POWER/CONVEYOR bar under the HELM slider; DRL console reads `HOPPER n/120  BELT 8.0/S` with the wall monitor.
+* Relays unload the hopper into the hold; drill loss banks `floor(hold / 3)`, reports the write-off and the lost hopper, and plays the breakaway (skippable) before the ship-only ascent.
+* BIG HOPPER (180, conveyor ×0.75) and HIGH-DRAW CUTTER (+20% speed, conveyor starved at full speed) in a run; v4 → v5 migration.
 * Spawn filters: pockets vs vein stops vs boulders (both ways) and relays. Random pockets spawn in a normal run. BULK TANK gives a 160 L tank.
 
 **Unlocks + cutscenes coverage** (the main flow runs with `?anim=0`; the cutscene section runs with them on):
@@ -343,8 +362,8 @@ docs/DESIGN.md             game design doc
 * `ANIM_SCALE` is 2 in config: cutscenes 9.2 s, grace about 0.5 s, lift about 0.78 s. With `?animscale=1`, a real descent runs about 4.6 s, with a 400 ms grace and a 550 ms lift.
 * ACCEPT walks Holt to the airlock and up the lift (boarding ≤ 1.7 s), then the descent plays and ends in the run. Cash out plays the ascent, Holt rides the lift down, and the summary sits inside the content area (22–202) with the concourse visible; CLOSE dismisses it. So does tapping a concourse spot: Holt then walks there. Each cutscene takes about 9.2 s (allowed −5% / +10% + 0.3 s). The camera reaches 180° with a gentle zoom (at most 1.3x), the ascent opens at 180° (the run's view), the UI camera never turns, and the run and dock cameras are left unrotated.
 * The NEW PARTS banner waits until Holt has stepped out and the summary is closed. It sits inside the bay view and hides when a panel opens. Toasts use the bottom bar, so nothing overlaps.
-* A tap inside the grace window (about 0.5 s) is ignored; a tap after it skips (descent into the run; escape-pod ascent to the dock with the RIG LOST summary).
-* Tap-to-skip works on the descent (straight into the run) and on the escape-pod ascent (docked + RIG LOST summary).
+* A tap inside the grace window (about 0.5 s) is ignored; a tap after it skips (descent into the run; the breakaway, then the ship-only ascent to the dock with the DRILL LOST summary).
+* Tap-to-skip works on the descent (straight into the run) and on the breakaway + ship ascent (docked + DRILL LOST summary).
 
 Debug pokes (via `window.__drill`) are used only to set up states quickly.
 

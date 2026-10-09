@@ -1,15 +1,15 @@
 // Transition cutscenes (4.6 s x ANIM_SCALE, default 2 = ~9.2 s, + a short concourse beat; tap to skip after a ~0.5 s grace). Reuses the rig textures (ship_ext + drill).
 // Orientation: the run (and the docked interior) show the rig drill-UP, flipped for the phone. Outside
 // (the surface, space) it is drill-DOWN. The camera rotates 180 degrees to bridge the two:
-//   ascent : run view (drill up, rock above) -> camera turns as the rig is winched out of the bore (or the
-//            escape pod launches) -> cut to space, it rises to the station and the clamps engage ->
+//   ascent : run view (drill up, rock above) -> camera turns as the rig is winched out of the bore (or, after
+//            a drill loss, the broken-away ship burns up the bore on its own) -> cut to space, it rises to the station and the clamps engage ->
 //            camera turns again and closes in on the exact framing of the concourse's docking bay (drill up,
 //            station below); the concourse takes over and Holt rides the airlock lift down.
 //   descent: (Holt boards via the lift) bay framing -> camera turns out to the station (drill down) -> clamps release, the rig drops
 //            toward the planet -> cut to the surface, the drill bites -> camera turns as it sinks in, landing
 //            in the run view.
 // Only the main camera rotates; "TAP TO SKIP" and captions live on a separate, unrotated UI camera.
-import { GAME_W, GAME_H } from '../config.js';
+import { GAME_W, GAME_H, LAYOUT as L } from '../config.js';
 import { FONT_KEY } from '../systems/PixelFont.js';
 import { CONCOURSE } from './DockScene.js';
 import { animScale, GRACE_MS, CUTSCENE_MS } from '../systems/Settings.js';
@@ -97,11 +97,33 @@ export class CutsceneScene extends Phaser.Scene {
   }
 
   // ---- props -------------------------------------------------------------------------
-  makeRig(scale) {
+  /**
+   * The rig, turned 180 deg (not mirrored): drill down; the camera's 180 deg turn restores the run's look.
+   * unit = true: the leased DRILL UNIT + coupling as in the run (surface shots); false: the box ship with its
+   * old nose (the space + docking shots, matching the concourse bay).
+   */
+  makeRig(scale, unit = false) {
     const c = this.add.container(90, 0);
-    this.drillImg = this.add.image(0, -42, 'drill0').setOrigin(0.5, 0);
-    c.add([this.drillImg, this.add.image(-43, -20, 'ship_ext').setOrigin(0)]);
-    c.setScale(-scale, -scale); // turned 180 deg (not mirrored): drill down; the camera's 180 deg turn restores the run's look
+    const oy = 260;   // container origin = run world y 260 (ship top 240 sits at -20)
+    if (unit) {
+      const DU = L.DRILL_UNIT;
+      this.drillImg = this.add.image(0, L.DRILL_TIP_Y - oy, 'cutter0').setOrigin(0.5, 0);
+      this.drillFrames = 'cutter';
+      c.add([this.add.image(DU.x - 90, DU.frameTop - oy, 'coupling').setOrigin(0), this.add.image(DU.x - 90, DU.bodyTop - oy, 'drillunit').setOrigin(0), this.drillImg]);
+    } else {
+      this.drillImg = this.add.image(0, -42, 'drill0').setOrigin(0.5, 0);
+      this.drillFrames = 'drill';
+      c.add(this.drillImg);
+    }
+    c.add(this.add.image(-43, -20, 'ship_ext').setOrigin(0));
+    c.setScale(-scale, -scale);
+    return c;
+  }
+  /** The ship alone (after a breakaway): plating + keel pod, flipped like it left the run (engine first). */
+  makeShip(scale) {
+    const c = this.add.container(90, 0);
+    c.add([this.add.image(-43, -31, 'ship_ext').setOrigin(0), this.add.image(L.POD.x - 90, L.POD.top - L.SHIP_TOP - 31, 'pod_ext').setOrigin(0)]);
+    c.setScale(scale, scale);
     return c;
   }
 
@@ -193,19 +215,20 @@ export class CutsceneScene extends Phaser.Scene {
 
   // ---- ascent: run view -> (turn) bore -> space -> dock -> (turn) docked view (5.2 s) ----------
   playAscent() {
-    const pod = this.vehicle === 'pod';
+    const shipOnly = this.vehicle === 'ship';    // drill lost: the ship broke away and burns home alone
     const y0 = 300;                 // underground, where the run shows the rig
-    this.drawHole(y0 + 30 - SURFACE_Y);
+    this.drawHole(y0 + 80 - SURFACE_Y);
     this.drawGantry();
     let v;
-    if (pod) {
-      // the crew cab rides the bore engine-first in the run; flipped here so the turn matches it
-      v = this.add.image(90, y0, 'pod').setScale(3).setFlip(true, true);
+    if (shipOnly) {
+      // the ship flipped and burned out engine-first in the run; it keeps that attitude here so the turn matches
+      v = this.makeShip(1);
+      v.y = y0;
       this.surface.add(v);
-      this.trail.startFollow(v, 0, 14); this.trail.start();
-      this.tweens.add({ targets: v, y: -40, duration: d(1800), ease: 'Quad.easeIn' });
+      this.trail.startFollow(v, 0, 34); this.trail.start();
+      this.tweens.add({ targets: v, y: -60, duration: d(1800), ease: 'Quad.easeIn' });
     } else {
-      v = this.makeRig(1);
+      v = this.makeRig(1, true);
       v.y = y0;
       this.surface.add(v);
       const drawCable = () => this.cable.clear().lineStyle(1, 0xcfcfdf, 1).lineBetween(90, 112, 90, v.y - RIG_TOP);
@@ -215,17 +238,17 @@ export class CutsceneScene extends Phaser.Scene {
     this.vehicleSprite = v;
     // the turn: from the run's drill-up view (following the rig) to the surface's drill-down view
     this.turn({ from: PI, to: 0, bump: 0.12, duration: 1500, getFrom: () => ({ x: 90, y: v.y + RUN_CY }), getTo: () => ({ x: 90, y: GAME_H / 2 }) });
-    this.at(pod ? 500 : 700, () => { this.chips.setPosition(90, SURFACE_Y); this.chips.start(); });
+    this.at(shipOnly ? 500 : 700, () => { this.chips.setPosition(90, SURFACE_Y); this.chips.start(); });
     this.at(1700, () => this.chips.stop());
     this.at(2000, () => {
       this.cut(true);
       // space: rises to the port, clamps bite
-      const sv = pod ? this.add.image(90, 340, 'pod').setScale(1.5).setFlip(true, true) : this.makeRig(0.45);
-      if (!pod) sv.y = 340;
+      const sv = shipOnly ? this.makeShip(0.45) : this.makeRig(0.45);
+      sv.y = 340;
       this.space.add(sv);
       this.spaceVehicle = sv;
-      const top = pod ? 6 : RIG_TOP * 0.45;
-      this.trail.startFollow(sv, 0, pod ? 8 : 20); this.trail.start();
+      const top = shipOnly ? 31 * 0.45 : RIG_TOP * 0.45;
+      this.trail.startFollow(sv, 0, shipOnly ? 14 : 20); this.trail.start();
       this.tweens.add({ targets: sv, y: PORT_Y + top, duration: d(1700), ease: 'Cubic.easeOut' });
     });
     this.at(3700, () => {
@@ -260,12 +283,12 @@ export class CutsceneScene extends Phaser.Scene {
     this.at(1500, () => this.children.list.filter((c) => c.type === 'BitmapText' && c.text === 'UNDOCKED').forEach((c) => c.destroy()));
     this.at(1900, () => {
       this.cut(false);
-      const rig = this.makeRig(1);
-      rig.y = -50;
+      const rig = this.makeRig(1, true);    // the leased drill unit was coupled on at the surface yard
+      rig.y = -100;
       this.surface.add(rig);
       this.rig = rig;
       this.trail.startFollow(rig, 0, 30); this.trail.start();
-      this.tweens.add({ targets: rig, y: SURFACE_Y - 40, duration: d(1250), ease: 'Quad.easeOut' });
+      this.tweens.add({ targets: rig, y: SURFACE_Y - 92, duration: d(1250), ease: 'Quad.easeOut' });
     });
     this.at(3150, () => {
       // the nose bites: spin the drill, chips fly, the rig sinks into the rock
@@ -273,10 +296,10 @@ export class CutsceneScene extends Phaser.Scene {
       this.chips.setPosition(90, SURFACE_Y); this.chips.start();
       this.cameras.main.shake(d(450), 0.012);
       let f = 0;
-      this.spin = this.time.addEvent({ delay: 60, loop: true, callback: () => { f = (f + 1) % 3; this.drillImg.setTexture('drill' + f); } });
+      this.spin = this.time.addEvent({ delay: 60, loop: true, callback: () => { f = (f + 1) % 3; this.drillImg.setTexture(this.drillFrames + f); } });
       const rig = this.rig;
       this.tweens.add({ targets: rig, y: 300, duration: d(1300), ease: 'Sine.easeIn',
-        onUpdate: () => this.drawHole(rig.y + 30 - SURFACE_Y) });
+        onUpdate: () => this.drawHole(rig.y + 80 - SURFACE_Y) });
     });
     // the turn: follow the rig down and rotate into the run's drill-up view (rock above)
     this.at(3300, () => {

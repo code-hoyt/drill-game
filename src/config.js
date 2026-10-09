@@ -24,7 +24,7 @@ export const TUNING = {
   HEAT_COOL: 1.2,          // passive cooling / s
   HEAT_ALERT: 70,          // alert icon threshold
   VENT_RATE: 35,           // heat removed / s while venting
-  OVERHEAT_DAMAGE: 4,      // hull / s while heat is maxed
+  OVERHEAT_DAMAGE: 4,      // drill integrity / s while heat is maxed
   OVERHEAT_SPEED_CAP: 0.4, // engine limps while overheated
   SPIKE_START_DEPTH: 60,   // m before random coolant-leak heat spikes begin
   SPIKE_INTERVAL: [40, 65],// s between spikes (shrinks with difficulty). Was [25, 45]
@@ -35,17 +35,19 @@ export const TUNING = {
   WEAR_PER_METER: 0.10,    // wear per metre drilled (x difficulty). Was 0.15
   WEAR_ALERT: 70,
   REPAIR_RATE: 30,         // wear removed / s while repairing
-  WORN_DAMAGE: 3,          // hull / s while bit is fully worn and moving
+  WORN_DAMAGE: 3,          // drill integrity / s while bit is fully worn and moving
   WORN_SPEED_CAP: 0.5,
 
-  // --- Hull (Tools station) ----------------------------------------------
+  // --- Drill integrity (Tools station patches it) -----------------------
+  // The ship has no hull meter: only the leased drill unit takes damage. (Field names stay
+  // hull/maxHull in code for save/test compatibility; everything player-facing says DRILL.)
   HULL_MAX: 100,
   HULL_ALERT: 35,
-  PATCH_RATE: 9,           // hull restored / s while patching
+  PATCH_RATE: 9,           // drill integrity restored / s while patching
 
   // --- Obstacles ----------------------------------------------------------
   RAM_SAFE_SPEED: 0.35,    // at/below this speed the drill grinds boulders safely
-  RAM_DAMAGE_BASE: 8,      // hull damage for ramming = (BASE + SPEED*speed) * sizeMult
+  RAM_DAMAGE_BASE: 8,      // drill damage for ramming = (BASE + SPEED*speed) * sizeMult
   RAM_DAMAGE_SPEED: 30,
   RAM_WEAR: 12,            // bit wear added by a ram
   GRIND_RATE: 1,           // boulder hp removed / s while grinding (hp ~ seconds)
@@ -70,11 +72,11 @@ export const TUNING = {
   RELAY_CLEAR_AFTER: 30,   // m after a relay that are also kept boulder-free
   PAY_PER_METER: 1,        // credits per metre before the multiplier
   PAY_MULT_STEP: 0.5,      // segment multiplier = 1 + STEP x relays passed  (x1.0, x1.5, x2.0, ...)
-  CASHOUT_BONUS: 0.10,     // cash out at a relay: keep haul + 10%
-  HULL_LOSS_KEEP: 1 / 3,   // hull loss: escape pod keeps 1/3 of the haul
-  REPAIR_COST_BASE: 4,     // credits per hull point at relay 1
+  CASHOUT_BONUS: 0.10,     // cash out at a relay: keep the hold + 10%
+  HULL_LOSS_KEEP: 1 / 3,   // drill lost: the write-off comes out of your paycheck, you keep 1/3 of the HOLD (the hopper is gone)
+  REPAIR_COST_BASE: 4,     // credits per drill integrity point at relay 1 (paid from the hold)
   REPAIR_COST_GROWTH: 1.5, // x per relay after the first (4, 6, 9, 13.5, ...)
-  REPAIR_STEP: 10,         // hull points per "+10" repair tap
+  REPAIR_STEP: 10,         // integrity points per "+10" repair tap
   BOOST_CHOICES: 3,        // relay supplies offered per relay (distinct, random)
 
   // --- Crew / views -------------------------------------------------------
@@ -86,6 +88,26 @@ export const TUNING = {
   PILOT_REQUIRED: true,    // throttle only responds while the crew is at the HELM
   LOCK_TOAST_COOLDOWN: 900,// ms between "NO PILOT" toasts when tapping a locked throttle
   VIEW_PAN_MS: 650,        // camera transition time
+};
+
+// ---- Drill + ship: power split, hopper -> conveyor -> hold ([C] Cletus) ----------------------------
+// The DRILL (a Meridian-leased boring unit) and Holt's SHIP are separate machines, clamped together.
+// The ship's reactor has a fixed output; the drill draws power in proportion to its actual speed and the
+// conveyor (drill HOPPER -> ship HOLD) gets whatever is left. Everything the drill cuts lands in the
+// hopper; only the hold is banked. Full speed starves the conveyor (the hopper fills and then SPILLS);
+// a full stop gives the conveyor everything. With the defaults:
+//   speed 100%: draw 95, conveyor  0.4 u/s vs 10 u/s in  -> hopper full in ~12 s, then spills
+//   speed  50%: draw 47.5, conveyor 4.2 u/s vs  5 u/s in -> fills slowly (+0.8 u/s, ~2.5 min from empty)
+//   speed ~45%: break-even.  Below that the hopper drains while you drill.
+//   full stop : conveyor 8 u/s -> a full 120 u hopper empties in 15 s
+export const POWER = {
+  REACTOR: 100,             // ship reactor output (power units). x reactorMul (parts)
+  DRILL_DRAW: 95,           // drill draw at 100% (stock) speed. draw = DRILL_DRAW x realSpeed^DRAW_EXP x drawMul, capped at output
+  DRAW_EXP: 1,
+  CONVEYOR_RATE: 0.08,      // hopper units moved / s per spare power unit (x convMul): 100 spare -> 8 u/s
+  HOPPER_CAP: 120,          // hopper units (x hopperMul)
+  ORE_PER_M: 1,             // cuttings: units per metre drilled, worth PAY_PER_METER x pay mult each
+  SPILL_FX_S: 0.5,          // spill feedback lingers this long after the last spilled unit
 };
 
 // ---- Ore veins ([C] Cletus): come to a FULL STOP with the drill face at the vein, then work it --------
@@ -102,15 +124,16 @@ export const ORE = {
   DECAY: 14,                // instability lost per second while nobody is extracting
   ESCALATE: 1.5,            // instability rate x (1 + ESCALATE x fraction already taken): greed gets riskier
   COLLAPSE_AT: 100,
-  COLLAPSE_LOSS: 0.5,       // a collapse loses half the ore taken from that vein (+ hull damage)
+  COLLAPSE_LOSS: 0.5,       // a collapse loses half the ore taken from that vein: hopper first, the rest docked from the hold (+ drill damage)
   CLEAR_M: 15,              // no boulders arrive within 15 m of a vein (and vice versa)
   // value = credits for the whole vein at x1.0 pay (x the segment pay multiplier)
   TYPES: {
     // risk is purely greed-driven (no random tremors): inst/s x (1 + ESCALATE x taken). Without breaks a
     // small vein empties safely, a rich one collapses at ~75% taken, a fine one at ~50%.
-    small: { name: 'SMALL', value: 50,  secs: 3, inst: 10, dmg: 8,  tint: 0xd08a4a },
-    rich:  { name: 'RICH',  value: 140, secs: 5, inst: 17, dmg: 14, tint: 0xffd23f },
-    fine:  { name: 'FINE',  value: 330, secs: 6, inst: 24, dmg: 22, tint: 0x7ff0ff },
+    // units = hopper units for the whole vein (extraction feeds the hopper at units/secs: below the 8 u/s stop conveyor)
+    small: { name: 'SMALL', value: 50,  units: 10, secs: 3, inst: 10, dmg: 8,  tint: 0xd08a4a },
+    rich:  { name: 'RICH',  value: 140, units: 20, secs: 5, inst: 17, dmg: 14, tint: 0xffd23f },
+    fine:  { name: 'FINE',  value: 330, units: 24, secs: 6, inst: 24, dmg: 22, tint: 0x7ff0ff },
   },
   // spawn weights per relay leg (index = relays passed; last entry repeats)
   WEIGHTS: [{ small: 0.6, rich: 0.32, fine: 0.08 }, { small: 0.45, rich: 0.38, fine: 0.17 }, { small: 0.35, rich: 0.4, fine: 0.25 }],
@@ -122,8 +145,9 @@ export const ORE = {
 // down the ladder from the hub) and holds PUMP: the tank fills, the pocket drains. Line PRESSURE builds
 // the longer you hold (faster on volatile pockets) and falls when you let go; at 100 the line bursts:
 // part of what's left in the pocket is lost and the pump is locked out for a few seconds (no hull hit:
-// a full stop stays safe, the gamble only costs liquid and time). The tank is sold at the next relay
-// (it's part of the haul; on hull loss it counts toward the 1/3 you keep). Full tank: you can't pump.
+// a full stop stays safe, the gamble only costs liquid and time). The tank is on the SHIP (not the drill's
+// hopper): it's sold into the hold at the next relay, and on drill loss it's sold into the hold before the
+// 1/3 is kept. Full tank: you can't pump.
 export const SIPHON = {
   START_DEPTH: 110,         // first pocket can line up after this (m)
   GAP: [160, 260],          // metres between pockets (x GAP_LEG_MUL^leg)
@@ -154,8 +178,8 @@ export const SIPHON = {
 
 // ---- Full stop is safe ([C]) ------------------------------------------------------------------
 // Actual speed 0 (throttle at 0, a jam stall, a surge shutdown): everything relaxes. No new events
-// (the event timer pauses), fires don't spread or burn the hull, a pending surge's countdown pauses,
-// a jam doesn't build heat, no coolant leaks, no ticking hull damage, and heat bleeds off fast.
+// (the event timer pauses), a pending surge's countdown pauses, a jam doesn't build heat, no coolant
+// leaks, no ticking drill damage, and heat bleeds off fast. The conveyor runs at full power.
 // Discrete costs you choose still apply (a vein collapse, rocking a jammed bit).
 export const CALM = {
   COOL: 6,              // extra heat cooling / s while stopped (passive HEAT_COOL is 1.2)
@@ -167,27 +191,23 @@ export const CALM = {
 // ---- Run events ([P]): problems that need a choice, not just a hold ----------------------------
 export const EVENTS = {
   START_DEPTH: 150,               // nothing before this
-  GAP_S: [[30, 45], [22, 34], [16, 26]],   // seconds between events, per leg (last repeats). Time-based: stopping doesn't pause them
-  POOL: [['jam', 'fire'], ['jam', 'fire', 'surge'], ['jam', 'fire', 'surge']],  // leg 2 adds the power surge
+  // [C] fires were removed: leg 1 is jams only (a little less often), leg 2 adds the power surge
+  GAP_S: [[36, 52], [24, 36], [18, 28]],   // seconds between events, per leg (last repeats). Time-based (they pause at a full stop)
+  POOL: [['jam'], ['jam', 'surge'], ['jam', 'surge']],
   LEG2_FIRST: 'surge',            // the first event after pushing on from relay 1 is always the new one
   MAX_ACTIVE: 2,
-  // FIRE: starts in ENG / DRL / TLS, disables that room's station, spreads to a neighbour if left
-  FIRE_SPREAD_S: 14,
-  FIRE_HULL_DPS: 0.5,             // per burning room
-  FIRE_PUTOUT_S: 1.4,             // hold EXTINGUISH in the room (+ FIRE_GROW_S per second it has burned, capped)
-  FIRE_GROW_S: 0.05, FIRE_PUTOUT_MAX: 2.6,
   // JAM: the bit seizes (no progress; the engine strains while the throttle is up)
   JAM_HEAT: 9,                    // heat/s x throttle while jammed
   JAM_ROCKS: 3,                   // helm fix: swing the throttle 0% -> 60%+ three times...
   JAM_ROCK_HIGH: 0.6, JAM_ROCK_LOW: 0.1,
   JAM_ROCK_WINDOW_S: 4,           // ...each swing within 4 s of the last
-  JAM_ROCK_HEAT: 6, JAM_ROCK_HULL: 2,   // each swing strains the rig
+  JAM_ROCK_HEAT: 6, JAM_ROCK_HULL: 2,   // each swing strains the drill (heat + integrity)
   JAM_FIX_S: 3.5,                 // drill fix: hold FREE BIT (slow but free)
   // SURGE: a prompt. OVERCLOCK (fast + better pay, heat spike) vs SHUT DOWN (stop, engine vents). Ignored = blowout
   SURGE_DECIDE_S: 6,
   OVERCLOCK_S: 10, OVERCLOCK_SPEED: 1.4, OVERCLOCK_PAY: 1.5, OVERCLOCK_HEAT: 25, OVERCLOCK_HEAT_MUL: 2,
   SHUTDOWN_S: 4, SHUTDOWN_COOL: 35,
-  BLOWOUT_HULL: 15, BLOWOUT_HEAT: 40,
+  BLOWOUT_HULL: 15, BLOWOUT_HEAT: 40,   // an ignored surge blows out down the power umbilical: drill integrity + heat
 };
 
 // Transition animations. ONE knob: ANIM_SCALE multiplies every beat of the descent/ascent cutscenes
@@ -208,7 +228,10 @@ export const ANIM_TIMING = {
 // ladder shaft on the top deck); cross-deck trips walk to the ladder, climb
 // directly floor-to-floor, then walk out.
 //
-//          /\  drill nose
+//      ^^^^^^^^^^^^   DRILL UNIT (leased TB-6): cutterhead at DRILL_TIP_Y, shield + grippers,
+//      |  shield    |   thrust rams, rear frame, HOPPER (ore fill window), dock collar
+//       \ hopper  /
+//   clamps + umbilicals + conveyor chute
 //   +------+--+------+
 //   | HELM |  | DRL  |   top deck   (nearest the drill)
 //   |------|==|------|   == = grate over the ladder shaft, ## = ladder
@@ -218,8 +241,11 @@ export const ANIM_TIMING = {
 //        +---------+
 export const LAYOUT = {
   SHIP_X: 47, SHIP_W: 86, SHIP_TOP: 240, SHIP_BOTTOM: 302,
-  DRILL_TIP_Y: 218,        // obstacles touching this y collide with the drill
-  DRILL_W: 70,
+  DRILL_TIP_Y: 168,        // cutterhead face: obstacles touching this y collide with the drill (was 218 on the old nose)
+  DRILL_W: 70,             // old nose texture (dock bay + space shots of the cutscenes)
+  // the separate drill unit above the box ship (world y): the inside view (y 213+) shows hopper, collar + conveyor
+  DRILL_UNIT: { x: 45, w: 90, cutterTop: 168, bodyTop: 180, ramsTop: 202, frameTop: 212, hopperTop: 216, hopperBot: 232, collarBot: 236,
+    hopperWin: { x: 70, y: 219, w: 40, h: 9 } },
   DECKS: {
     top:    { ceil: 242, floor: 268 },
     bottom: { ceil: 271, floor: 296 },
@@ -237,7 +263,7 @@ export const LAYOUT = {
   // keel pod under the hub (the ship is 86 of the 90 px the 2x inside view can show, so a side pod won't fit)
   POD: { x: 66, w: 48, top: 299, ceil: 300, floor: 315, standX: 100, stationX: 107 },
   OUTSIDE_CAM: { x: 90, y: 160, zoom: 1 },
-  INSIDE_CAM:  { x: 90, y: 281, zoom: 2 },  // integer zoom: the 86px-wide ship fills 172 of 180px; y fits drill tip .. keel pod
+  INSIDE_CAM:  { x: 90, y: 281, zoom: 2 },  // integer zoom: the 86px-wide ship fills 172 of 180px; y fits the drill's hopper + conveyor .. keel pod
 };
 
 /** Derived room geometry (shared by Ship, Crew and Textures). */

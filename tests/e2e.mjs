@@ -99,8 +99,8 @@ check('ramming a boulder at speed drops hull', (await G('s.hull')) < hullBefore,
 await tap(...TOGGLE); await wait(900);
 const cam = await G('({ mode: g.view.mode, zoom: g.cameras.main.zoom })');
 check('view toggle -> inside (integer 2x zoom on ship)', cam.mode === 'inside' && cam.zoom === 2 && CAM.zoom === 2, JSON.stringify(cam));
-check('whole ship fits on screen in inside view (below HUD, above station panel)', await G(`(() => { const v = g.cameras.main.worldView, z = g.cameras.main.zoom;
-  return v.x <= 47 && v.right >= 133 && 218 >= v.y + 24 / z && 302 <= v.y + 232 / z; })()`), await G('JSON.stringify(g.cameras.main.worldView)'));
+check('whole ship + the drill\'s hopper and conveyor fit on screen in inside view (below HUD, above station panel)', await G(`(() => { const v = g.cameras.main.worldView, z = g.cameras.main.zoom;
+  return v.x <= 47 && v.right >= 133 && 216 >= v.y + 24 / z && 302 <= v.y + 232 / z; })()`), await G('JSON.stringify(g.cameras.main.worldView)'));
 check('inside at helm shows throttle controls', await G('ui.hGfx.visible && ui.hPlus.visible && ui.hMinus.visible'));
 await tap(...H_PLUS); await wait(100);
 check('inside helm + raises throttle', near(await thr(), 0.9), 'throttle=' + await thr());
@@ -257,19 +257,27 @@ check('crew reaches helm -> piloted again', await G('g.piloted && g.crew.station
 await tap(...O_PLUS); await wait(120);
 check('outside throttle works again once piloted', near(await thr(), 0.6), 'throttle=' + await thr());
 
-// ---- hull loss: escape pod, keep 1/3 ---------------------------------------------------
-await G('(s.haul = 300, true)');
+// ---- drill loss: breakaway, the hopper is lost, keep 1/3 of the hold ---------------------
+await G('(s.haul = 300, s.addToHopper(30, 45), true)');
 await G('(s.hull = 6, s.heat = 100, s.wear = 100, true)');
+await waitFor('!!g.breakState', 8000); await wait(560);
+await page.screenshot({ path: `${OUT}/04a-breakaway.png` });
 await page.waitForFunction(() => __drill.scene.isActive('GameOver'), null, { timeout: 8000 }).catch(() => {});
 await wait(600);
 const go = await page.evaluate(() => ({ active: __drill.scene.isActive('GameOver'), best: localStorage.getItem('drill.bestDepth'), save: JSON.parse(localStorage.getItem('drill.save') || 'null') }));
 const finalDepth = Math.floor(await G('s.depth'));
 const lostRun = await G('g.lastRun');
-check('hull 0 -> end screen (RIG LOST)', go.active && lostRun.reason === 'lost', JSON.stringify(lostRun));
+check('drill integrity 0 -> end screen (DRILL LOST)', go.active && lostRun.reason === 'lost' && (await page.evaluate(() => __drill.scene.getScene('GameOver').children.list.some(c => c.text === 'DRILL LOST'))), JSON.stringify(lostRun));
 check('best depth saved to localStorage', Number(go.best) === finalDepth, `best=${go.best} depth=${finalDepth}`);
-check('hull loss banks 1/3 of the haul (floor)', lostRun.banked === Math.floor(lostRun.haul / 3) && go.save && go.save.credits === lostRun.banked && go.save.rigsLost === 1,
-  `haul=${lostRun.haul} banked=${lostRun.banked} save=${JSON.stringify(go.save)}`);
-check('escape pod launched (drill gone, pod sprite)', await G('!g.ship.drill.visible && g.children.list.some(c => c.texture && c.texture.key === "pod")'));
+check('drill loss banks 1/3 of the HOLD (floor); the write-off is the other 2/3; the hopper is lost', lostRun.haul >= 300 && lostRun.banked === Math.floor(lostRun.haul / 3) && lostRun.writeoff === lostRun.haul - lostRun.banked
+  && lostRun.hopperLost >= 40 && go.save && go.save.credits === lostRun.banked && go.save.drillsLost === 1 && go.save.v === 5,
+  `hold=${lostRun.haul} hopperLost=${lostRun.hopperLost} banked=${lostRun.banked} save=${JSON.stringify(go.save)}`);
+const goRows = await page.evaluate(() => __drill.scene.getScene('GameOver').children.list.filter(c => c.type === 'BitmapText').map(c => c.text));
+check('end screen accounting: SHIP HOLD, DRILL WRITE-OFF (2/3), HOPPER LOST, BANKED', goRows.includes('SHIP HOLD') && goRows.includes(`${lostRun.haul} CR`) && goRows.includes('DRILL WRITE-OFF (2/3)') && goRows.includes(`-${lostRun.writeoff} CR`)
+  && goRows.includes('HOPPER LOST W/ DRILL') && goRows.includes(`${lostRun.hopperLost} CR`) && goRows.includes('BANKED') && goRows.includes(`${lostRun.banked} CR`), goRows.join('|'));
+const brk = await G('({ b: !!g.breakState, done: g.breakState && g.breakState.done, broken: g.ship.broken, shipHidden: !g.ship.exterior.visible && !g.ship.interior.visible, drill: g.ship.drill.visible, sparks: !!g.wreckSparks })');
+check('breakaway: the ship left (stand-in flew off), the wrecked drill stays behind sparking; no escape pod', brk.b && brk.done && brk.broken && brk.shipHidden && brk.drill && brk.sparks
+  && !(await G('g.children.list.some(c => c.texture && c.texture.key === "pod")')), JSON.stringify(brk));
 await page.screenshot({ path: `${OUT}/04-game-over.png` });
 await tap(90, 249); await wait(1000);
 check('end screen -> TO THE CONCOURSE docks at the station', await page.evaluate(() => __drill.scene.isActive('Dock') && !__drill.scene.isActive('Game') && !__drill.scene.isActive('UI')));
@@ -290,7 +298,7 @@ await wait(800);
 const pay1 = await G('({ h: s.haul, d: s.distance })');
 const m0 = (pay1.d - pay0.d) / T.PX_PER_METER;
 check('haul accrues at metres x 1.0 in segment 1', m0 > 0.5 && Math.abs((pay1.h - pay0.h) - m0 * T.PAY_PER_METER) < 0.01, `+${m0.toFixed(2)}m -> +${(pay1.h - pay0.h).toFixed(2)}cr`);
-check('HUD shows haul + pay rate', (await G('ui.haulText.text')).endsWith(' CR') && (await G('ui.payText.text')) === 'PAY X1.0', await G('ui.haulText.text + " / " + ui.payText.text'));
+check('HUD shows HOLD + HOPPER + pay rate', /^HOLD \d+$/.test(await G('ui.holdText.text')) && /^HOP \d+\/120$/.test(await G('ui.hopperText.text')) && (await G('ui.payText.text')) === 'PAY X1.0', await G('ui.holdText.text + " / " + ui.hopperText.text + " / " + ui.payText.text'));
 await G('(g.debugJump(930), g.forceOffers = ["plate", "coolant", "charge"], g.obstacles.spawnLog.length = 0, s.haul = 400, s.heat = 20, s.wear = 40, s.hull = 55, g.setThrottle(0.9), g.toasts.length = 0, true)');
 check('debug jump to 930 m', Math.abs((await G('s.depth')) - 930) < 2 && (await G('s.nextRelayAt')) === T.RELAY_INTERVAL);
 await waitFor('g.relayWarned', 6000);
@@ -303,6 +311,8 @@ await page.waitForFunction(() => __drill.scene.isActive('Relay'), null, { timeou
 const arr = await G('({ depth: s.depth, anchored: s.anchored, heat: s.heat, wear: s.wear, speed: s.speed, throttle: s.throttle, log: g.obstacles.spawnLog.slice(), ahead: g.obstacles.list.filter(o => o.sprite.y > 100).length, bands: g.terrain.bands.length })');
 check('arrives exactly at relay 1 (1000 m) and clamps in', arr.depth === 1000 && arr.anchored && arr.speed === 0 && arr.throttle === 0, JSON.stringify(arr));
 check('free service: heat and bit wear reset to 0', arr.heat === 0 && arr.wear === 0, `heat was ${heatBefore.toFixed(1)}`);
+const xfer = await G('({ hop: s.hopper, hopCr: s.hopperCr, hold: s.holdCr, toast: g.toastLog.some(t => t.startsWith("HOPPER UNLOADED")) })');
+check('relay crews unload the hopper into the hold for free (hopper 0, toast)', xfer.hop === 0 && xfer.hopCr === 0 && xfer.hold > 400 && xfer.toast, JSON.stringify(xfer));
 check('approach was boulder-free (no spawns arriving 950-1030 m, none at the tip)', arr.log.every((d) => d < 1000 - T.RELAY_WARN || d >= 1000 + T.RELAY_CLEAR_AFTER) && arr.ahead === 0, 'spawnLog=' + JSON.stringify(arr.log));
 const d0 = await G('s.depth'); await wait(600);
 check('sim paused while anchored (no drift, no heat)', (await G('s.depth')) === d0 && (await G('s.heat')) === 0);
@@ -370,8 +380,8 @@ await tap(90, 249); await wait(1000);
 check('full loop: cash out -> end screen -> concourse', await page.evaluate(() => __drill.scene.isActive('Dock') && __drill.scene.isActive('DockUI') && !__drill.scene.isActive('Game') && !__drill.scene.isActive('GameOver')));
 const sv1 = await page.evaluate(() => JSON.parse(localStorage.getItem('drill.save')));
 check('vendor stock refreshed after each contract (refresh count = runs)', sv1.vendor.refreshes === sv1.runs && sv1.vendor.rerolls === 0, `refreshes=${sv1.vendor.refreshes} runs=${sv1.runs}`);
-const TIER2000 = ['harness', 'lightframe', 'grinder', 'governor', 'overdrive', 'quickcap', 'plating', 'bypass', 'bigtank', 'highflow'];
-check('reaching 2000 m unlocks the 500-2000 m parts (and nothing deeper)', TIER2000.every((id) => sv1.unlocked.includes(id)) && !['linkage', 'widecut', 'heavycharge', 'toolbelt'].some((id) => sv1.unlocked.includes(id)), JSON.stringify(sv1.unlocked));
+const TIER2000 = ['harness', 'lightframe', 'grinder', 'governor', 'overdrive', 'quickcap', 'plating', 'bypass', 'bigtank', 'highflow', 'bighopper'];
+check('reaching 2000 m unlocks the 500-2000 m parts (and nothing deeper)', TIER2000.every((id) => sv1.unlocked.includes(id)) && !['linkage', 'widecut', 'heavycharge', 'toolbelt', 'highdraw'].some((id) => sv1.unlocked.includes(id)), JSON.stringify(sv1.unlocked));
 await wait(400);
 const banner = await D('u.banner ? u.banner.text : (u.lastBanner ? u.lastBanner.text : null)');
 check("dock shows 'NEW PARTS AVAILABLE' once, listing the new parts", banner && TIER2000.every((id) => banner.includes(PARTNAMES[id])) && (await page.evaluate(() => JSON.parse(localStorage.getItem('drill.save')).newUnlocks.length)) === 0, banner);
@@ -466,7 +476,7 @@ const draws = await page.evaluate(async () => { const S = await import(new URL('
   for (let i = 0; i < 200; i++) { const st = S.rollStock(s); seen.add(st.join()); locked += st.filter((id) => { const p = Pm.partById(id); return p.unlock && !s.unlocked.includes(id); }).length; } return { distinct: seen.size, locked }; });
 check('stock is randomized and never draws a locked part (200 draws)', draws.distinct > 5 && draws.locked === 0, JSON.stringify(draws));
 await tapBtn('u.btns.locked');
-check('Quartermaster LOCKED list shows what is left and how to unlock it', (await D('u.menuKind')) === 'locked' && (await D('u.lockedRows.slice().sort().join()')) === 'heavycharge,linkage,toolbelt,widecut'
+check('Quartermaster LOCKED list shows what is left and how to unlock it', (await D('u.menuKind')) === 'locked' && (await D('u.lockedRows.slice().sort().join()')) === 'heavycharge,highdraw,linkage,toolbelt,widecut'
   && (await D('u.menu.some(t => t.text === "REACH 3000M") && u.menu.some(t => t.text === "3 RELAYS (TOTAL)")')));
 await tapBtn('u.btns.back');   // locked -> stock
 const backToStock = (await dockMenu()) === 'vendor';
@@ -510,7 +520,7 @@ check('X closes the Quartermaster', (await dockMenu()) === null);
 const tapHot = async (slot) => { const h = await D(`u.hot.${slot}`); await tap(h.x + h.w / 2, h.y + h.h / 2); await wait(200); };
 await navTo('airlock', 'bay'); await tapHot('hull');
 check('slot swap list fits the content area', (await panelInBounds()).length === 0, (await panelInBounds()).join(' '));
-check('part swap screen lists owned hull parts with up/downsides', (await D('u.menuArg')) === 'hull' && (await D('!!(u.btns.parts.stockhull && u.btns.parts.plating) && u.menu.some(t => t.text === "+ +40 MAX HULL") && u.menu.some(t => t.text === "- ACCEL + BRAKING -35%")')));
+check('part swap screen lists owned hull parts with up/downsides', (await D('u.menuArg')) === 'hull' && (await D('!!(u.btns.parts.stockhull && u.btns.parts.plating) && u.menu.some(t => t.text === "+ +40 MAX DRILL") && u.menu.some(t => t.text === "- ACCEL + BRAKING -35%")')));
 await tapBtn('u.btns.parts.plating');
 await page.screenshot({ path: `${OUT}/10-part-swap.png` });
 check('tap a part card -> equipped', (await page.evaluate(() => JSON.parse(localStorage.getItem('drill.save')).loadout.hull)) === 'plating' && (await D('u.menu.some(t => t.text === "EQUIPPED")')));
@@ -567,10 +577,10 @@ await page.evaluate(() => { localStorage.clear(); localStorage.setItem('drill.sa
   owned: ['stockbit', 'stockengine', 'stockhull', 'stocktools', 'stockhelm', 'stockkit', 'widecut', 'heavycharge'], loadout: { drill: 'widecut', tools: 'heavycharge' }, vendor: { stock: ['linkage', 'diamond', 'bypass'], rerolls: 0, refreshes: 5 }, radio: [] })); });
 await page.goto(BASE + '?anim=0&noevents=1'); await wait(1500);
 const gf = await page.evaluate(() => JSON.parse(localStorage.getItem('drill.save')));
-check('grandfathering: owned locked parts stay owned + equipped (v2 -> v4)', gf.v === 4 && gf.loadout.siphon === 'stocksiphon' && gf.owned.includes('widecut') && gf.owned.includes('heavycharge') && gf.loadout.drill === 'widecut' && gf.loadout.tools === 'heavycharge' && gf.credits === 50, JSON.stringify({ l: gf.loadout, v: gf.v }));
+check('grandfathering: owned locked parts stay owned + equipped (v2 -> v5; rigsLost -> drillsLost)', gf.v === 5 && gf.drillsLost === 2 && !('rigsLost' in gf) && gf.loadout.siphon === 'stocksiphon' && gf.owned.includes('widecut') && gf.owned.includes('heavycharge') && gf.loadout.drill === 'widecut' && gf.loadout.tools === 'heavycharge' && gf.credits === 50, JSON.stringify({ l: gf.loadout, v: gf.v }));
 check('grandfathering: an old stock with now-locked parts is re-drawn from unlocked parts only', gf.vendor.stock.length >= 6 && !gf.vendor.stock.includes('linkage') && !gf.vendor.stock.includes('bypass')
   && gf.vendor.stock.every((id) => !P_[id].unlock || gf.unlocked.includes(id)) && gf.unlocked.includes('harness') && gf.newUnlocks.length === 0, gf.vendor.stock.join());
-check('grandfathered parts count as unlocked; 9 parts still locked', gf.unlocked.includes('widecut') && gf.unlocked.includes('heavycharge') && PARTS.filter((p) => p.unlock && !gf.unlocked.includes(p.id)).length === 9, gf.unlocked.join());
+check('grandfathered parts count as unlocked; 11 parts still locked (incl. the 2 power-split parts)', gf.unlocked.includes('widecut') && gf.unlocked.includes('heavycharge') && PARTS.filter((p) => p.unlock && !gf.unlocked.includes(p.id)).length === 11, gf.unlocked.join());
 const gfEquip = await page.evaluate(async () => { const S = await import(new URL('src/systems/Save.js', location.href).href); const a = S.equipPart('stockbit'); const b = S.equipPart('widecut'); return a.ok && b.ok; });
 check('grandfathered part can still be swapped in and out', gfEquip);
 
@@ -592,7 +602,7 @@ const CONF_SCALE = await page.evaluate(async () => (await import(new URL('src/co
 check('animation speed is one config multiplier: ANIM_SCALE 2 -> 9.2 s cutscenes, ~0.5 s grace, ~0.78 s lift', CONF_SCALE === 2 && CFG.scale === 2 && CFG.cutsceneMs === 9200 && CFG.graceMs >= 450 && CFG.graceMs <= 550 && CFG.liftMs >= 700 && CFG.liftMs <= 850, JSON.stringify(CFG));
 await tap(90, 160); await wait(800);
 await D('(u.openMenu("locked"), true)'); await wait(200);
-check('fresh save: 14 parts locked (both SIPHON parts depth-gated), one alternative per other slot open', (await D('u.lockedRows.length')) === 14);
+check('fresh save: 16 parts locked (both SIPHON + both power-split parts depth-gated), one alternative per other slot open', (await D('u.lockedRows.length')) === 16);
 await page.screenshot({ path: `${OUT}/16-locked-parts.png` });
 await D('(u.closeMenu(), true)');
 const fresh = await page.evaluate(() => JSON.parse(localStorage.getItem('drill.save')));
@@ -652,13 +662,18 @@ al = (await animLog()).at(-1);
 check('after the grace window a tap skips the descent straight into the run', await page.evaluate(() => __drill.scene.isActive('Game')) && al.skipped && al.ms >= CFG.graceMs && al.ms < 1600 && Date.now() - skipT0 < 1000, JSON.stringify({ ...al, tapToRun: Date.now() - skipT0 }));
 await wait(300);
 await G('(s.damage(9999), true)');
+await waitFor('g.breakState && !__drill.scene.isActive("UI")', 2000);
+check('drill loss -> in-run BREAKAWAY first (HUD off, TAP TO SKIP)', await G('!!g.breakState && !g.breakState.done && g.over'));
+await page.waitForFunction((gr) => { const g = __drill.scene.getScene('Game'); return g.breakState && g.time.now - g.breakState.t0 > gr + 150; }, CFG.graceMs, { timeout: 4000 }).catch(() => {});
+await tap(90, 160);
 await page.waitForFunction(() => __drill.scene.isActive('Cutscene'), null, { timeout: 4000 }).catch(() => {});
-check('hull loss -> ascent cutscene with the escape pod', await page.evaluate(() => __drill.scene.getScene('Cutscene').vehicle === 'pod'));
+const bk = await page.evaluate(() => { const b = __drill.scene.getScene('Game').breakState; return { skipped: b && b.skipped, ms: b && b.ms }; });
+check('tap skips the breakaway (after the grace) -> ascent cutscene with the broken-away SHIP (no pod)', bk.skipped && bk.ms >= CFG.graceMs && bk.ms < 2000 && await page.evaluate(() => __drill.scene.getScene('Cutscene').vehicle === 'ship'), JSON.stringify(bk));
 await page.waitForFunction((g) => performance.now() - __drill.scene.getScene('Cutscene').t0 > g + 200, CFG.graceMs, { timeout: 3000 }).catch(() => {});
 await tap(90, 160);
 await page.waitForFunction(() => __drill.scene.isActive('GameOver'), null, { timeout: 2000 }).catch(() => {});
 al = (await animLog()).at(-1);
-check('tap skips the pod ascent: docked + RIG LOST summary', await page.evaluate(() => __drill.scene.isActive('Dock') && __drill.scene.getScene('GameOver').scene.settings.data.reason === 'lost') && al.skipped && al.ms >= CFG.graceMs && al.ms < 1600, JSON.stringify(al));
+check('tap skips the ship ascent: docked + DRILL LOST summary', await page.evaluate(() => __drill.scene.isActive('Dock') && __drill.scene.getScene('GameOver').scene.settings.data.reason === 'lost') && al.skipped && al.ms >= CFG.graceMs && al.ms < 1600, JSON.stringify(al));
 // the summary does not block the concourse: tapping a spot dismisses it and walks Holt there
 await tap(...SPOT.board);
 await page.waitForFunction(() => __drill.scene.getScene('DockUI').menuKind === 'board', null, { timeout: 4000 }).catch(() => {});
@@ -666,7 +681,7 @@ check('summary up + tap CONTRACT BOARD on the concourse -> summary dismissed, Ho
 // frames for Cletus (screenshots stall the renderer, so these runs aren't timed; mid-turn frames are paused)
 await D('(u.closeMenu(), true)');
 await startContract();
-await freezeWhen(() => { const c = __drill.scene.getScene('Cutscene'); return c.rig && c.rig.y > 120 && !c.spin; }, '15-descent.png');
+await freezeWhen(() => { const c = __drill.scene.getScene('Cutscene'); return c.rig && c.rig.y > 95 && !c.spin; }, '15-descent.png');
 await freezeWhen(() => { const c = __drill.scene.getScene('Cutscene'); const r = c.cameras.main.rotation; return c.surface.visible && c.spin && r > 1.3 && r < 1.9; }, '17-descent-rotation.png');
 await page.waitForFunction(() => __drill.scene.isActive('Game'), null, { timeout: 16000 }).catch(() => {});
 await wait(300);
@@ -689,8 +704,8 @@ al = (await animLog()).at(-1);
 check('ANIM_SCALE override 1 -> descent ~4.6 s, grace 400 ms, lift 550 ms', CFG1.scale === 1 && CFG1.graceMs === 400 && CFG1.liftMs === 550 && al.expectMs === 4600 && !al.skipped && ANIM_OK(al.ms, 4600), JSON.stringify({ CFG1, al }));
 
 // ---- ore veins ([C]) + decision events ([P]) ----------------------------------------------------
-const CONF = await page.evaluate(async () => { const c = await import(new URL('src/config.js', location.href).href); return { ORE: c.ORE, EV: c.EVENTS, CALMC: c.CALM }; });
-const { ORE, EV, CALMC } = CONF;
+const CONF = await page.evaluate(async () => { const c = await import(new URL('src/config.js', location.href).href); return { ORE: c.ORE, EV: c.EVENTS, CALMC: c.CALM, PWR: c.POWER, LAY: c.LAYOUT }; });
+const { ORE, EV, CALMC, PWR, LAY } = CONF;
 const touchDown = async (gx, gy) => { const p = P(gx, gy); await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: p.x, y: p.y, id: 1 }] }); };
 const touchUp = () => cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
 const runFrom = async (q) => { await page.goto(BASE + '?anim=0' + q); await wait(1500); await tap(90, 160); await wait(800); await startContract(); await waitFor('g.crew && g.crew.station === "helm" && !!g.veins', 3000); };
@@ -730,10 +745,10 @@ const c0 = await G(`(${V}.inst = ORE_MAX, { ore: s.ore, hull: s.hull, credits: $
 await touchDown(...ACTION_LEFT); await wait(500); await touchUp(); await wait(100);
 const c1 = await G('({ ore: s.ore, hull: s.hull, collapsed: s.veinsCollapsed, v: g.veins.list.find(v => v.type === "rich"), hold: g.hold })');
 check('risk warning toast as instability crosses 70 (no random tremor spikes)', await toastSeen('VEIN UNSTABLE'));
-check('instability 100 -> VEIN COLLAPSED: hull chipped, half that vein\'s ore lost, hold released', c1.collapsed === 1 && c1.v.state === 'collapsed' && Math.abs((c0.hull - c1.hull) - ORE.TYPES.rich.dmg) < 0.6 && c1.ore < c0.ore - 20 && Math.abs(c1.v.credits - c0.credits / 2) < 2 && c1.hold === null && (await toastSeen('VEIN COLLAPSED')),
+check('instability 100 -> VEIN COLLAPSED: drill integrity chipped, half that vein\'s ore lost (hopper first, then hold), hold released', c1.collapsed === 1 && c1.v.state === 'collapsed' && Math.abs((c0.hull - c1.hull) - ORE.TYPES.rich.dmg) < 0.6 && c1.ore < c0.ore - 20 && Math.abs(c1.v.credits - c0.credits / 2) < 2 && c1.hold === null && (await toastSeen('VEIN COLLAPSED')),
   `hull ${c0.hull.toFixed(1)} -> ${c1.hull.toFixed(1)}, ore ${c0.ore.toFixed(1)} -> ${c1.ore.toFixed(1)}`);
 // a small vein, worked to the end (low instability: safe to empty)
-await G('(g.veins.spawn("small", 218 - 4), s.heat = 0, true)'); await wait(300);
+await G('(g.veins.spawn("small", 168 - 4), s.heat = 0, true)'); await wait(300);
 check('a vein inside the window while stopped is immediately STOPPED AT VEIN', await G(`${V}.type === "small" && ${V}.state === "stopped"`));
 const sm0 = await G('s.ore');
 await touchDown(...ACTION_LEFT); await wait(ORE.TYPES.small.secs * 1000 + 500); await touchUp(); await wait(100);
@@ -741,7 +756,7 @@ const sm1 = await G('({ ore: s.ore, worked: s.veinsWorked, v: g.veins.list.find(
 check('small vein worked to the end -> VEIN EMPTIED, full value paid, no collapse', sm1.v.state === 'emptied' && Math.abs(sm1.ore - sm0 - ORE.TYPES.small.value) < 0.01 && sm1.worked === 1 && !sm1.cur && (await toastSeen('VEIN EMPTIED')), `+${(sm1.ore - sm0).toFixed(1)}`);
 // overshoot: full speed through a vein -> VEIN LOST, scrap only
 await goRoom('helm');
-await G('(g.veins.spawn("small", 218 - 30 * 4), g.setThrottle(1), true)');
+await G('(g.veins.spawn("small", 168 - 30 * 4), g.setThrottle(1), true)');
 await waitFor(`${V} && ${V}.state === "window"`, 8000);
 const winMoving = await G('({ ex: g.availableActions("drill").includes("extract"), speed: s.speed })');
 await waitFor('s.veinsLost === 1', 6000);
@@ -752,35 +767,21 @@ await G('(g.debugJump(985), s.hull = 100, g.setThrottle(1), true)');
 await page.waitForFunction(() => __drill.scene.isActive('Relay'), null, { timeout: 15000 }).catch(() => {});
 await R('r.skipTyping()'); await wait(200); await tap(90, 137); await wait(700);
 const rOre = await R('({ t: r.oreText && r.oreText.text, ore: Math.floor(s.ore + s.scrap), drill: Math.floor(s.drillPay) })');
-check('relay break shows the haul split: DRILL n ORE n LIQ n', rOre.t === `DRILL ${rOre.drill} ORE ${rOre.ore} LIQ 0` && rOre.ore > 50, rOre.t);
+check('relay break shows what went in: CUT n ORE n LIQ n', rOre.t === `CUT ${rOre.drill} ORE ${rOre.ore} LIQ 0` && rOre.ore > 50, rOre.t);
 await page.screenshot({ path: `${OUT}/31-relay-ore-breakdown.png` });
 await tap(132, 277); await wait(1500);
 const endOre = await page.evaluate(() => { const go = __drill.scene.getScene('GameOver'); return { active: __drill.scene.isActive('GameOver'), texts: go.children.list.map(c => c.text).filter(Boolean), run: __drill.scene.getScene('Game').lastRun }; });
-check('end screen: ORE row (2 veins: emptied + collapsed) inside the run haul', endOre.active && endOre.texts.includes(' INCL. ORE (2 VEINS)') && endOre.texts.includes(`${Math.floor(endOre.run.ore + endOre.run.scrap)} CR`) && endOre.run.veins === 2 && endOre.run.veinsLost === 1, JSON.stringify({ ore: endOre.run.ore, scrap: endOre.run.scrap }));
+check('end screen: ORE / LIQUID row (2 veins: emptied + collapsed)', endOre.active && endOre.texts.includes(' ORE 2V / LIQUID 0P') && endOre.texts.includes(`${Math.floor(endOre.run.ore + endOre.run.scrap)} / 0`) && endOre.run.veins === 2 && endOre.run.veinsLost === 1, JSON.stringify({ ore: endOre.run.ore, scrap: endOre.run.scrap, t: endOre.texts }));
 await page.screenshot({ path: `${OUT}/32-end-ore-breakdown.png` });
 
-// ---- events: FIRE ----------------------------------------------------------------------------
+// ---- [C] fires removed entirely --------------------------------------------------------------
 await runFrom('&noevents=1&event=fire:engine');
-await waitFor('!!g.director.fires.engine', 4000);
-check('?event=fire:engine: ENG catches fire (toast, fire icon), its station only offers EXTINGUISH', (await G('!!g.director.fires.engine && ui.icons.find(i => i.k === "fire").img.visible && g.availableActions("engine").join() === "extinguish" && g.director.smoke.emitting')) && (await toastSeen('FIRE IN ENG')));
-const fh0 = await G('s.hull'); await wait(1000);
-check('a fire chips the hull while it burns', (await G('s.hull')) < fh0 - 0.3, `${fh0} -> ${await G('s.hull')}`);
+await wait(2000);
+const nf = await G(`({ trig: g.director.trigger('fire', 'engine'), fires: 'fires' in g.director, log: g.director.log.length, icon: ui.icons.some(i => i.k === 'fire'), ext: 'extinguish' in ui.actionBtns,
+  flame: g.textures.exists('flame0'), acts: ['helm', 'drill', 'engine', 'tools', 'siphon'].flatMap(r => g.availableActions(r)), pool: ${JSON.stringify(EV.POOL)} })`);
+check('fires are gone: ?event=fire is a no-op, no EXTINGUISH, no fire icon/flames, no fire in any event pool', !nf.trig && !nf.fires && nf.log === 0 && !nf.icon && !nf.ext && !nf.flame && !nf.acts.includes('extinguish')
+  && nf.pool.every((p) => !p.includes('fire')) && !(await toastSeen('FIRE')), JSON.stringify(nf));
 await tap(...TOGGLE); await wait(700);
-await goRoom('engine');
-check('ENG panel: FIRE IN ENGINE!, one big EXTINGUISH button (VENT disabled)', await G('ui.stationText.text === "FIRE IN ENGINE!" && ui.actionBtns.extinguish.visible && !ui.actionBtns.vent.visible'), await G('ui.stationText.text'));
-await page.screenshot({ path: `${OUT}/28-event-fire.png` });
-const putT = await G('g.director.putOutTime("engine")');
-await hold(...ACTION_FULL, putT * 1000 + 500);
-check('hold EXTINGUISH -> FIRE OUT, ENG station back (VENT)', (await G('!g.director.fires.engine && g.availableActions("engine").join() === "vent" && !g.director.smoke.emitting')) && (await toastSeen('FIRE OUT IN ENG')), `putOut ${putT.toFixed(2)} s`);
-await G('(g.director.trigger("fire", "tools"), g.director.fires.tools.spreadT = 0.05, true)'); await wait(400);
-const spread = await G('g.director.burning');
-check('left alone, a fire spreads to a neighbouring room', spread.length === 2 && spread.includes('tools') && (spread.includes('drill') || spread.includes('engine')) && (await toastSeen('FIRE SPREAD TO')), spread.join());
-await G('(g.director.clearAll(), g.director.trigger("fire", "helm"), true)');
-await goRoom('helm');
-const th0 = await thr();
-check('fire at the HELM: throttle dead until it is out (no slider, EXTINGUISH instead)', (await G('g.setThrottle(0.9) === false')) && near(await thr(), th0) && (await G('!ui.hGfx.visible && ui.actionBtns.extinguish.visible')));
-await hold(...ACTION_FULL, (await G('g.director.putOutTime("helm")')) * 1000 + 500);
-check('helm fire out -> throttle works again', (await G('!g.director.fires.helm && g.setThrottle(0.5) === true')) && near(await thr(), 0.5));
 
 // ---- events: JAM ----------------------------------------------------------------------------
 await G('(s.heat = 10, s.hull = 100, g.director.trigger("jam"), true)'); await wait(900);
@@ -809,7 +810,7 @@ const sg0 = await G('s.heat');
 await tap(48, 90); await wait(200);
 const sg1 = await G('({ oc: s.overclockT, heat: s.heat, boost: s.boostMul, card: ui.surgeShown })');
 check('OVERCLOCK: x1.4 speed for 10 s, heat spike', sg1.oc > EV.OVERCLOCK_S - 0.5 && sg1.boost === EV.OVERCLOCK_SPEED && sg1.heat >= sg0 + EV.OVERCLOCK_HEAT - 0.5 && !sg1.card, JSON.stringify(sg1));
-const oc0 = await G('({ h: s.haul, d: s.distance })'); await wait(1000); const oc1 = await G('({ h: s.haul, d: s.distance })');
+const oc0 = await G('({ h: s.drillPay, d: s.distance })'); await wait(1000); const oc1 = await G('({ h: s.drillPay, d: s.distance })');
 const ocm = (oc1.d - oc0.d) / T.PX_PER_METER;
 check('OVERCLOCK pays x1.5 per metre', ocm > 1 && Math.abs((oc1.h - oc0.h) - ocm * EV.OVERCLOCK_PAY) < 0.01, `+${ocm.toFixed(2)}m -> +${(oc1.h - oc0.h).toFixed(2)}`);
 await G('(s.overclockT = 0, s.heat = 60, g.director.trigger("surge"), true)'); await wait(200);
@@ -823,7 +824,7 @@ check('engine restarts after the shutdown', (await G('s.speed')) > 0.05 && (awai
 const to0 = await G('(g.setThrottle(0.3), g.obstacles.list.slice().forEach(o => g.obstacles.destroy(o, false)), s.hull = 80, s.heat = 10, g.director.trigger("surge"), { hull: s.hull })');
 await wait(EV.SURGE_DECIDE_S * 1000 + 600);
 const to1 = await G('({ hull: s.hull, heat: s.heat, card: ui.surgeShown })');
-check('ignore the surge -> blowout: hull + heat hit', !to1.card && Math.abs(to0.hull - to1.hull - EV.BLOWOUT_HULL) < 1 && to1.heat >= EV.BLOWOUT_HEAT - 1 && (await toastSeen('SURGE BLOWOUT')), JSON.stringify(to1));
+check('ignore the surge -> blowout down the umbilical: drill integrity + heat hit', !to1.card && Math.abs(to0.hull - to1.hull - EV.BLOWOUT_HULL) < 1 && to1.heat >= EV.BLOWOUT_HEAT - 1 && (await toastSeen('SURGE BLOWOUT')), JSON.stringify(to1));
 
 // ---- random veins + the event scheduler by leg -------------------------------------------------
 await runFrom('');
@@ -837,32 +838,35 @@ const legs = await G(`(() => { const d = g.director, out = { leg1: [], leg2first
   d.clearAll(); s.hull = 100;
   const gaps = [0, 1].map((r) => { s.relays = r; return Array.from({ length: 50 }, () => d.gap()); });
   const avg = (a) => a.reduce((x, y) => x + y, 0) / a.length; out.gap1 = +avg(gaps[0]).toFixed(1); out.gap2 = +avg(gaps[1]).toFixed(1); return out; })()`);
-check('leg 1 events: fire + jam only (no surge)', legs.leg1.length === 40 && legs.leg1.includes('fire') && legs.leg1.includes('jam') && !legs.leg1.includes('surge'), legs.leg1.join(','));
-check('leg 2: the first event is the new POWER SURGE; then all three mix', legs.leg2first === 'surge' && ['fire', 'jam', 'surge'].every((t) => legs.leg2.includes(t)), legs.leg2first + ' / ' + [...new Set(legs.leg2)].join(','));
+check('leg 1 events: jams (no fires since [C], no surge yet)', legs.leg1.length === 40 && legs.leg1.every((t) => t === 'jam'), legs.leg1.join(','));
+check('leg 2: the first event is the new POWER SURGE; then jams + surges mix', legs.leg2first === 'surge' && ['jam', 'surge'].every((t) => legs.leg2.includes(t)) && !legs.leg2.includes('fire'), legs.leg2first + ' / ' + [...new Set(legs.leg2)].join(','));
 check('events come more often in leg 2 (mean gap, s)', legs.gap2 < legs.gap1 - 5 && EV.GAP_S[1][1] < EV.GAP_S[0][1], JSON.stringify(legs));
 
 // ---- full stop is safe ([C]) -------------------------------------------------------------------
 await runFrom('');   // random events on (veins off for a clean chip)
 await G('(g.debugJump(300), g.veins.enabled = false, g.veins.clear(), g.setThrottle(0.3), true)');
 await wait(800);
-await G('(g.director.trigger("fire", "tools"), true)'); await wait(700);
+const coolMul0 = await G('s.mods.coolMul');
+await G('(s.mods.coolMul = 0, s.heat = 100, true)'); await wait(300);   // no cooling: the engine stays pinned at max heat
 const movingHull = await G('s.hull');
 await wait(500);
-check('moving: a fire burns the hull', (await G('s.hull')) < movingHull - 0.1);
+const movingHull1 = await G('s.hull');
+await G(`(s.mods.coolMul = ${coolMul0}, true)`);
+check('moving: an overheated engine damages the drill', movingHull1 < movingHull - 0.1, `${movingHull} -> ${movingHull1}`);
 await G('(g.setThrottle(0), true)');
 await waitFor('s.calm', 3000); await wait(400);
 const spikes0 = await G('g.toastLog.filter(t => t.startsWith("COOLANT")).length');
-const cs0 = await G('(g.director.timer = 0.3, s.spikeTimer = 0.2, g.director.fires.tools.spreadT = 0.3, s.heat = 100, s.wear = 100, { hull: s.hull, log: g.director.log.length, settle: g.settle.emitting })');
+const cs0 = await G('(g.director.timer = 0.3, s.spikeTimer = 0.2, s.heat = 100, s.wear = 100, s.hull = Math.min(s.hull, 30), s.addToHopper(60, 60), { hull: s.hull, log: g.director.log.length, settle: g.settle.emitting, hop: s.hopper })');
 const ia = await G('ui.icons.filter(i => i.img.visible).map(i => +i.img.alpha.toFixed(2))'); await wait(170);
 const ib = await G('ui.icons.filter(i => i.img.visible).map(i => +i.img.alpha.toFixed(2))');
 await page.screenshot({ path: `${OUT}/33-all-stop.png` });
 await wait(2800);
-const cs1 = await G(`({ hull: s.hull, log: g.director.log.length, timer: g.director.timer, burning: g.director.burning, spreadT: g.director.fires.tools && g.director.fires.tools.spreadT,
-  heat: s.heat, spikes: g.toastLog.filter(t => t.startsWith("COOLANT")).length, ext: g.availableActions("tools").join(), spd: ui.speedText.text, chip: ui.chipText.text, ck: g.calmK,
+const cs1 = await G(`({ hull: s.hull, log: g.director.log.length, timer: g.director.timer, hop: s.hopper, power: s.power,
+  heat: s.heat, spikes: g.toastLog.filter(t => t.startsWith("COOLANT")).length, spd: ui.speedText.text, chip: ui.chipText.text, ck: g.calmK,
   light: g.ship.warnLight.visible, bubble: g.ship.bubbles.tools.alpha })`);
 check('full stop: no events spawn over 3 s (event timer paused) and no coolant leak', cs1.log === cs0.log && Math.abs(cs1.timer - 0.3) < 1e-9 && cs1.spikes === spikes0, JSON.stringify({ log: cs1.log, timer: cs1.timer }));
-check('full stop: the fire holds (no spread, no hull damage) but still blocks TLS until put out', cs1.burning.join() === 'tools' && Math.abs(cs1.spreadT - 0.3) < 1e-9 && cs1.ext === 'extinguish', JSON.stringify(cs1.burning));
-check('full stop: no hull loss at all (burning room + maxed heat + dead bit)', cs1.hull === cs0.hull, `${cs0.hull} -> ${cs1.hull}`);
+check('full stop: the conveyor gets all the power and drains the hopper', cs1.power.drill === 0 && cs1.power.rate === PWR.REACTOR * PWR.CONVEYOR_RATE && cs1.hop < cs0.hop - 15, JSON.stringify({ hop0: cs0.hop, hop1: cs1.hop, power: cs1.power }));
+check('full stop: no drill integrity loss at all (maxed heat + dead bit)', cs1.hull === cs0.hull, `${cs0.hull} -> ${cs1.hull}`);
 check(`full stop: heat drops fast (~${CALMC.COOL + T.HEAT_COOL}/s vs ${T.HEAT_COOL}/s passive)`, cs1.heat <= 100 - (CALMC.COOL + T.HEAT_COOL) * 2.8 * 0.85, `100 -> ${cs1.heat.toFixed(1)} in ~2.8 s`);
 check('calm cues: ALL STOP in the bottom bar + chip, alarms dimmed and steady, hull light off, bubbles dimmed, dust settling', cs1.spd === 'ALL STOP' && cs1.chip === 'ALL STOP: HOLDING' && cs1.ck === 1 && !cs1.light && cs1.bubble < 0.5
   && ia.length > 0 && new Set(ia.concat(ib)).size === 1 && ia[0] <= 0.5 && cs0.settle, JSON.stringify({ ia, ib, bubble: cs1.bubble, settle: cs0.settle }));
@@ -874,10 +878,11 @@ const spHull = await G('(g.director.trigger("surge"), s.hull)'); await wait(2000
 const spz = await G('({ t: g.director.surge && g.director.surge.t, sub: ui.surgeSub.text, hull: s.hull })');
 check('full stop: a pending POWER SURGE pauses its countdown (card says so)', spz.t === EV.SURGE_DECIDE_S && spz.sub === 'STOPPED: COUNTDOWN PAUSED' && spz.hull === spHull, JSON.stringify(spz));
 // throttle up: everything resumes
-await G('(g.obstacles.list.slice().forEach(o => g.obstacles.destroy(o, false)), g.director.fires.tools.spreadT = 10, g.setThrottle(0.3), true)');
-await waitFor('!s.calm', 2000); const rs0 = await G('({ hull: s.hull, t: g.director.surge.t, spreadT: g.director.fires.tools.spreadT })'); await wait(1500);
-const rs1 = await G('({ hull: s.hull, t: g.director.surge && g.director.surge.t, spreadT: g.director.fires.tools && g.director.fires.tools.spreadT, spd: ui.speedText.text, chip: ui.chipText.visible, ck: g.calmK, sub: ui.surgeSub.text })');
-check('moving again: surge countdown, fire damage + spread resume; calm cues fade out', rs1.t < rs0.t - 1 && rs1.hull < rs0.hull && rs1.spreadT < rs0.spreadT - 1 && rs1.spd === 'SPD 30%' && !rs1.chip && rs1.ck === 0 && rs1.sub === 'PICK ONE OR IT BLOWS OUT', JSON.stringify({ rs0, rs1 }));
+await G('(g.obstacles.list.slice().forEach(o => g.obstacles.destroy(o, false)), s.wear = 100, g.setThrottle(0.3), true)');
+await waitFor('!s.calm', 2000); const rs0 = await G('({ hull: s.hull, t: g.director.surge.t })'); await wait(1500);
+const rs1 = await G('({ hull: s.hull, t: g.director.surge && g.director.surge.t, spd: ui.speedText.text, chip: ui.chipText.visible, ck: g.calmK, sub: ui.surgeSub.text })');
+check('moving again: surge countdown + dead-bit drill damage resume; calm cues fade out', rs1.t < rs0.t - 1 && rs1.hull < rs0.hull && rs1.spd === 'SPD 30%' && !rs1.chip && rs1.ck === 0 && rs1.sub === 'PICK ONE OR IT BLOWS OUT', JSON.stringify({ rs0, rs1 }));
+await G('(s.wear = 0, s.hull = 100, true)');
 await G('(g.director.resolveSurge("overclock"), s.overclockT = 0, g.director.clearAll(), g.setThrottle(0), true)');
 await waitFor('s.calm', 3000);
 await G('(g.director.timer = 0.5, true)'); await wait(1200);
@@ -933,8 +938,8 @@ const trip = await G('g.crew.lastTrip');
 check('GO TO SIPHON: Holt climbs down to the keel pod seat (short walk)', reached && trip.to === 'siphon' && trip.ms < 1700 && !(await G('ui.siphonBtn.gfx.visible')), `${trip.ms} ms from ${trip.from}`);
 await tap(...TOGGLE); await waitFor('g.view.inside && g.cameras.main.zoom === 2', 3000); await wait(150);
 // visible band = between the HUD (top 24 px) and the station panel (from y 232)
-const fit = await G(`(() => { const c = g.cameras.main, v = c.worldView; const r = g.ship.room('siphon'); return { top: v.y + 24 / c.zoom, bot: v.y + 232 / c.zoom, ceil: r.ceil, floor: r.floorY, tip: ${LL.DRILL_TIP_Y} }; })()`);
-check('inside view: drill tip .. keel pod floor all visible between HUD and panel', fit.top <= fit.tip && fit.bot >= fit.floor && fit.top <= LL.SHIP_TOP, JSON.stringify(fit));
+const fit = await G(`(() => { const c = g.cameras.main, v = c.worldView; const r = g.ship.room('siphon'); return { top: v.y + 24 / c.zoom, bot: v.y + 232 / c.zoom, ceil: r.ceil, floor: r.floorY, tip: ${LL.DRILL_UNIT.hopperTop} }; })()`);
+check('inside view: hopper .. keel pod floor all visible between HUD and panel', fit.top <= fit.tip && fit.bot >= fit.floor && fit.top <= LL.SHIP_TOP, JSON.stringify(fit));
 check('siphon panel: TANK + PRESS gauges and HOLD: PUMP', await G('ui.stationText.text.startsWith("SIPHON   TANK 0/100L") && ui.pumpLabels.every(o => o.visible) && ui.actionBtns.pump.gfx.visible && ui.actionBtns.pump.enabled && ui.actionBtns.pump.text.text === "HOLD: PUMP"'), await G('ui.stationText.text'));
 await page.screenshot({ path: `${OUT}/34-siphon-seat.png` });
 // pump: tank fills, pocket drains, pressure rises; release: pressure falls
@@ -989,18 +994,18 @@ await wait(300);
 const sold = await G('({ tank: s.tank, cr: s.tankCr, liquid: s.liquid, haul: s.haul })');
 await R('r.skipTyping()'); await wait(200); await tap(90, 137); await wait(700);
 const relayTxt = await R('r.oreText && r.oreText.text');
-check('relay: the tank is sold into the haul (toast, tank empty, LIQ in the relay breakdown)', sold.tank === 0 && sold.cr === 0 && Math.abs(sold.liquid - keepTank.cr) < 1e-6 && sold.haul >= h0 + keepTank.cr - 0.01
+check('relay: the tank is sold into the hold (toast, tank empty, LIQ in the relay breakdown)', sold.tank === 0 && sold.cr === 0 && Math.abs(sold.liquid - keepTank.cr) < 1e-6 && sold.haul >= h0 + keepTank.cr - 0.01
   && (await toastSeen(`SOLD ${Math.round(keepTank.tank)} L LIQUID`)) && relayTxt.endsWith(`LIQ ${Math.floor(keepTank.cr)}`), JSON.stringify({ sold, relayTxt }));
-// hull loss: liquid in the tank counts toward the haul (1/3 kept)
+// drill loss: liquid in the SHIP's tank is sold into the hold before the 1/3 is kept
 await G('(g.pushOn(), true)'); await wait(300);
-const hl = await G('(s.tank = 40, s.tankCr = 90, { haul: s.haul, liquid: s.liquid })');
+const hl = await G('(s.tank = 40, s.tankCr = 90, { haul: s.holdCr, liquid: s.liquid })');
 await G('(s.hull = 0, true)');
 await page.waitForFunction(() => __drill.scene.isActive('GameOver'), null, { timeout: 5000 }).catch(() => {});
 await wait(300);
 const lr = await G('g.lastRun');
 const goT = await page.evaluate(() => __drill.scene.getScene('GameOver').children.list.map((c) => c.text).filter(Boolean));
-check('hull loss: tank liquid joins the haul before the 1/3 is kept; summary shows INCL. LIQUID', lr.liquid === Math.floor(hl.liquid + 90) && lr.haul >= Math.floor(hl.haul + 90) && lr.banked === Math.floor(lr.haul * T.HULL_LOSS_KEEP + 1e-9) - (Math.floor(lr.haul * T.HULL_LOSS_KEEP + 1e-9) - lr.banked)
-  && goT.some((t) => t.startsWith(' INCL. LIQUID')) && goT.includes(`${lr.liquid} CR`), JSON.stringify({ liq: lr.liquid, haul: lr.haul, banked: lr.banked }));
+check('drill loss: ship-tank liquid joins the hold before the 1/3 is kept; summary shows it on the ORE / LIQUID row', lr.liquid === Math.floor(hl.liquid + 90) && lr.haul >= Math.floor(hl.haul + 90) && lr.banked === Math.floor(lr.haul / 3 + 1e-9)
+  && goT.some((t) => t.startsWith(' ORE ') && t.endsWith(' / LIQUID 1P')) && goT.some((t) => t.endsWith(`/ ${lr.liquid}`)), JSON.stringify({ liq: lr.liquid, haul: lr.haul, banked: lr.banked, goT }));
 // stops never overlap: pockets vs veins vs boulders
 await runFrom('');
 const ov = await G(`(() => { g.debugJump(400); g.veins.spawn('rich', ${LL.DRILL_TIP_Y} - 60 * 4); const vAt = s.depth + g.veins.dist(g.veins.current);
@@ -1019,13 +1024,66 @@ check('SIPHON part BULK TANK: tank 160 L, slower pump', await G('s.tankCap === 1
 await page.evaluate(() => { const s = JSON.parse(localStorage.getItem('drill.save')); s.loadout.siphon = 'stocksiphon'; localStorage.setItem('drill.save', JSON.stringify(s)); });
 }
 
+{ // own scope
+// ---- [C] drill + ship: power split, hopper -> conveyor -> hold, spill, HUD ----------------------
+await runFrom('&noevents=1');
+await G('(g.obstacles.spawnFilter = () => false, g.obstacles.list.slice().forEach(o => g.obstacles.destroy(o, false)), true)');
+const ps = await G('[0, 0.4, 0.5, 1].map(v => s.powerSplit(v))');
+const inflow = (v) => v * T.MAX_SPEED_PX / T.PX_PER_METER * PWR.ORE_PER_M;   // hopper units/s at an actual speed
+check('power split: full stop -> conveyor gets the whole reactor (8 u/s); full speed -> drill draws 95, conveyor 0.4 u/s', ps[0].drill === 0 && ps[0].rate === PWR.REACTOR * PWR.CONVEYOR_RATE && Math.abs(ps[3].drill - PWR.DRILL_DRAW) < 1e-9 && Math.abs(ps[3].rate - 0.4) < 1e-9, JSON.stringify(ps));
+check('power split: drill draw scales with speed; medium speed is viable (40% drains, 50% fills slowly, < 1 u/s)', Math.abs(ps[2].drill - PWR.DRILL_DRAW / 2) < 1e-9 && inflow(0.4) - ps[1].rate < 0 && inflow(0.5) - ps[2].rate > 0 && inflow(0.5) - ps[2].rate < 1 && inflow(1) - ps[3].rate > 9,
+  JSON.stringify({ net40: +(inflow(0.4) - ps[1].rate).toFixed(2), net50: +(inflow(0.5) - ps[2].rate).toFixed(2), net100: +(inflow(1) - ps[3].rate).toFixed(2) }));
+await G('(g.setThrottle(1), true)'); await waitFor('s.speed >= 1', 4000);
+const f0 = await G('({ hop: s.hopper, hold: s.holdCr, t: g.time.now, d: s.distance })'); await wait(1000);
+const f1 = await G('({ hop: s.hopper, hold: s.holdCr, t: g.time.now, d: s.distance, p: s.power, hud: ui.hopperText.text, holdTxt: ui.holdText.text })');
+const fRate = (f1.hop - f0.hop) / ((f1.t - f0.t) / 1000);
+check('full speed: cuttings fill the hopper fast (~+9.6 u/s), the starved conveyor barely moves any to the hold', Math.abs(fRate - (inflow(1) - 0.4)) < 1.2 && f1.hold - f0.hold < 1 && f1.hold - f0.hold > 0 && f1.p.drill === PWR.DRILL_DRAW, `${fRate.toFixed(2)} u/s, hold +${(f1.hold - f0.hold).toFixed(2)}`);
+const hudN = +(f1.hud.match(/^HOP (\d+)\/120$/) || [])[1];
+check('HUD: HOP n/120 and HOLD n match the state; power split bar + CNV/DRL labels beside the throttle', Math.abs(hudN - f1.hop) <= 1.5 && /^HOLD \d+$/.test(f1.holdTxt)
+  && (await G('ui.pGfx.visible && ui.pGfx.commandBuffer.length > 0 && ui.pLabels.every(l => l.visible) && ui.pLabels[0].text === "CNV" && ui.pLabels[1].text === "DRL"')), JSON.stringify({ hud: f1.hud, hop: f1.hop, hold: f1.holdTxt }));
+check('outside: the drill unit (cutterhead, body, coupling) sits above the box ship; hopper window shows the ore level', await G(`g.ship.drill.texture.key.startsWith('cutter') && g.ship.drill.y === ${LAY.DRILL_TIP_Y} && g.ship.drillBody.visible && g.ship.coupling.visible && g.ship.drillBody.y + g.ship.drillBody.height <= ${LAY.SHIP_TOP} && g.ship.drillFx.commandBuffer.length > 0`));
+await page.screenshot({ path: `${OUT}/37-power-full-speed.png` });
+// spill: top the hopper up and keep going flat out
+await G('(s.addToHopper(s.hopperCap - s.hopper - 2, 30), g.toasts.length = 0, true)'); await wait(1200);
+const sp1 = await G('({ hop: s.hopper, cap: s.hopperCap, spilled: s.spilled, spilledCr: s.spilledCr, spilling: s.spilling, hud: ui.hopperText.text, icon: ui.icons.find(i => i.k === "spill").img.visible, fx: g.ship.spillFx.emitting, helm: g.alerts().helm })');
+check('full hopper SPILLS new cuttings: lost units counted, HOP SPILL! in the HUD, spill icon + particles, toast', sp1.hop >= sp1.cap - 1 && sp1.spilled > 5 && sp1.spilledCr > 5 && sp1.spilling && sp1.hud === 'HOP SPILL!' && sp1.icon && sp1.fx && sp1.helm && (await toastSeen('HOPPER FULL: SPILLING')), JSON.stringify(sp1));
+await page.screenshot({ path: `${OUT}/38-hopper-spill.png` });
+// medium speed: the hopper creeps up slowly (net < 1 u/s)
+await G('(g.setThrottle(0.5), s.hopper = 40, s.hopperCr = 40, true)'); await waitFor('Math.abs(s.speed - 0.5) < 0.01', 3000); await wait(200);
+const m0 = await G('({ hop: s.hopper, t: g.time.now })'); await wait(2000); const m1 = await G('({ hop: s.hopper, t: g.time.now, spill: s.spilling })');
+const mRate = (m1.hop - m0.hop) / ((m1.t - m0.t) / 1000);
+check('50% speed: the hopper creeps (about +0.8 u/s), no spill', mRate > 0 && mRate < 1.5 && !m1.spill, `${mRate.toFixed(2)} u/s`);
+// full stop: the conveyor drains it quickly (not instantly) into the hold
+await G('(g.setThrottle(0), s.hopper = 120, s.hopperCr = 240, true)'); await waitFor('s.calm', 3000);
+const st0 = await G('({ hop: s.hopper, cr: s.hopperCr, hold: s.holdCr, t: g.time.now })'); await wait(1000);
+const st1 = await G('({ hop: s.hopper, cr: s.hopperCr, hold: s.holdCr, t: g.time.now, p: s.power })');
+const sRate = (st0.hop - st1.hop) / ((st1.t - st0.t) / 1000);
+check('full stop: the conveyor drains ~8 u/s (a full hopper takes ~15 s) and the value lands in the hold', Math.abs(sRate - 8) < 0.8 && Math.abs((st1.hold - st0.hold) - (st0.cr - st1.cr)) < 0.01 && st1.p.drill === 0, `${sRate.toFixed(2)} u/s, hold +${(st1.hold - st0.hold).toFixed(1)}`);
+await page.screenshot({ path: `${OUT}/39-power-full-stop.png` });
+// inside: DRL console readout + wall monitor, helm power bar, hopper + conveyor in view
+await tap(...TOGGLE); await wait(800);
+await goRoom('drill');
+const dr = await G('({ hint: ui.hintText.text, mon: g.ship.monitorGfx.commandBuffer.length > 0 })');
+check('inside DRL (drill console): HOPPER n/cap BELT x/S readout + the wall monitor', /^HOPPER \d+\/120  BELT 8\.0\/S$/.test(dr.hint) && dr.mon, JSON.stringify(dr));
+await page.screenshot({ path: `${OUT}/40-inside-drill-console.png` });
+await goRoom('helm');
+check('inside HELM: power split bar under the slider (DRILL / POWER / CONVEYOR)', await G('ui.pGfx.commandBuffer.length > 0 && ui.hpLabels.every(l => l.visible)'));
+await tap(...TOGGLE); await wait(800);
+// parts: BIG HOPPER (bigger bin, slower belt), HIGH-DRAW CUTTER (faster, starves the conveyor)
+await page.evaluate(() => { const s = JSON.parse(localStorage.getItem('drill.save')); s.owned.push('bighopper', 'highdraw'); s.loadout.hull = 'bighopper'; s.loadout.drill = 'highdraw'; localStorage.setItem('drill.save', JSON.stringify(s)); });
+await runFrom('&noevents=1');
+const pp = await G('({ cap: s.hopperCap, conv: s.mods.convMul, draw: s.mods.drawMul, top: s.mods.maxSpeedMul, stop: s.powerSplit(0).rate, full: s.powerSplit(s.mods.maxSpeedMul).rate, half: s.powerSplit(0.5 * s.mods.maxSpeedMul).rate, hud: ui.hopperText.text })');
+check('BIG HOPPER: hopper 180, conveyor x0.75 (6 u/s at a stop); HIGH-DRAW CUTTER: +20% speed, the conveyor gets nothing at full speed', pp.cap === 180 && pp.conv === 0.75 && Math.abs(pp.stop - 6) < 1e-9 && pp.draw === 1.5 && pp.top === 1.2 && pp.full === 0 && pp.half < 1 && pp.hud === 'HOP 0/180', JSON.stringify(pp));
+await page.evaluate(() => { const s = JSON.parse(localStorage.getItem('drill.save')); s.loadout.hull = 'stockhull'; s.loadout.drill = 'stockbit'; localStorage.setItem('drill.save', JSON.stringify(s)); });
+}
+
 // ---- save migration (v1 from M1, plus the pre-M1 best-depth key) ----------------------------
 await page.evaluate(() => { localStorage.clear(); localStorage.setItem('drill.save', JSON.stringify({ v: 1, credits: 777, runs: 3, cashouts: 2, rigsLost: 1, relaysReached: 4 })); localStorage.setItem('drill.bestDepth', '1234'); });
 await page.goto(BASE + '?anim=0'); await wait(1500);
 const mig = await page.evaluate(() => JSON.parse(localStorage.getItem('drill.save')));
-check('v1 save migrates to v4 without losing credits, stats or best depth', mig.v === 4 && mig.credits === 777 && mig.runs === 3 && mig.cashouts === 2 && mig.rigsLost === 1 && mig.relaysReached === 4 && mig.best.kessa4 === 1234 && mig.totalEarned === 777,
+check('v1 save migrates to v5 without losing credits, stats or best depth (rigsLost -> drillsLost)', mig.v === 5 && mig.credits === 777 && mig.runs === 3 && mig.cashouts === 2 && mig.drillsLost === 1 && !('rigsLost' in mig) && mig.relaysReached === 4 && mig.best.kessa4 === 1234 && mig.totalEarned === 777,
   JSON.stringify({ v: mig.v, c: mig.credits, runs: mig.runs, best: mig.best }));
-const MIG_OPEN = ['harness', 'lightframe', 'grinder', 'governor', 'toolbelt', 'bigtank']; // best 1234 m + 4 lifetime relays
+const MIG_OPEN = ['harness', 'lightframe', 'grinder', 'governor', 'toolbelt', 'bigtank', 'bighopper']; // best 1234 m + 4 lifetime relays
 check('migrated save: stock loadout, milestones already reached are open (silently)', mig.owned.length === 7 && Object.keys(mig.loadout).length === 7 && Object.values(mig.loadout).every((id) => P_[id].stock)
   && MIG_OPEN.every((id) => mig.unlocked.includes(id)) && mig.unlocked.length === MIG_OPEN.length && mig.newUnlocks.length === 0, JSON.stringify(mig.unlocked));
 check('migrated vendor stock only offers unlocked parts (11: 2/1/2/1/2/2/1)', mig.vendor.stock.length === 11 && mig.vendor.stock.every((id) => !P_[id].unlock || mig.unlocked.includes(id)), mig.vendor.stock.join());
@@ -1035,9 +1093,16 @@ const m34 = await page.evaluate(async () => { const S = await import(new URL('sr
     owned: ['stockbit', 'stockengine', 'stockhull', 'stocktools', 'stockhelm', 'stockkit', 'diamond', 'lightboots'], loadout: { drill: 'diamond', engine: 'stockengine', hull: 'stockhull', tools: 'stocktools', helm: 'stockhelm', kit: 'lightboots' },
     vendor: { stock: ['grinder', 'coldloop', 'ablative', 'patchfoam', 'scanner', 'harness'], rerolls: 1, refreshes: 7 }, unlocked: ['harness', 'lightframe', 'grinder', 'governor', 'overdrive', 'quickcap', 'toolbelt'], newUnlocks: [], radio: [] };
   return S.migrate(v3); });
-check('v3 save migrates to v4: credits/stats/loadout kept, HAND PUMP owned + fitted, siphon parts reached by depth open, stock gains siphon offers', m34.v === 4 && m34.credits === 4321 && m34.runs === 7 && m34.loadout.drill === 'diamond' && m34.loadout.kit === 'lightboots'
+check('v3 save migrates to v5: credits/stats/loadout kept, HAND PUMP owned + fitted, siphon parts reached by depth open, stock gains siphon offers, drillsLost carried', m34.v === 5 && m34.drillsLost === 3 && m34.credits === 4321 && m34.runs === 7 && m34.loadout.drill === 'diamond' && m34.loadout.kit === 'lightboots'
   && m34.loadout.siphon === 'stocksiphon' && m34.owned.includes('stocksiphon') && m34.owned.length === 9 && m34.unlocked.includes('bigtank') && m34.unlocked.includes('highflow') && m34.vendor.stock.slice(0, 6).join() === 'grinder,coldloop,ablative,patchfoam,scanner,harness'
   && m34.vendor.stock.filter((id) => P_[id].slot === 'siphon').length === 2 && m34.vendor.rerolls === 1, JSON.stringify({ v: m34.v, l: m34.loadout, st: m34.vendor.stock, un: m34.unlocked }));
+const m45 = await page.evaluate(async () => { const S = await import(new URL('src/systems/Save.js', location.href).href);
+  const v4 = { v: 4, credits: 1500, totalEarned: 6000, runs: 9, cashouts: 5, rigsLost: 4, relaysReached: 8, deepestRelay: 3, best: { kessa4: 2600 },
+    owned: ['stockbit', 'stockengine', 'stockhull', 'stocktools', 'stockhelm', 'stockkit', 'stocksiphon', 'plating'], loadout: { drill: 'stockbit', engine: 'stockengine', hull: 'plating', tools: 'stocktools', helm: 'stockhelm', kit: 'stockkit', siphon: 'stocksiphon' },
+    vendor: { stock: ['grinder', 'coldloop', 'ablative', 'patchfoam', 'scanner', 'harness', 'bigtank'], rerolls: 0, refreshes: 9 }, unlocked: ['harness', 'lightframe', 'grinder', 'governor', 'overdrive', 'quickcap', 'plating', 'bypass', 'toolbelt', 'linkage', 'bigtank', 'highflow'], newUnlocks: [], radio: [] };
+  return S.migrate(v4); });
+check('v4 save migrates to v5: rigsLost -> drillsLost, loadout + stock kept, power-split parts reached by depth (2600 m) open silently', m45.v === 5 && m45.drillsLost === 4 && !('rigsLost' in m45) && m45.migratedFrom === 4 && m45.credits === 1500 && m45.loadout.hull === 'plating'
+  && m45.unlocked.includes('bighopper') && m45.unlocked.includes('highdraw') && m45.newUnlocks.length === 0 && m45.vendor.stock.slice(0, 7).join() === 'grinder,coldloop,ablative,patchfoam,scanner,harness,bigtank', JSON.stringify({ v: m45.v, d: m45.drillsLost, un: m45.unlocked, st: m45.vendor.stock }));
 check('title shows migrated credits + best', await page.evaluate(() => { const t = __drill.scene.getScene('Title'); const tx = t.children.list.map((c) => c.text).filter(Boolean); return tx.includes('CREDITS 777 CR') && tx.includes('BEST DEPTH 1234M'); }));
 await tap(90, 160); await wait(800);
 check('docked HUD shows migrated credits', (await D('u.creditText.text')) === '777 CR' && (await D('u.bestText.text')) === 'BEST 1234M');

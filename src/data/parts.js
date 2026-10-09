@@ -7,7 +7,7 @@
 export const SLOTS = [
   { id: 'drill',  name: 'DRILL HEAD', short: 'DRL', room: 'drill' },
   { id: 'engine', name: 'ENGINE',     short: 'ENG', room: 'engine' },
-  { id: 'hull',   name: 'HULL',       short: 'HUL', room: 'tools' },
+  { id: 'hull',   name: 'DRILL FRAME', short: 'FRM', room: 'tools' },   // id kept for saves: the drill unit's shield/frame/hopper
   { id: 'tools',  name: 'TOOLS',      short: 'TLS', room: 'tools' },
   { id: 'helm',   name: 'HELM',       short: 'HLM', room: 'helm' },
   { id: 'kit',    name: "HOLT'S KIT", short: 'KIT', room: 'tools' },
@@ -20,7 +20,7 @@ export const PARTS = [
   // --- stock (owned from the start, the M1 balance) ---
   P('drill',  'stockbit',    'SURVEY BIT',        0, 'BALANCED. THE COMPANY ISSUE.', 'NOTHING SPECIAL.', {}, { stock: true }),
   P('engine', 'stockengine', 'K-9 ENGINE',        0, 'BALANCED. STARTS EVERY TIME.', 'NOTHING SPECIAL.', {}, { stock: true }),
-  P('hull',   'stockhull',   'STANDARD PLATE',    0, 'BALANCED. 100 HULL.', 'NOTHING SPECIAL.', {}, { stock: true }),
+  P('hull',   'stockhull',   'STANDARD PLATE',    0, 'BALANCED. 100 DRILL. 120 HOPPER.', 'NOTHING SPECIAL.', {}, { stock: true }),
   P('tools',  'stocktools',  'BENCH KIT',         0, 'PATCH + 1.2S BLAST.', 'NOTHING SPECIAL.', {}, { stock: true }),
   P('helm',   'stockhelm',   'BASIC CONSOLE',     0, 'STANDARD WARNINGS.', 'NOTHING SPECIAL.', {}, { stock: true }),
   P('kit',    'stockkit',    'WORK BOOTS',        0, 'STANDARD WALK + CLIMB.', 'NOTHING SPECIAL.', {}, { stock: true }),
@@ -30,14 +30,18 @@ export const PARTS = [
   P('drill', 'widecut', 'WIDE-CUT BIT', 900, 'TOP SPEED +25%', 'HEAT +35%. SAFE RAM ZONE SHRINKS', { maxSpeedMul: 1.25, heatMul: 1.35 }),
   P('drill', 'diamond', 'DIAMOND-CORE BIT', 700, 'BIT WEAR -40%', 'TOP SPEED -15%', { wearMul: 0.6, maxSpeedMul: 0.85 }),
   P('drill', 'grinder', 'GRINDER HEAD', 600, 'SAFE RAM SPEED 35% TO 50%', 'GRIND WEAR +40%. TOP SPEED -10%', { ramSafe: 0.5, grindWearMul: 1.4, maxSpeedMul: 0.9 }),
+  // [C] power split: more speed, but it eats the conveyor's share (cuttings pile up, the hopper spills)
+  P('drill', 'highdraw', 'HIGH-DRAW CUTTER', 800, 'TOP SPEED +20%. BIT WEAR -20%', 'DRAWS 50% MORE POWER: CONVEYOR STARVES', { maxSpeedMul: 1.2, wearMul: 0.8, drawMul: 1.5 }),
   // --- engine ---
   P('engine', 'overdrive', 'OVERDRIVE TURBINE', 650, 'ACCELERATION +60%', 'COOLANT LEAKS HIT 2X HARDER', { accelMul: 1.6, spikeMul: 2 }),
   P('engine', 'coldloop', 'COLD-LOOP ENGINE', 600, 'PASSIVE COOLING X2', 'ACCELERATION -30%', { coolMul: 2, accelMul: 0.7 }),
-  P('engine', 'bypass', 'BYPASS VALVE', 550, 'OVERHEATED CAP 40% TO 70% SPEED', 'OVERHEAT HULL DAMAGE X2', { overheatCap: 0.7, overheatDmgMul: 2 }),
-  // --- hull ---
-  P('hull', 'plating', 'HEAVY PLATING', 800, '+40 MAX HULL', 'ACCEL + BRAKING -35%', { addMaxHull: 40, accelMul: 0.65, decelMul: 0.65 }),
+  P('engine', 'bypass', 'BYPASS VALVE', 550, 'OVERHEATED CAP 40% TO 70% SPEED', 'OVERHEAT DRILL DAMAGE X2', { overheatCap: 0.7, overheatDmgMul: 2 }),
+  // --- drill frame (slot id 'hull') ---
+  P('hull', 'plating', 'HEAVY PLATING', 800, '+40 MAX DRILL', 'ACCEL + BRAKING -35%', { addMaxHull: 40, accelMul: 0.65, decelMul: 0.65 }),
   P('hull', 'ablative', 'ABLATIVE SKIN', 700, 'RAM DAMAGE -40%', 'PATCHING 50% SLOWER', { ramMul: 0.6, patchMul: 0.5 }),
-  P('hull', 'lightframe', 'LIGHT FRAME', 500, 'ACCEL + BRAKING +35%', '-25 MAX HULL', { addMaxHull: -25, accelMul: 1.35, decelMul: 1.35 }),
+  P('hull', 'lightframe', 'LIGHT FRAME', 500, 'ACCEL + BRAKING +35%', '-25 MAX DRILL', { addMaxHull: -25, accelMul: 1.35, decelMul: 1.35 }),
+  // [C] power split: a deeper bin forgives fast stretches, but the longer belt runs slower
+  P('hull', 'bighopper', 'BIG HOPPER', 650, 'HOPPER 180 (WAS 120)', 'CONVEYOR 25% SLOWER', { hopperMul: 1.5, convMul: 0.75 }),
   // --- tools ---
   P('tools', 'heavycharge', 'HEAVY CHARGE', 750, 'ONE BLAST CLEARS EVERY BOULDER IN VIEW', 'CHARGE TIME 3S (WAS 1.2S)', { blastAll: true, blastTimeMul: 2.5 }),
   P('tools', 'patchfoam', 'PATCH FOAM', 550, 'PATCH RATE +80%', 'NO BLASTING AT ALL', { patchMul: 1.8, noBlast: true }),
@@ -69,6 +73,7 @@ export const UNLOCKS = {
   linkage: { depth: 2500 },
   bigtank: { depth: 500 }, highflow: { depth: 1500 },   // SIPHON: no starter alternative; both gated by depth
   widecut: { depth: 3000 }, heavycharge: { depth: 3000 },
+  bighopper: { depth: 1000 }, highdraw: { depth: 2500 },   // [C] power-split sidegrades
 };
 for (const p of PARTS) { p.unlock = UNLOCKS[p.id] || null; p.unlocked = !p.unlock; }
 export const unlockText = (p) => !p.unlock ? '' : p.unlock.depth ? `REACH ${p.unlock.depth}M` : `${p.unlock.relays} RELAYS (TOTAL)`;

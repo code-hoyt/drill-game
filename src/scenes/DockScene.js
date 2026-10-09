@@ -580,7 +580,7 @@ export class DockUIScene extends Phaser.Scene {
       ['BEST DEPTH (KESSA-4)', `${s.best.kessa4 || 0}M`],
       ['CONTRACTS RUN', `${s.runs}`],
       ['CASHED OUT', `${s.cashouts}`],
-      ['RIGS LOST (REFITTED)', `${s.rigsLost}`],
+      ['DRILLS LOST (BILLED)', `${s.drillsLost}`],
       ['RELAYS REACHED', `${s.relaysReached}`],
       ['DEEPEST RELAY', `${s.deepestRelay || 0}`],
       ['PARTS OWNED', `${s.owned.length}/${PARTS.length}`],

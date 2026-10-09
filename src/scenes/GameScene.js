@@ -11,12 +11,12 @@ import { Crew } from '../systems/Crew.js';
 import { ViewController } from '../systems/ViewController.js';
 import { FONT_KEY } from '../systems/PixelFont.js';
 import { drawBoosts } from '../data/boosts.js';
-import { RELAY_PING, relayMessage, CASHOUT_LINE, POD_LINE } from '../data/dispatch.js';
+import { RELAY_PING, relayMessage, CASHOUT_LINE, BREAKAWAY_LINE } from '../data/dispatch.js';
 import { bankRun, loadSave, logRadio, setRunActive } from '../systems/Save.js';
-import { ANIM } from '../systems/Settings.js';
+import { ANIM, animScale, GRACE_MS } from '../systems/Settings.js';
 
 // Hold-actions per station. The HELM has none: its action area is the throttle itself.
-// DRL also runs EXTRACT (stopped at a vein) and FREE THE BIT (jam); any burning room offers EXTINGUISH only.
+// DRL is the remote DRILL CONSOLE (bit wear, EXTRACT at a vein, FREE THE BIT on a jam). TLS patches drill integrity.
 // SIPHON (keel pod): PUMP, stopped with a side pocket lined up with a hose port.
 export const STATION_ACTIONS = { engine: ['vent'], helm: [], drill: ['repair', 'extract', 'freebit'], tools: ['patch', 'blast'], siphon: ['pump'] };
 
@@ -44,6 +44,7 @@ export class GameScene extends Phaser.Scene {
     this.flags = {};         // previous alert states (for one-shot toasts)
     this.nextHardCheck = T.HARD_START_DEPTH;
     this.over = false;
+    this.leftRun = false; this.breakState = null;   // (scene fields survive restarts)
     this.lockedPing = -99999; // time of the last tap on a locked throttle (UI flashes)
     this.wasPiloted = this.piloted;
     this.boom = this.add.particles(0, 0, 'px2', {
@@ -82,12 +83,12 @@ export class GameScene extends Phaser.Scene {
     if (q.has('depth')) this.debugJump(Number(q.get('depth')) || 0);
     if (q.has('boosts')) this.forceOffers = q.get('boosts').split(',');
     // ?noevents=1: no random veins or events (tests / calm playtests). ?vein=small|rich|fine: one ~45 m ahead.
-    // ?event=fire|jam|surge (fire:engine picks the room): triggered 1.5 s into the run.
+    // ?event=jam|surge: triggered 1.5 s into the run. (?event=fire is a no-op: fires were removed.)
     if (q.get('noevents') === '1') { this.veins.enabled = false; this.director.enabled = false; this.pockets.enabled = false; }
     if (q.has('vein') && ORE.TYPES[q.get('vein')]) this.veins.spawn(q.get('vein'), L.DRILL_TIP_Y - 45 * T.PX_PER_METER);
     // ?pocket=small|rich|volatile&side=left|right: one side pocket lining up ~45 m ahead
     if (q.has('pocket') && SIPHON.TYPES[q.get('pocket')]) this.pockets.spawn(q.get('pocket'), q.get('side') === 'right' ? 'right' : 'left', SIPHON.PORT_Y - 45 * T.PX_PER_METER);
-    if (q.has('event')) { const [type, arg] = q.get('event').split(':'); this.time.delayedCall(1500, () => { if (!this.over) this.director.trigger(type, arg); }); }
+    if (q.has('event')) { const [type] = q.get('event').split(':'); this.time.delayedCall(1500, () => { if (!this.over) this.director.trigger(type); }); }
   }
 
   /** Is a depth inside a relay's clear window [R - WARN - pad, R + CLEAR_AFTER]? */
@@ -111,7 +112,9 @@ export class GameScene extends Phaser.Scene {
     const s = this.state;
     s.anchor();
     this.director.clearAll();
-    // the relay buys the siphon tank: it goes into the haul
+    // relay crews empty the drill's hopper straight into the hold (a free safe point)
+    if (s.hopper > 0.01) { const u = Math.round(s.hopper), cr = s.transferHopper(); this.toast(`HOPPER UNLOADED: ${u} U, +${Math.floor(cr)} CR TO HOLD`, 0xd8b04a); }
+    // the relay buys the siphon tank: it goes into the hold
     if (s.tank > 0.5) { const l = Math.round(s.tank), cr = s.sellTank(); this.toast(`SOLD ${l} L LIQUID: +${Math.floor(cr)} CR`, 0x4fe0c0); }
     else { s.tank = 0; s.tankCr = 0; }
     this.setHold(null); this.blastCharge = 0;
@@ -146,14 +149,16 @@ export class GameScene extends Phaser.Scene {
     this.toast(`SEGMENT ${s.relays + 1}: PAY X${s.payMult.toFixed(1)}`, 0x7fe0ff);
   }
 
+  /** Winch up from a relay: the hold (and anything still in the hopper) + 10%. */
   cashOut() {
     const s = this.state;
-    const haul = Math.floor(s.haul);
-    const banked = Math.floor(s.haul * (1 + T.CASHOUT_BONUS));
+    s.transferHopper();
+    const haul = Math.floor(s.holdCr);
+    const banked = Math.floor(s.holdCr * (1 + T.CASHOUT_BONUS));
     this.endRun({ reason: 'cashout', haul, bonus: banked - haul, banked, relays: s.relays + 1 });
   }
 
-  endRun({ reason, haul, bonus = 0, recovery = 0, banked, relays }) {
+  endRun({ reason, haul, bonus = 0, recovery = 0, banked, relays, hopperLost = 0 }) {
     this.over = true;
     this.hold = null;
     setRunActive(false);
@@ -163,47 +168,106 @@ export class GameScene extends Phaser.Scene {
     const newBest = depth > prevBest;
     if (newBest) saveBest(depth);
     const save = bankRun({ banked, reason, relays, depth, planet: this.planet });
-    logRadio(`C${this.contractNo} ${reason === 'cashout' ? 'CASH-OUT' : 'POD'}`, reason === 'cashout' ? CASHOUT_LINE : POD_LINE);
+    logRadio(`C${this.contractNo} ${reason === 'cashout' ? 'CASH-OUT' : 'BREAKAWAY'}`, reason === 'cashout' ? CASHOUT_LINE : BREAKAWAY_LINE);
     const st = this.state;
-    this.lastRun = { reason, depth, best: Math.max(depth, prevBest), newBest, haul, bonus, recovery, banked, credits: save.credits, relays,
+    // haul = the ship's HOLD at the end (what the bank sees); recovery = the drill write-off (lost runs)
+    this.lastRun = { reason, depth, best: Math.max(depth, prevBest), newBest, haul, hold: haul, bonus, recovery, writeoff: recovery, hopperLost, banked, credits: save.credits, relays,
+      spilled: Math.floor(st.spilledCr),
       ore: Math.floor(st.ore), liquid: Math.floor(st.liquid), pockets: st.pocketsTapped, scrap: Math.floor(st.scrap), drill: Math.floor(st.drillPay), veins: st.veinsWorked + st.veinsCollapsed, veinsLost: st.veinsLost, collapses: st.veinsCollapsed };
     this.scene.stop('Relay');
     // With cutscenes: a short in-run beat, then the ascent (bore -> space -> dock), and the
     // summary over the docked rig. ?anim=0: the old summary over the run.
     const next = () => {
+      if (this.leftRun) return;
+      this.leftRun = true;
       if (!ANIM) { this.scene.launch('GameOver', this.lastRun); return; }
       this.scene.stop('UI');
-      this.scene.start('Cutscene', { kind: 'ascent', vehicle: reason === 'cashout' ? 'rig' : 'pod', summary: this.lastRun });
+      this.scene.start('Cutscene', { kind: 'ascent', vehicle: reason === 'cashout' ? 'rig' : 'ship', summary: this.lastRun });
     };
     if (reason === 'cashout') {
       this.cameras.main.fadeOut(ANIM ? 800 : 700, 0, 0, 0);
       this.time.delayedCall(ANIM ? 850 : 750, next);
-    } else {
-      this.escapePod();
-      this.time.delayedCall(ANIM ? 1600 : 1500, next); // the pod clears the screen at ~1.45 s
-    }
+    } else this.breakaway(next);
   }
 
-  escapePod() {
-    this.view.set('outside');
-    this.ship.sparks.emitting = false; this.ship.chips.emitting = false; this.ship.exhaust.emitting = false;
-    this.boom.explode(60, 90, L.DRILL_TIP_Y + 10);
-    this.ship.drill.setVisible(false);
-    this.cameras.main.shake(500, 0.02);
-    this.cameras.main.flash(300, 255, 80, 40);
-    // the crew cab is the escape pod: it detaches and rides the bore back (down the screen)
-    this.ship.exterior.setTint(0x6a4a4a);
-    const pod = this.add.image(90, L.SHIP_TOP + 18, 'pod').setDepth(42).setScale(2);
-    const trail = this.add.particles(0, 0, 'px2', {
-      speed: { min: 5, max: 20 }, angle: { min: 250, max: 290 }, lifespan: 500, alpha: { start: 0.8, end: 0 },
-      tint: [0xffd23f, 0xff6b3d, 0xcfcfdf], frequency: 25,
+  /**
+   * [C] Drill lost: BREAKAWAY (replaces the escape pod). The clamps release, the umbilicals snap, the ship
+   * backs off, flips and burns out down the bore; the wrecked drill is left sparking. Base 2.4 s x ANIM_SCALE
+   * (?anim=0: a quick 1.2 s), tap to skip after the grace. Calls done() once.
+   */
+  breakaway(done) {
+    const S = ANIM ? animScale : 0.5, d = (ms) => Math.round(ms * S), DU = L.DRILL_UNIT;
+    const sh = this.ship, cam = this.cameras.main;
+    this.view.set('outside', 0);
+    this.scene.stop('UI');
+    this.crew.sprite.setVisible(false);
+    sh.sparks.emitting = false; sh.chips.emitting = false; sh.exhaust.emitting = false; sh.spillFx.emitting = false;
+    sh.broken = true; sh.drillFx.clear();
+    // the drill: dead, tinted, sparking where the cutterhead tore up
+    sh.drill.setTint(0x6a5a5a); sh.drillBody.setTint(0x8a7a7a);
+    this.boom.explode(50, 90, L.DRILL_TIP_Y + 8);
+    cam.shake(d(450), 0.02); cam.flash(d(250), 255, 80, 40);
+    this.wreckSparks = this.add.particles(0, 0, 'px', {
+      speed: { min: 15, max: 60 }, angle: { min: 200, max: 340 }, gravityY: 140, lifespan: 450,
+      tint: [0xffe27a, 0xff9a3d, 0xffffff], frequency: 70, quantity: 2,
+    }).setDepth(20);
+    this.wreckSparks.addEmitZone({ type: 'random', source: new Phaser.Geom.Rectangle(DU.x + 6, L.DRILL_TIP_Y + 4, DU.w - 12, 30) });
+    // stand-in for the ship (plating + keel pod) that can back off, flip and burn out
+    const cy = (L.SHIP_TOP + L.POD.top + 19) / 2;
+    const ship = this.add.container(90, cy).setDepth(42);
+    ship.add([this.add.image(L.SHIP_X - 90, L.SHIP_TOP - cy, 'ship_ext').setOrigin(0), this.add.image(L.POD.x - 90, L.POD.top - cy, 'pod_ext').setOrigin(0)]);
+    for (const o of sh.shipObjects()) o.setVisible(false);
+    const plume = this.add.particles(0, 0, 'px2', {
+      speed: { min: 10, max: 30 }, lifespan: 420, alpha: { start: 0.9, end: 0 }, scale: { start: 1.5, end: 3 },
+      tint: [0xffd23f, 0xff8a3d, 0x7fe0ff], frequency: 18, emitting: false,
     }).setDepth(41);
-    trail.startFollow(pod, 0, -6);
-    // pop clear of the wreck, hang a beat, then ride the bore back down past the HUD
-    this.tweens.chain({ targets: pod, tweens: [
-      { y: L.SHIP_TOP - 14, duration: 320, delay: 150, ease: 'Back.easeOut' },
-      { y: 420, duration: 800, delay: 180, ease: 'Quad.easeIn', onComplete: () => trail.stop() },
-    ] });
+    const caption = this.add.bitmapText(90, 120, FONT_KEY, 'DRILL LOST: BREAKAWAY', 6).setOrigin(0.5).setTint(0xff4a4a).setDepth(50);
+    const skip = this.add.bitmapText(176, 310, FONT_KEY, 'TAP TO SKIP', 6).setOrigin(1, 0).setTint(0x6a6278).setDepth(50).setAlpha(0);
+    const B = this.breakState = { clamp: 0, snap: 0, ship, plume, t0: this.time.now, done: false };
+    const drawCoupling = () => {
+      const g = sh.breakGfx.clear(), roof = ship.y - (cy - L.SHIP_TOP);
+      // clamp arms swing open off the frame, folding back onto the ship roof (they ride with the ship)
+      for (const m of [1, -1]) {
+        if (ship.rotation > 0.4) break;
+        const bx = 90 - m * 38, ex = bx - m * (4 + 10 * B.clamp), tx = bx + m * (4 - 14 * B.clamp);
+        const ty = roof - 27 + 22 * B.clamp;
+        g.lineStyle(2, 0x14161c, 1).lineBetween(bx, roof, ex, roof - 13).lineBetween(ex, roof - 13, tx, ty);
+        g.lineStyle(1, 0xb89a48, 1).lineBetween(bx, roof, ex, roof - 13).lineBetween(ex, roof - 13, tx, ty);
+      }
+      // umbilicals: whole, then snapped (stubs whip on the drill, frayed ends on the ship)
+      const hoses = [[61, 221, 67, roof, 0xd0503a], [118, 221, 113, roof, 0x4a9ad8]];
+      for (const [x0, y0, x1, y1, c] of hoses) {
+        if (B.snap < 1) g.lineStyle(2, c, 1).lineBetween(x0, y0, x1, y1);
+        else {
+          const wob = Math.sin(this.time.now / 60 + x0) * 3;
+          g.lineStyle(2, c, 1).lineBetween(x0, y0, x0 + wob, y0 + 8);
+          if (ship.rotation < 0.4) g.lineStyle(2, c, 1).lineBetween(x1, y1, x1 - wob, y1 - 4);
+        }
+      }
+      // conveyor chute torn off the collar
+      if (B.snap >= 1) g.fillStyle(0x2a2e38, 1).fillRect(86, DU.collarBot, 8, 2);
+    };
+    B.draw = drawCoupling;
+    drawCoupling();
+    const at = (ms, fn) => this.time.delayedCall(d(ms), () => { if (!B.done) fn(); });
+    at(150, () => this.tweens.add({ targets: B, clamp: 1, duration: d(300), ease: 'Back.easeOut', onUpdate: drawCoupling }));
+    at(450, () => {
+      B.snap = 1; drawCoupling();
+      this.boom.explode(14, 64, 230); this.boom.explode(14, 116, 230);
+      cam.shake(d(150), 0.01);
+    });
+    at(600, () => this.tweens.add({ targets: ship, y: cy + 18, duration: d(450), ease: 'Sine.easeOut', onUpdate: drawCoupling }));
+    at(1050, () => this.tweens.add({ targets: ship, rotation: Math.PI, duration: d(500), ease: 'Sine.easeInOut', onUpdate: drawCoupling }));
+    at(1550, () => {
+      plume.startFollow(ship, 0, -34); plume.start();
+      this.tweens.add({ targets: ship, y: 440, duration: d(700), ease: 'Quad.easeIn', onUpdate: drawCoupling });
+    });
+    at(2250, () => plume.stop());
+    const finish = () => { if (B.done) return; B.done = true; B.skipped = this.time.now - B.t0 < d(2400) - 5; B.ms = Math.round(this.time.now - B.t0); done(); };
+    at(2400, finish);
+    this.time.delayedCall(GRACE_MS, () => { if (!B.done) skip.setAlpha(1); });
+    this.input.on('pointerdown', () => { if (this.time.now - B.t0 >= GRACE_MS) finish(); });
+    this.tweens.add({ targets: caption, alpha: 0.3, duration: 300, yoyo: true, repeat: -1 });
   }
 
   /** Debug/test: put the run at a given depth (keeps haul). Jumping to 970 lands 30 m before relay 1. */
@@ -244,7 +308,6 @@ export class GameScene extends Phaser.Scene {
   // Throttle commands are ignored (with feedback) unless someone is at the helm.
   setThrottle(v) {
     if (!this.piloted) return this.lockedFeedback();
-    if (this.director.fires.helm) { if (this.time.now - this.lockedPing > T.LOCK_TOAST_COOLDOWN) this.toast('HELM ON FIRE: PUT IT OUT', 0xff6a3a); this.lockedPing = this.time.now; return false; }
     this.state.setThrottle(v);
     this.director.onThrottle(this.state.throttle);
     return true;
@@ -291,6 +354,7 @@ export class GameScene extends Phaser.Scene {
       this.crew.working = false; this.ship.sparks.emitting = false;
       this.crew.update(dt);
       this.ship.update(dt, 0, false, {}, false, time);
+      this.ship.drawDrill(s, dt, time);
       this.drawRelayMarker(time);
       return;
     }
@@ -321,8 +385,7 @@ export class GameScene extends Phaser.Scene {
     this.crew.working = !!canWork;
     let extracting = false, pumping = false;
     if (canWork) {
-      if (this.hold === 'extinguish') this.director.extinguish(room, dt);
-      else if (this.hold === 'freebit') this.director.fixJam(dt);
+      if (this.hold === 'freebit') this.director.fixJam(dt);
       else if (this.hold === 'extract') extracting = true;
       else if (this.hold === 'pump') pumping = true;
       else if (this.hold === 'blast') {
@@ -353,11 +416,14 @@ export class GameScene extends Phaser.Scene {
     // --- alerts ---------------------------------------------------------------
     const alerts = this.alerts();
     this.ship.update(dt, s.speed, s.blocked, alerts, this.crew.working && this.hold === 'vent', time);
+    this.ship.drawDrill(s, dt, time);
     this.edgeToast('heat', s.heat >= T.HEAT_ALERT, 'ENGINE RUNNING HOT', 0xff8a5c);
-    this.edgeToast('over', s.overheated, 'OVERHEATING! HULL DAMAGE', 0xff4a4a);
+    this.edgeToast('over', s.overheated, 'OVERHEATING! DRILL DAMAGE', 0xff4a4a);
     this.edgeToast('wear', s.wear >= T.WEAR_ALERT, 'DRILL BIT WEARING OUT', 0xffc35c);
-    this.edgeToast('worn', s.worn, 'BIT DESTROYED! HULL DAMAGE', 0xff4a4a);
-    this.edgeToast('hull', s.hull <= T.HULL_ALERT, 'HULL CRITICAL', 0xff4a7a);
+    this.edgeToast('worn', s.worn, 'BIT DESTROYED! DRILL DAMAGE', 0xff4a4a);
+    this.edgeToast('hull', s.hull <= T.HULL_ALERT, 'DRILL INTEGRITY CRITICAL', 0xff4a7a);
+    this.edgeToast('spill', s.spilling, 'HOPPER FULL: SPILLING! EASE OFF', 0xd8b04a);
+    if (s.spilling && time - (this.lastSpillPop || 0) > 700) this.spillPop(time);
     this.edgeToast('hard', s.inHard, 'HARD ROCK: SLOW + HOT', 0x9ad0ff);
     const piloted = this.piloted;
     this.updateGovernor(piloted);
@@ -383,10 +449,9 @@ export class GameScene extends Phaser.Scene {
     this.ship.calmK = this.calmK;
   }
 
-  /** Hold-actions Holt can use right where he stands (a burning room only offers EXTINGUISH). */
+  /** Hold-actions Holt can use right where he stands. */
   availableActions(room = this.crew.station) {
     if (!room) return [];
-    if (this.director.fires[room]) return ['extinguish'];
     const s = this.state, base = STATION_ACTIONS[room] || [];
     return base.filter((a) => (a !== 'extract' || (this.veins.stopped && !s.jammed && this.veins.stopped.taken < 1)) && (a !== 'freebit' || s.jammed)
       && (a !== 'pump' || this.pockets.canPump));
@@ -425,9 +490,9 @@ export class GameScene extends Phaser.Scene {
       else if (e.kind === 'stopped') { this.toast('STOPPED AT VEIN: EXTRACT AT DRL', 0x8affa0); this.cameras.main.shake(120, 0.004); }
       else if (e.kind === 'moving') this.toast('MOVING: EXTRACTION NEEDS A FULL STOP', 0xffc35c);
       else if (e.kind === 'unstable') { this.toast('VEIN UNSTABLE: EASE OFF?', 0xff8a5c); this.cameras.main.shake(120, 0.003); }
-      else if (e.kind === 'emptied') this.toast(`VEIN EMPTIED: +${Math.floor(v.credits)} CR ORE`, 0xffd23f);
+      else if (e.kind === 'emptied') this.toast(`VEIN EMPTIED: +${Math.floor(v.credits)} CR TO HOPPER`, 0xffd23f);
       else if (e.kind === 'collapse') {
-        this.toast(`VEIN COLLAPSED! -${Math.round(e.dmg)} HULL, -${Math.floor(e.loss)} CR`, 0xff4a4a);
+        this.toast(`VEIN COLLAPSED! -${Math.round(e.dmg)} DRILL, -${Math.floor(e.loss)} CR`, 0xff4a4a);
         this.cameras.main.shake(350, 0.016);
         this.setHold(null);
       } else if (e.kind === 'left') this.toast(`VEIN WORKED: +${Math.floor(v.credits)} CR ORE`, 0xffd23f);
@@ -436,23 +501,23 @@ export class GameScene extends Phaser.Scene {
   }
 
   alerts() {
-    const s = this.state, f = this.director.fires, vein = this.veins.current;
+    const s = this.state, vein = this.veins.current;
     const veinStop = !!this.veins.stopped && this.veins.stopped.taken < 1;
     const pocket = this.pockets.current, pocketStop = this.pockets.canPump;
     return {
-      engine: s.heat >= T.HEAT_ALERT || !!f.engine,
-      helm: (this.obstacles.anyAhead() && s.throttle > s.safeThrottle + 1e-6) || !!f.helm || (!!vein && vein.state !== 'stopped' && this.veins.dist(vein) < 30 && s.throttle > 0)
+      engine: s.heat >= T.HEAT_ALERT,
+      helm: (this.obstacles.anyAhead() && s.throttle > s.safeThrottle + 1e-6) || s.spilling || (!!vein && vein.state !== 'stopped' && this.veins.dist(vein) < 30 && s.throttle > 0)
         || (!!pocket && pocket.state !== 'stopped' && this.pockets.dist(pocket) < 30 && s.throttle > 0 && !s.tankFull),
       pilot: !this.piloted,
-      drill: s.wear >= T.WEAR_ALERT || !!f.drill || s.jammed || veinStop,
-      tools: s.hull <= T.HULL_ALERT || this.obstacles.anyAhead() || !!f.tools,
+      drill: s.wear >= T.WEAR_ALERT || s.jammed || veinStop,
+      tools: s.hull <= T.HULL_ALERT || this.obstacles.anyAhead(),
       hull: s.hull <= T.HULL_ALERT,
       rock: this.obstacles.anyAhead(),
       hard: s.inHard || this.terrain.hardAhead(),
       siphon: pocketStop,
       ore: !!vein,
       liq: !!pocket && !s.tankFull,
-      fire: this.director.burning.length > 0,
+      spill: s.spilling,
       jam: s.jammed,
       surge: !!this.director.surge || s.overclockT > 0 || s.shutdownT > 0,
     };
@@ -479,16 +544,29 @@ export class GameScene extends Phaser.Scene {
 
   onRam(dmg) {
     this.cameras.main.shake(220, 0.012);
-    this.toast(`RAMMED! -${Math.round(dmg)} HULL`, 0xff4a4a);
+    this.toast(`RAMMED! -${Math.round(dmg)} DRILL`, 0xff4a4a);
     const t = this.add.bitmapText(90, L.DRILL_TIP_Y - 10, FONT_KEY, `-${Math.round(dmg)}`, 12).setOrigin(0.5).setTint(0xff4a4a).setDepth(45);
     this.tweens.add({ targets: t, y: t.y - 24, alpha: 0, duration: 900, onComplete: () => t.destroy() });
   }
 
+  /** Floating SPILL marker off the hopper while it overflows. */
+  spillPop(time) {
+    this.lastSpillPop = time;
+    const t = this.add.bitmapText(90 + (Math.random() - 0.5) * 40, L.DRILL_UNIT.hopperTop - 2, FONT_KEY, 'SPILL', 6).setOrigin(0.5).setTint(0xd8b04a).setDepth(45);
+    this.tweens.add({ targets: t, y: t.y - 14, alpha: 0, duration: 800, onComplete: () => t.destroy() });
+  }
+
+  /**
+   * Drill integrity 0: the drill is lost. The hopper goes with it. Liquid in the ship's tank is sold into
+   * the hold first; the lost drill comes out of your paycheck, so you keep 1/3 of the hold.
+   */
   gameOver() {
-    // liquid still in the tank counts toward the haul (you keep 1/3 of it, like everything else)
-    if (this.state.tank > 0) this.state.sellTank();
-    const haul = Math.floor(this.state.haul);
-    const banked = Math.floor(this.state.haul * T.HULL_LOSS_KEEP);
-    this.endRun({ reason: 'lost', haul, recovery: haul - banked, banked, relays: this.state.relays });
+    const s = this.state;
+    if (s.tank > 0) s.sellTank();
+    const hopperLost = Math.floor(s.hopperCr);
+    s.hopper = 0; s.hopperCr = 0;
+    const haul = Math.floor(s.holdCr);
+    const banked = Math.floor(s.holdCr * T.HULL_LOSS_KEEP);
+    this.endRun({ reason: 'lost', haul, recovery: haul - banked, banked, relays: s.relays, hopperLost });
   }
 }

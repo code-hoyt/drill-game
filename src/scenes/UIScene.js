@@ -1,11 +1,15 @@
 // HUD overlay (unaffected by the game camera's pan/zoom): depth, gauges,
 // alert icons, toasts, throttle (outside view + HELM station inside),
 // station actions (inside view), pilot status bar (both views).
+// [C] Drill + ship: DRILL integrity bar (no hull), HOLD (banked) + HOPPER (fill/cap) readouts in the top bar,
+// and a POWER split bar beside the throttle (bottom, orange = the drill's draw; top, green = the conveyor's share).
 import { GAME_W, GAME_H, TUNING as T, LAYOUT as L, ROOM_GEOM, ORE, SIPHON, EVENTS as E, loadBest } from '../config.js';
 import { FONT_KEY } from '../systems/PixelFont.js';
 import { Button } from '../ui/Button.js';
 
 const VTRACK = { x: 160, y: 134, w: 14, h: 138 }; // outside view: vertical slider
+const PBAR = { x: 146, y: 134, w: 5, h: 138 };     // outside view: power split, beside the slider
+const HPBAR = { x: 34, y: 287, w: 112, h: 4 };    // inside view at HELM: power split under the slider
 const HTRACK = { x: 34, y: 260, w: 112, h: 12 };  // inside view at HELM: horizontal slider
 const PANEL_Y = 232;                               // inside station panel top
 const BAR_Y = 303;                                 // bottom status bar (both views)
@@ -22,16 +26,17 @@ export class UIScene extends Phaser.Scene {
     // --- top bar --------------------------------------------------------------
     this.add.rectangle(0, 0, GAME_W, 24, 0x0d0b12, 0.88).setOrigin(0);
     this.add.rectangle(0, 24, GAME_W, 1, 0x3a3348).setOrigin(0);
-    txt(4, 3, 'DEPTH', 6, 0x9aa0b8);
-    this.bestText = txt(30, 3, `BEST ${loadBest()}M`, 6, 0x4fd1c5);
+    this.bestText = txt(4, 3, `BEST ${loadBest()}M`, 6, 0x4fd1c5);
     this.depthText = txt(4, 11, '0M', 12, 0xffffff);
-    this.haulText = txt(58, 11, '0 CR', 6, 0xffd23f);
-    this.payText = txt(58, 18, 'PAY X1.0', 6, 0x7fe0ff);
+    this.payText = txt(58, 3, 'PAY X1.0', 6, 0x7fe0ff);
+    this.holdText = txt(58, 11, 'HOLD 0', 6, 0xffd23f);       // banked in the ship's hold
+    this.haulText = this.holdText;                              // (old name, kept for tests/tools)
+    this.hopperText = txt(58, 18, 'HOP 0/120', 6, 0xd8b04a);   // in the drill's hopper (at risk)
     this.bars = this.add.graphics();
-    txt(106, 3, 'HULL', 6, 0x9aa0b8); txt(106, 10, 'HEAT', 6, 0x9aa0b8); txt(106, 17, 'BIT', 6, 0x9aa0b8);
+    txt(105, 3, 'DRILL', 6, 0x9aa0b8); txt(105, 10, 'HEAT', 6, 0x9aa0b8); txt(105, 17, 'BIT', 6, 0x9aa0b8);
 
     // --- alert icons ------------------------------------------------------------
-    this.icons = ['fire', 'surge', 'jam', 'hull', 'heat', 'bit', 'rock', 'hard', 'ore', 'liq'].map((k) => ({ k, img: this.add.image(0, 28, 'ic_' + k).setOrigin(0).setVisible(false) }));
+    this.icons = ['spill', 'surge', 'jam', 'hull', 'heat', 'bit', 'rock', 'hard', 'ore', 'liq'].map((k) => ({ k, img: this.add.image(0, 28, 'ic_' + k).setOrigin(0).setVisible(false) }));
 
     // --- vein chip (top right): where the vein is vs the drill tip --------------------------
     this.chipBg = this.add.graphics();
@@ -69,6 +74,10 @@ export class UIScene extends Phaser.Scene {
     this.plus = new Button(this, 156, 114, 22, 16, '+', { size: 12, onTap: () => this.g.nudgeThrottle(T.THROTTLE_STEP) });
     this.minus = new Button(this, 156, 276, 22, 16, '-', { size: 12, onTap: () => this.g.nudgeThrottle(-T.THROTTLE_STEP) });
     this.vGfx = this.add.graphics();
+    this.pGfx = this.add.graphics();   // power split bar (both views; drawn where the throttle is)
+    this.pLabels = [txt(PBAR.x + 3, PBAR.y - 8, 'CNV', 6, 0x4ad66d).setOrigin(0.5, 0), txt(PBAR.x + 3, PBAR.y + PBAR.h + 3, 'DRL', 6, 0xff8a3d).setOrigin(0.5, 0)];
+    this.hpLabels = [txt(HPBAR.x, HPBAR.y + 6, 'DRILL', 6, 0xff8a3d), txt(HPBAR.x + HPBAR.w, HPBAR.y + 6, 'CONVEYOR', 6, 0x4ad66d).setOrigin(1, 0), txt(90, HPBAR.y + 6, 'POWER', 6, 0x7a7f96).setOrigin(0.5, 0)];
+    this.hpLabels.forEach((o) => o.setVisible(false));
     this.vLock = this.add.image(VTRACK.x + VTRACK.w / 2, 186, 'lock').setScale(2);
     this.vLockText1 = txt(167, 198, 'NO', 6, 0xff5a5a).setOrigin(0.5, 0);
     this.vLockText2 = txt(167, 205, 'PILOT', 6, 0xff5a5a).setOrigin(0.5, 0);
@@ -93,7 +102,6 @@ export class UIScene extends Phaser.Scene {
       extract: new Button(this, 8, AY, 104, 22, 'HOLD: EXTRACT', { ...hold('extract'), color: 0x8a6a1a, pressColor: 0xc49a2a }),
       freebit: new Button(this, 8, AY, 104, 22, 'HOLD: FREE BIT', { ...hold('freebit'), color: 0x56627e, pressColor: 0x7a8ab0 }),
       repair2: new Button(this, 116, AY, 56, 22, 'FIX BIT', { ...hold('repair'), color: 0x2f5a8a, pressColor: 0x4a84c4 }),
-      extinguish: new Button(this, 8, AY, 164, 22, 'HOLD: EXTINGUISH', { ...hold('extinguish'), color: 0xa0401a, pressColor: 0xe0602a }),
       pump:   new Button(this, 8, AY, 164, 22, 'HOLD: PUMP', { ...hold('pump'), color: 0x1f6a64, pressColor: 0x2fa096 }),
     };
     for (const [k, b] of Object.entries(this.actionBtns)) b.action = k === 'repair2' ? 'repair' : k;
@@ -130,6 +138,8 @@ export class UIScene extends Phaser.Scene {
     this.toggleBtn.setLabel(inside ? 'OUTSIDE' : 'INSIDE');
     [this.plus, this.minus].forEach((b) => b.setVisible(!inside));
     this.vGfx.setVisible(!inside);
+    this.pLabels.forEach((o) => o.setVisible(!inside));
+    if (inside) this.pGfx.clear();
     inside ? this.vZone.disableInteractive() : this.vZone.setInteractive();
     [this.panel, this.panelLine, this.stationText, this.hintText].forEach((o) => o.setVisible(inside));
     if (!inside) { Object.values(this.actionBtns).forEach((b) => b.setVisible(false)); this.showHelmControls(false); this.veinBars.clear(); this.barLabels.forEach((o) => o.setVisible(false)); this.pumpLabels.forEach((o) => o.setVisible(false)); }
@@ -182,6 +192,7 @@ export class UIScene extends Phaser.Scene {
   showHelmControls(v) {
     if (this.hMinus.gfx.visible !== v || this.hGfx.visible !== v) {
       this.hMinus.setVisible(v); this.hPlus.setVisible(v); this.hGfx.setVisible(v);
+      this.hpLabels.forEach((o) => o.setVisible(v));
       v ? this.hZone.setInteractive() : this.hZone.disableInteractive();
     }
   }
@@ -198,11 +209,14 @@ export class UIScene extends Phaser.Scene {
     this.depthText.setText(`${Math.floor(s.depth)}M`);
     const b = this.bars.clear();
     const bar = (y, v, color, warn) => {
-      b.fillStyle(0x000000, 1).fillRect(124, y, 52, 5);
+      b.fillStyle(0x000000, 1).fillRect(128, y, 48, 5);
       const flash = warn && !s.calm && Math.floor(time / 200) % 2 === 0;   // full stop: gauges stop flashing too
-      b.fillStyle(flash ? 0xffffff : color, 1).fillRect(125, y + 1, Math.round(50 * v), 3);
+      b.fillStyle(flash ? 0xffffff : color, 1).fillRect(129, y + 1, Math.round(46 * v), 3);
     };
-    this.haulText.setText(`${Math.floor(s.haul)} CR`);
+    this.holdText.setText(`HOLD ${Math.floor(s.holdCr)}`);
+    const spillFlash = s.spilling && Math.floor(time / 150) % 2 === 0;
+    this.hopperText.setText(s.spilling ? 'HOP SPILL!' : `HOP ${Math.floor(s.hopper)}/${Math.round(s.hopperCap)}`)
+      .setTint(spillFlash ? 0xff4a4a : s.hopperFull ? 0xffc35c : 0xd8b04a);
     this.payText.setText(`PAY X${s.payMult.toFixed(1)}`);
     bar(3, Math.min(1, s.hull / s.maxHull), s.hull > 50 ? 0x4ad66d : s.hull > T.HULL_ALERT ? 0xffc35c : 0xff4a4a, s.hull <= T.HULL_ALERT);
     bar(10, s.heat / T.HEAT_MAX, 0xff6b3d, s.heat >= T.HEAT_ALERT);
@@ -210,7 +224,7 @@ export class UIScene extends Phaser.Scene {
 
     // alerts
     const a = g.alerts();
-    const active = { liq: a.liq, hull: a.hull, heat: s.heat >= T.HEAT_ALERT, bit: s.wear >= T.WEAR_ALERT, rock: a.rock, hard: a.hard, ore: a.ore, fire: a.fire, jam: a.jam, surge: a.surge };
+    const active = { liq: a.liq, hull: a.hull, heat: s.heat >= T.HEAT_ALERT, bit: s.wear >= T.WEAR_ALERT, rock: a.rock, hard: a.hard, ore: a.ore, spill: a.spill, jam: a.jam, surge: a.surge };
     let x = 4;
     const blink = Math.floor(time / 300) % 2 === 0, ck = g.calmK || 0;   // full stop: alarms dim and stop blinking
     for (const ic of this.icons) {
@@ -295,6 +309,26 @@ export class UIScene extends Phaser.Scene {
     }
     this.plus.setDimmed(!piloted || s.throttle >= 1);
     this.minus.setDimmed(!piloted || s.throttle <= 0);
+    this.drawPowerV(s);
+  }
+
+  /** Power split, vertical, beside the outside throttle: orange (bottom) = drill draw, green (top) = conveyor. */
+  drawPowerV(s) {
+    const g = this.pGfx.clear(), { x, y, w, h } = PBAR, p = s.power;
+    const dh = Math.round(h * p.drill / p.output), ch = h - dh;
+    g.fillStyle(0x0b0b10, 1).fillRect(x - 1, y - 1, w + 2, h + 2);
+    g.fillStyle(0x4ad66d, 0.85).fillRect(x, y, w, ch);
+    g.fillStyle(0xff8a3d, 0.9).fillRect(x, y + ch, w, dh);
+    g.fillStyle(0xffffff, 1).fillRect(x - 1, y + ch, w + 2, 1);
+  }
+  /** Same split, horizontal, under the HELM slider (left = drill, right = conveyor). */
+  drawPowerH(s) {
+    const g = this.pGfx.clear(), { x, y, w, h } = HPBAR, p = s.power;
+    const dw = Math.round(w * p.drill / p.output);
+    g.fillStyle(0x0b0b10, 1).fillRect(x - 1, y - 1, w + 2, h + 2);
+    g.fillStyle(0xff8a3d, 0.9).fillRect(x, y, dw, h);
+    g.fillStyle(0x4ad66d, 0.85).fillRect(x + dw, y, w - dw, h);
+    g.fillStyle(0xffffff, 1).fillRect(x + dw, y - 1, 1, h + 2);
   }
 
   drawHThrottle(s, time) {
@@ -320,8 +354,8 @@ export class UIScene extends Phaser.Scene {
     const c = g.crew;
     const station = c.station;
     const show = (ids) => Object.entries(this.actionBtns).forEach(([k, btn]) => btn.setVisible(ids.includes(k)));
-    const fire = station && g.director.fires[station];
-    this.showHelmControls(station === 'helm' && !fire);
+    this.showHelmControls(station === 'helm');
+    if (station !== 'helm') this.pGfx.clear();
     this.hintText.setText('TAP A ROOM TO WALK THERE').setTint(0x7a7f96).setVisible(true);
     this.veinBars.clear(); this.barLabels.forEach((o) => o.setVisible(false)); this.pumpLabels.forEach((o) => o.setVisible(false));
     const pk = g.pockets, pocket = pk.current, pStop = pk.stopped;
@@ -329,11 +363,6 @@ export class UIScene extends Phaser.Scene {
     if (!station) {
       this.stationText.setText(`WALKING TO ${ROOM_NAMES[c.target]}...`).setTint(0xc8c8d8);
       show([]);
-    } else if (fire) {
-      this.stationText.setText(`FIRE IN ${ROOM_NAMES[station]}!`).setTint(Math.floor(time / 250) % 2 ? 0xff6a3a : 0xffd23f);
-      this.hintText.setText('STATION DOWN. PUT IT OUT BEFORE IT SPREADS');
-      show(['extinguish']);
-      this.actionBtns.extinguish.setEnabled(true).setProgress(fire.put / g.director.putOutTime(station));
     } else if (station === 'helm') {
       this.stationText.setText(`HELM   SPEED ${Math.round(s.throttle * 100)}%`).setTint(s.throttle > s.safeThrottle + 1e-6 ? 0xffc35c : 0x8affa0);
       const j = g.director.jam;
@@ -344,9 +373,11 @@ export class UIScene extends Phaser.Scene {
       else if (pocket && !s.tankFull && pk.dist(pocket) < 45 && (!vein || pk.dist(pocket) < g.veins.dist(vein)))
         this.hintText.setText(pk.inWindow(pocket) ? 'POCKET AT THE PORT: SPEED 0!' : `POCKET ${Math.max(0, Math.round(pk.dist(pocket)))}M: STOP BESIDE IT`).setTint(pocket.def.tint);
       else if (vein && g.veins.dist(vein) < 45) this.hintText.setText(g.veins.inWindow(vein) ? 'IN THE STOP ZONE: SPEED 0!' : `VEIN ${Math.max(0, Math.round(g.veins.dist(vein)))}M: STOP IN THE ZONE`).setTint(0xffd23f);
+      else if (s.spilling) this.hintText.setText('HOPPER SPILLING: SLOW DOWN').setTint(0xd8b04a);
       else this.hintText.setText('DRAG TO SET SPEED. GREEN = SAFE');
       show([]);
       this.drawHThrottle(s, time);
+      this.drawPowerH(s);
     } else if (station === 'engine') {
       this.stationText.setText(`ENGINE   HEAT ${Math.round(s.heat)}%`).setTint(s.heat >= T.HEAT_ALERT ? 0xff8a5c : 0xffffff);
       show(['vent']);
@@ -371,13 +402,14 @@ export class UIScene extends Phaser.Scene {
         this.actionBtns.extract.setEnabled(false).setProgress(0);
       } else {
         this.stationText.setText(`DRILL   BIT WEAR ${Math.round(s.wear)}%`).setTint(s.wear >= T.WEAR_ALERT ? 0xffc35c : 0xffffff);
+        this.hintText.setText(`HOPPER ${Math.floor(s.hopper)}/${Math.round(s.hopperCap)}  BELT ${s.power.rate.toFixed(1)}/S`).setTint(s.spilling ? 0xff8a5c : 0xd8b04a);
         show(['repair']);
       }
       this.actionBtns.repair.setEnabled(s.wear > 0);
       this.actionBtns.repair2.setEnabled(s.wear > 0);
     } else if (station === 'tools') {
       const rocks = g.obstacles.list.filter((o) => o.sprite.y > 10).length;
-      this.stationText.setText(`TOOLS   HULL ${Math.round(s.hull)}%  ROCKS ${rocks}`).setTint(s.hull <= T.HULL_ALERT ? 0xff4a7a : 0xffffff);
+      this.stationText.setText(`TOOLS   DRILL ${Math.round(s.hull)}%  ROCKS ${rocks}`).setTint(s.hull <= T.HULL_ALERT ? 0xff4a7a : 0xffffff);
       show(['patch', 'blast']);
       this.actionBtns.patch.setEnabled(s.hull < s.maxHull);
       this.actionBtns.blast.setEnabled(!s.mods.noBlast && !!g.obstacles.target()).setLabel(s.mods.noBlast ? 'NO BLAST (FOAM)' : 'HOLD: BLAST');

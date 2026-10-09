@@ -1,10 +1,10 @@
 // Relay supplies: 3 distinct random offers per relay; picks stack for the rest of the run.
-// Each apply() edits the run modifiers (see ShipSystems.mods) and may touch state.
+// Each apply() edits the run modifiers (see ShipSystems.mods) and may touch state. ("MAX DRILL" = drill integrity.)
 export const BOOSTS = [
   { id: 'coolant',  name: 'COOLANT CANISTER', desc: 'VENT RATE +30%',              apply: (m) => { m.ventMul *= 1.3; } },
   { id: 'sparebit', name: 'SPARE BIT',        desc: 'AUTO-SWAPS IN WHEN THE BIT DIES', apply: (m) => { m.spareBits += 1; } },
   { id: 'charge',   name: 'CHARGE PACK',      desc: 'BLASTS CHARGE 2X FASTER',     apply: (m) => { m.blastTimeMul *= 0.5; } },
-  { id: 'plate',    name: 'PLATE KIT',        desc: '+15 MAX HULL (AND +15 NOW)',  apply: (m, s) => { m.maxHullBonus += 15; s.hull += 15; } },
+  { id: 'plate',    name: 'SHIELD PLATES',    desc: '+15 MAX DRILL (AND +15 NOW)', apply: (m, s) => { m.maxHullBonus += 15; s.hull += 15; } },
   { id: 'scanner',  name: 'SCANNER TUNE-UP',  desc: 'BOULDER WARNINGS 50% EARLIER', apply: (m) => { m.warnMul *= 1.5; } },
   { id: 'boots',    name: 'GOOD BOOTS',       desc: 'WALK + CLIMB SPEED +15%',     apply: (m) => { m.crewSpeedMul *= 1.15; } },
   { id: 'heatsink', name: 'HEAT SINK',        desc: 'HEAT BUILD-UP -15%',          apply: (m) => { m.heatMul *= 0.85; } },

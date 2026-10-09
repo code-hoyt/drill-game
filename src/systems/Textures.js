@@ -56,10 +56,10 @@ const ICON_SYMBOLS = {
   rock: ['.###.', '##.##', '#####', '###.#', '.###.'],
   hard: ['#.#.#', '.#.#.', '#.#.#', '.#.#.', '#.#.#'],
   ore:  ['..#..', '.###.', '#####', '.###.', '..#..'],
-  fire: ['..#..', '.##..', '.###.', '##.##', '.###.'],
   jam:  ['#...#', '.#.#.', '..#..', '.#.#.', '#...#'],
   liq:  ['..#..', '.###.', '#####', '#####', '.###.'],
   surge: ['..##.', '.##..', '#####', '..##.', '.##..'],
+  spill: ['#...#', '#...#', '.###.', '#.#.#', '.#.#.'],   // hopper overflowing
 };
 
 export function createTextures(scene) {
@@ -116,8 +116,6 @@ export function createTextures(scene) {
       }
     });
   });
-  pixelMap(scene, 'flame0', ['..r..', '.ryr.', '.ryr.', 'ryyyr', 'ryWyr', '.rrr.'], { r: '#e0561a', y: '#ffd23f', W: '#fff2a8' });
-  pixelMap(scene, 'flame1', ['.r...', '.rr..', 'ryyr.', 'ryyyr', 'rWyyr', '.rrr.'], { r: '#e0561a', y: '#ffd23f', W: '#fff2a8' });
 
   // Drill head (3 animation frames), points UP
   for (let f = 0; f < 3; f++) {
@@ -134,6 +132,85 @@ export function createTextures(scene) {
       px(cx - 1, 0, '#ffffff', 2, 2);
     });
   }
+
+  // ---- the DRILL UNIT ([C] separate machine: a simplified TB-6 "Grindstone", leased from Meridian) ----
+  // cutterhead (3 frames: the disc cutters walk round the face), points UP; origin (0.5, 0) at DRILL_TIP_Y
+  for (let f = 0; f < 3; f++) {
+    canvas(scene, 'cutter' + f, 84, 13, (ctx, px) => {
+      const W = 84, cx = W / 2;
+      for (let x = 0; x < W; x++) {
+        const t = (x - cx + 0.5) / cx;                         // -1..1
+        const top = Math.round(1 + 7 * t * t);                 // shallow dome face
+        for (let y = top; y < 10; y++) {
+          const edge = y === top || x === 0 || x === W - 1;
+          const band = ((x + f * 4) % 12) < 6;
+          px(x, y, edge ? '#1a1c22' : y === top + 1 ? '#c9ced9' : band ? '#8a93a6' : '#6b7386');
+        }
+      }
+      // disc cutters: bright nubs proud of the face, phase-shifted per frame
+      for (let i = 0; i < 9; i++) {
+        const x = Math.round(((i * 10 + f * 3.4) % 84));
+        const t = (x - cx + 0.5) / cx, top = Math.round(1 + 7 * t * t);
+        if (x > 1 && x < W - 3) { px(x, top - 1, '#1a1c22', 3, 2); px(x + 1, top - 1, '#f0f2f8'); px(x, top, '#d8dbe8', 3, 1); }
+      }
+      px(cx - 1, 0, '#ffffff', 2, 2);                          // centre cutter
+      // gauge ring + bolts
+      px(2, 10, '#14161c', W - 4, 3); px(3, 10, '#3a404d', W - 6, 2);
+      for (let x = 6; x < W - 6; x += 8) px(x, 10, '#9aa0b0');
+    });
+  }
+  // body: shield + grippers, thrust rams, rear frame, HOPPER (fill window), dock collar. 90x56 at (45, 180)
+  const DU = L.DRILL_UNIT;
+  canvas(scene, 'drillunit', DU.w, DU.collarBot - DU.bodyTop, (ctx, px) => {
+    const Y = (wy) => wy - DU.bodyTop, X = (wx) => wx - DU.x;
+    const OUT = '#14161c', STEEL = '#5d6676', LIT = '#8a93a6', DK = '#3a404d', YEL = '#d8b13a', BLK = '#1d1d22';
+    // shield (y 180..202)
+    px(5, 0, OUT, 80, 22); px(6, 1, STEEL, 78, 20);
+    for (let x = 6; x < 84; x++) px(x, 1, ((x >> 2) % 2) ? YEL : BLK, 1, 3);          // Meridian hazard band
+    px(6, 4, LIT, 78, 1);
+    for (let x = 14; x < 80; x += 12) px(x, 5, DK, 1, 15);                              // ribs
+    for (let x = 9; x < 84; x += 6) px(x, 19, '#a8b0c0');                               // rivets
+    // stencil "TB-6" (3x5 glyphs) on the left panel
+    const G = { T: ['###', '.#.', '.#.', '.#.', '.#.'], B: ['##.', '#.#', '##.', '#.#', '##.'], '-': ['...', '...', '###', '...', '...'], 6: ['###', '#..', '###', '#.#', '###'] };
+    [...'TB-6'].forEach((ch, i) => G[ch].forEach((row, yy) => [...row].forEach((c, xx) => { if (c === '#') px(18 + i * 4 + xx, 9 + yy, '#d8dbe8'); })));
+    // lease plate (right panel): a yellow tag
+    px(60, 9, OUT, 14, 7); px(61, 10, YEL, 12, 5); px(62, 12, BLK, 10, 1);
+    // grippers: arms out to pads braced on the bore walls
+    for (const [x, ax] of [[0, 4], [85, 84]]) { px(ax, 9, DK, 2, 6); px(x, 6, OUT, 5, 13); px(x + (x ? 0 : 1), 7, '#7a6a4a', 4, 11); for (let y = 8; y < 18; y += 2) px(x + (x ? 0 : 1), y, '#4a3e2a', 4, 1); }
+    // thrust rams (y 202..212): cylinders on the frame, chrome rods into the shield
+    for (const x of [14, 30, 56, 72]) { px(x - 1, Y(202), OUT, 6, 4); px(x, Y(202), '#c9ced9', 4, 4); px(x - 2, Y(206), OUT, 8, 6); px(x - 1, Y(206), DK, 6, 6); px(x - 1, Y(206), '#6b7386', 6, 1); }
+    // rear frame (y 212..216)
+    px(8, Y(212), OUT, 74, 4); px(9, Y(212) + 1, STEEL, 72, 2); px(9, Y(212) + 1, LIT, 72, 1);
+    // hopper (y 216..232): a trapezoid bin, fill window cut in the front face
+    for (let y = Y(216); y < Y(232); y++) {
+      const k = (y - Y(216)) / 16, l = Math.round(12 + 14 * k), r = Math.round(78 - 14 * k);
+      px(l, y, OUT, r - l, 1); px(l + 1, y, y % 4 === 0 ? '#6a5a3a' : '#7a6a48', r - l - 2, 1);
+    }
+    px(12, Y(216), YEL, 66, 1);
+    const w = DU.hopperWin;
+    px(X(w.x) - 1, Y(w.y) - 1, OUT, w.w + 2, w.h + 2); px(X(w.x), Y(w.y), '#0e0c12', w.w, w.h);
+    for (let x = X(w.x) + 4; x < X(w.x) + w.w; x += 5) px(x, Y(w.y), '#2a2430', 1, w.h);   // window bars
+    // dock collar (y 232..236) where the conveyor chute leaves
+    px(36, Y(232), OUT, 18, 4); px(37, Y(232), DK, 16, 3); px(37, Y(232), YEL, 16, 1);
+  });
+  // coupling (static): folded clamp arms from the ship's top corners to the rear frame, umbilicals. 90x30 at (45, 212)
+  canvas(scene, 'coupling', 90, 30, (ctx, px) => {
+    const OUT = '#14161c', ARM = '#b89a48', LIT = '#e0c26a';
+    const seg = (x0, y0, x1, y1, c) => { const n = Math.max(Math.abs(x1 - x0), Math.abs(y1 - y0)); for (let i = 0; i <= n; i++) px(Math.round(x0 + (x1 - x0) * i / n), Math.round(y0 + (y1 - y0) * i / n), c, 2, 2); };
+    for (const m of [1, -1]) {
+      const bx = m > 0 ? 7 : 81, ex = m > 0 ? 3 : 85, tx = m > 0 ? 11 : 77;   // base on the ship roof, elbow out, claw on the frame
+      seg(bx, 28, ex, 15, OUT); seg(ex, 15, tx, 2, OUT); seg(bx, 27, ex, 14, ARM); seg(ex, 14, tx, 1, LIT);
+      px(ex - 1, 13, OUT, 4, 4); px(ex, 14, '#ffd23f', 2, 2);                   // elbow joint
+      px(tx - 2, 0, OUT, 6, 3); px(tx - 1, 0, ARM, 4, 2);                      // claw on the frame
+    }
+    // umbilicals: power (left, red) + coolant (right, blue), sagging from the hopper to the ship roof
+    const hose = (pts, c, d) => { for (let i = 0; i < pts.length - 1; i++) { seg(pts[i][0], pts[i][1], pts[i + 1][0], pts[i + 1][1], d); } for (let i = 0; i < pts.length - 1; i++) { const [a, b] = [pts[i], pts[i + 1]]; const n = Math.max(Math.abs(b[0] - a[0]), Math.abs(b[1] - a[1])); for (let j = 0; j <= n; j++) px(Math.round(a[0] + (b[0] - a[0]) * j / n), Math.round(a[1] + (b[1] - a[1]) * j / n), c); } };
+    hose([[16, 9], [14, 18], [18, 25], [22, 28]], '#d0503a', '#5a1a14');
+    hose([[73, 9], [76, 18], [72, 25], [68, 28]], '#4a9ad8', '#163a5a');
+    px(20, 27, OUT, 5, 3); px(65, 27, OUT, 5, 3);                                // roof sockets
+    // conveyor chute: collar (x 82..98) down to the ship roof
+    px(40, 24, OUT, 10, 6); px(41, 24, '#2a2e38', 8, 6); px(40, 24, '#6b7386', 1, 6); px(49, 24, '#6b7386', 1, 6);
+  });
 
   // Ship exterior plating (covers the interior in the outside view). 2 decks tall.
   canvas(scene, 'ship_ext', L.SHIP_W, L.SHIP_BOTTOM - L.SHIP_TOP, (ctx, px) => {
@@ -200,17 +277,13 @@ export function createTextures(scene) {
     px(1, 8, '#555a6e', 9, 2);                                      // desk
     px(3, 10, '#7a3320', 5, 2); px(4, 12, '#3b3b4a', 1, 2); px(6, 12, '#3b3b4a', 1, 2); // seat
   });
-  // escape pod = the rig's crew cab
-  pixelMap(scene, 'pod', [
-    '..oooooo..', '.oooooooo.', 'oowwwoooo.', 'oowwwooooo', 'oooooooooo', 'oddddddddo', '.dd....dd.', '.y......y.',
-  ], { o: '#b5532f', w: '#ffd27a', d: '#5a2416', y: '#ffd23f' });
   pixelMap(scene, 'lock', ['.###.', '#...#', '#...#', '#####', '##.##', '##.##', '#####'], { '#': '#ff5a5a' });
 
   // Crew frames
   Object.entries(CREW).forEach(([k, rows]) => pixelMap(scene, k, rows, CREW_PAL));
 
   // Alert icons for HUD (11x11) and world bubble
-  const iconColors = { heat: '#d9412b', bit: '#d98a2b', hull: '#c42b55', rock: '#8a5ad9', hard: '#3a6ad9', ore: '#b8901a', fire: '#e0561a', jam: '#56627e', surge: '#b0369a', liq: '#1f8a7c' };
+  const iconColors = { heat: '#d9412b', bit: '#d98a2b', hull: '#c42b55', rock: '#8a5ad9', hard: '#3a6ad9', ore: '#b8901a', jam: '#56627e', surge: '#b0369a', liq: '#1f8a7c', spill: '#c07a1a' };
   Object.entries(ICON_SYMBOLS).forEach(([k, sym]) => {
     canvas(scene, 'ic_' + k, 11, 11, (ctx, px) => {
       px(1, 0, '#111', 9, 11); px(0, 1, '#111', 11, 9);

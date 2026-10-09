@@ -1,7 +1,9 @@
 // Ship visuals: 2-deck interior cutaway (2x2 rooms around a hub ladder), exterior
-// plating that fades out in the inside view, animated drill head, alert bubbles,
-// room tap zones.
-import { LAYOUT as L, ROOM_GEOM } from '../config.js';
+// plating that fades out in the inside view, alert bubbles, room tap zones.
+// [C] Plus the separate DRILL UNIT above it (cutterhead, shield + grippers, thrust rams, hopper with a
+// visible ore level, dock collar), the coupling (clamp arms + umbilicals) and the conveyor chute into the
+// ship, a hopper/conveyor monitor on the DRL console wall, and the breakaway (drill lost) animation.
+import { LAYOUT as L, ROOM_GEOM, POWER } from '../config.js';
 import { FONT_KEY } from './PixelFont.js';
 
 const C = (hex) => Phaser.Display.Color.HexStringToColor(hex).color;
@@ -89,8 +91,23 @@ export class Ship {
       scale: { start: 1, end: 2.5 }, tint: [0xcfcfdf, 0x9a9aaa], frequency: 50, emitting: false,
     }).setDepth(18);
 
-    // --- drill head -------------------------------------------------------
-    this.drill = scene.add.image(90, L.DRILL_TIP_Y, 'drill0').setOrigin(0.5, 0).setDepth(9);
+    // --- drill unit (separate machine) + coupling -------------------------------
+    const DU = L.DRILL_UNIT;
+    this.coupling = scene.add.image(DU.x, DU.frameTop, 'coupling').setOrigin(0).setDepth(8.5);
+    this.drillBody = scene.add.image(DU.x, DU.bodyTop, 'drillunit').setOrigin(0).setDepth(9);
+    this.drill = scene.add.image(90, L.DRILL_TIP_Y, 'cutter0').setOrigin(0.5, 0).setDepth(9.2);   // the cutterhead
+    this.drillFx = scene.add.graphics().setDepth(9.4);       // hopper fill, ram glints, conveyor pips
+    this.breakGfx = scene.add.graphics().setDepth(17.5);     // breakaway: open clamps + snapped umbilicals
+    this.spillFx = scene.add.particles(0, 0, 'px', {
+      speedX: { min: -30, max: 30 }, speedY: { min: -10, max: 25 }, gravityY: 120, lifespan: 700,
+      tint: [0xd8b04a, 0x8a6a3a, 0xc08060], frequency: 35, quantity: 2, emitting: false,
+    }).setDepth(9.6);
+    this.spillFx.addEmitZone({ type: 'random', source: new Phaser.Geom.Rectangle(DU.x + 14, DU.hopperTop - 1, 62, 2) });
+    this.convPhase = 0;
+    // DRL console wall: a little hopper / conveyor monitor (amber = hopper level, green = belt flow)
+    const dr = this.room('drill');
+    this.monitor = { x: dr.x + 2, y: dr.ceil + 3, w: 12, h: 9 };
+    this.monitorGfx = scene.add.graphics().setDepth(11.5);
     this.drillFrame = 0; this.drillAcc = 0;
     this.chips = scene.add.particles(90, L.DRILL_TIP_Y + 4, 'px', {
       speed: { min: 20, max: 60 }, angle: { min: 200, max: 340 }, lifespan: 400, gravityY: 150,
@@ -103,7 +120,7 @@ export class Ship {
       z.on('pointerdown', () => onRoomTap(r.id));
       return z;
     });
-    this.shipZone = scene.add.zone(x0, L.DRILL_TIP_Y, w, bot - L.DRILL_TIP_Y).setOrigin(0).setDepth(30);
+    this.shipZone = scene.add.zone(L.DRILL_UNIT.x, L.DRILL_TIP_Y, L.DRILL_UNIT.w, bot - L.DRILL_TIP_Y).setOrigin(0).setDepth(30);
     this.shipZone.on('pointerdown', () => onShipTap());
   }
 
@@ -118,7 +135,7 @@ export class Ship {
   /** alerts: booleans keyed by room id */
   update(dt, speed, blocked, alerts, venting, time) {
     this.drillAcc += dt * (speed * 18);
-    if (this.drillAcc >= 1) { this.drillAcc %= 1; this.drillFrame = (this.drillFrame + 1) % 3; this.drill.setTexture('drill' + this.drillFrame); }
+    if (this.drillAcc >= 1) { this.drillAcc %= 1; this.drillFrame = (this.drillFrame + 1) % 3; this.drill.setTexture('cutter' + this.drillFrame); }
     this.drill.x = 90 + (speed > 0.05 && blocked && Math.random() < 0.5 ? 1 : 0);
     this.chips.emitting = speed > 0.05;
     this.chips.frequency = Math.max(15, 80 - speed * 70);
@@ -129,5 +146,40 @@ export class Ship {
     const anyAlert = this.rooms.some((r) => alerts[r.id]);
     this.warnLight.setVisible(anyAlert && ck < 0.5 && Math.floor(time / 250) % 2 === 0 && this.exterior.alpha > 0.5);
     this.exhaust.emitting = venting;
+  }
+
+  /** Hopper fill window, thrust-ram glints, conveyor pips, spill FX, DRL monitor. s = ShipSystems. */
+  drawDrill(s, dt, time) {
+    if (this.broken) return;
+    const DU = L.DRILL_UNIT, w = DU.hopperWin, g = this.drillFx.clear();
+    const f = Math.min(1, s.hopper / s.hopperCap), full = s.hopperFull;
+    const h = Math.round(w.h * f);
+    if (h > 0) {
+      g.fillStyle(0x8a6a3a, 1).fillRect(w.x, w.y + w.h - h, w.w, h);
+      for (let x = w.x; x < w.x + w.w; x += 3) g.fillStyle(((x * 7) % 5) < 2 ? 0xd8b04a : 0xa07a48, 1).fillRect(x, w.y + w.h - h, 2, 1);
+      if (h > 2) for (let i = 0; i < 6; i++) g.fillStyle(0xffd23f, 0.9).fillRect(w.x + ((i * 13) % (w.w - 1)), w.y + w.h - 1 - ((i * 5) % (h - 1)), 1, 1);
+    }
+    for (let x = w.x + 4; x < w.x + w.w; x += 5) g.fillStyle(0x2a2430, 1).fillRect(x, w.y, 1, w.h);   // window bars over the ore
+    if (full) g.lineStyle(1, Math.floor(time / 150) % 2 ? 0xff4a4a : 0xffd23f, 1).strokeRect(w.x - 0.5, w.y - 0.5, w.w + 1, w.h + 1);
+    // thrust rams: a glint runs along the rods while drilling
+    if (s.speed > 0.02) { const gy = DU.ramsTop + Math.floor(time / 90) % 4; for (const x of [59, 75, 101, 117]) g.fillStyle(0xffffff, 0.8).fillRect(x + 1, gy, 2, 1); }
+    // conveyor: ore pips ride the chute from the collar into the ship, at the belt rate
+    const rate = s.power.rate;
+    this.convPhase = (this.convPhase + dt * (2 + rate * 2.2)) % 6;
+    if (s.hopper > 0.01 && rate > 0.05) for (let y = DU.collarBot - 6 + this.convPhase; y < L.SHIP_TOP + 1; y += 3) if (y >= DU.collarBot - 1) g.fillStyle(0xd8b04a, 1).fillRect(88 + (Math.round(y) % 2) * 2, Math.round(y), 2, 1);
+    this.spillFx.emitting = s.spilling;
+    // DRL wall monitor
+    const m = this.monitor, mg = this.monitorGfx.clear();
+    mg.fillStyle(0x14161c, 1).fillRect(m.x, m.y, m.w, m.h).fillStyle(0x0b1a16, 1).fillRect(m.x + 1, m.y + 1, m.w - 2, m.h - 2);
+    const hh = Math.round((m.h - 2) * f);
+    mg.fillStyle(full && Math.floor(time / 150) % 2 ? 0xff4a4a : 0xd8b04a, 1).fillRect(m.x + 1, m.y + m.h - 1 - hh, 3, hh);   // hopper level
+    const cr = Math.min(1, rate / (POWER.REACTOR * POWER.CONVEYOR_RATE)), on = s.hopper > 0.01 && rate > 0.05;
+    for (let i = 0; i < 3; i++) { const yy = m.y + 1 + ((Math.floor(this.convPhase * 1.2) + i * 2) % (m.h - 2)); mg.fillStyle(on ? 0x4ad66d : 0x2a4a3a, on ? 0.5 + 0.5 * cr : 1).fillRect(m.x + 5, yy, 2, 1); }   // belt
+    mg.fillStyle(0x4ad66d, 1).fillRect(m.x + 8, m.y + m.h - 1 - Math.round((m.h - 2) * cr), 3, Math.round((m.h - 2) * cr));   // conveyor power share
+  }
+
+  /** Hide the ship (its interior, crew and exterior) so a stand-in can fly off in the breakaway. */
+  shipObjects() {
+    return [this.interior, ...this.labels, ...Object.values(this.stations), ...Object.values(this.bubbles), this.exterior, this.podExt, this.warnLight, this.monitorGfx, this.coupling];
   }
 }

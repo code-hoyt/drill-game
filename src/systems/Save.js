@@ -1,17 +1,19 @@
 // Persistent meta save (localStorage 'drill.save', versioned JSON).
 // v1 (M1): credits + run stats.  v2 (M2): + owned parts, loadout, vendor stock, radio log,
-// per-planet best depth, lifetime earnings. Older saves are migrated, never wiped.
+// per-planet best depth, lifetime earnings. v4: + SIPHON slot. v5 ([C] separate drill + ship): rigsLost is
+// now drillsLost (the ship always gets home; only leased drills are written off), and the vendor stock is
+// re-checked for the new power-split parts. Older saves are migrated, never wiped.
 import { loadBest } from '../config.js';
 import { PARTS, SLOTS, partById, DEFAULT_LOADOUT, unlockMet } from '../data/parts.js';
 
 const KEY = 'drill.save';
-export const VERSION = 4;   // v4: + SIPHON slot (stock HAND PUMP owned + equipped on migration)
+export const VERSION = 5;   // v5: drillsLost (was rigsLost) + power-split parts. v4: + SIPHON slot
 export const VENDOR_PER_SLOT = 2;
 export const REROLL_BASE = 100;   // 100 -> 200 -> 400 ... per dock (resets when the stock refreshes)
 const RADIO_MAX = 40;
 
 const DEFAULTS = () => ({
-  v: VERSION, credits: 0, totalEarned: 0, runs: 0, cashouts: 0, rigsLost: 0, relaysReached: 0, deepestRelay: 0,
+  v: VERSION, credits: 0, totalEarned: 0, runs: 0, cashouts: 0, drillsLost: 0, relaysReached: 0, deepestRelay: 0,
   best: {},                                      // planetId -> best depth (m)
   owned: PARTS.filter((p) => p.stock).map((p) => p.id),
   loadout: DEFAULT_LOADOUT(),
@@ -39,17 +41,20 @@ export function migrate(raw) {
   const s = DEFAULTS();
   const from = raw && typeof raw === 'object' ? raw.v : 0;
   if (from === 1) {
-    for (const k of ['credits', 'runs', 'cashouts', 'rigsLost', 'relaysReached']) s[k] = Number(raw[k]) || 0;
+    for (const k of ['credits', 'runs', 'cashouts', 'relaysReached']) s[k] = Number(raw[k]) || 0;
+    s.drillsLost = Number(raw.rigsLost) || 0;
     s.totalEarned = s.credits; // v1 didn't track lifetime earnings; banked credits are the best floor
     s.migratedFrom = 1;
-  } else if (from === 2 || from === 3 || from === VERSION) {
+  } else if (from >= 2 && from <= VERSION) {
     Object.assign(s, raw);
+    // v5: a lost "rig" was always the drill (the ship burned home): carry the count over
+    if (from < 5) { s.drillsLost = Number(raw.rigsLost) || 0; delete s.rigsLost; }
     s.loadout = { ...DEFAULT_LOADOUT(), ...(raw.loadout || {}) };
     s.vendor = { ...DEFAULTS().vendor, ...(raw.vendor || {}) };
     s.owned = [...new Set([...DEFAULTS().owned, ...(raw.owned || []).filter((id) => partById(id))])];
     s.unlocked = (raw.unlocked || []).filter((id) => partById(id));
     s.newUnlocks = raw.newUnlocks || [];
-    if (from === 2 || from === 3) s.migratedFrom = s.migratedFrom || from;
+    if (from < VERSION) s.migratedFrom = s.migratedFrom || from;
   }
   s.v = VERSION;
   // best depth lived in its own key before M2; keep the higher of both
@@ -101,7 +106,7 @@ export function rollStock(save, rand = Math.random, avoid = null) {
 }
 export const rerollCost = (save) => REROLL_BASE * 2 ** save.vendor.rerolls;
 
-/** New stock after every contract (cash-out or hull loss). Reroll price resets. */
+/** New stock after every contract (cash-out or drill loss). Reroll price resets. */
 export function refreshStock(save) {
   save.vendor = { stock: rollStock(save), rerolls: 0, refreshes: (save.vendor.refreshes || 0) + 1 };
   return save;
@@ -153,7 +158,7 @@ export function bankRun({ banked, reason, relays, depth = 0, planet = 'kessa4' }
   s.credits += b;
   s.totalEarned += b;
   s.runs += 1;
-  if (reason === 'cashout') s.cashouts += 1; else s.rigsLost += 1;
+  if (reason === 'cashout') s.cashouts += 1; else s.drillsLost += 1;
   s.relaysReached += relays;
   s.deepestRelay = Math.max(s.deepestRelay || 0, relays);
   s.best[planet] = Math.max(s.best[planet] || 0, Math.floor(depth));

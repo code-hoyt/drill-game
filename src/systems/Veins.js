@@ -1,7 +1,8 @@
 // Ore veins ([C] Cletus's idea): seams of ore ahead in the rock. Bring the rig to a FULL STOP with the
 // drill face at the vein (the stop window), then Holt works it from the DRILL station (hold EXTRACT).
-// Extraction pays ore credits into the haul but raises the vein's instability; at 100 it collapses
-// (hull damage + half of what you took from it is lost). Overshoot or drill through it: VEIN LOST (scrap).
+// Extraction feeds ore into the drill's HOPPER (units + credits; the stopped conveyor carries it on to the
+// hold) but raises the vein's instability; at 100 it collapses (drill damage + half of what you took from it
+// is lost: hopper first, then docked from the hold). Overshoot or drill through it: VEIN LOST (scrap, into the hopper).
 import { TUNING as T, LAYOUT as L, ORE } from '../config.js';
 import { FONT_KEY } from './PixelFont.js';
 
@@ -84,7 +85,7 @@ export class Veins {
         else {
           v.state = 'lost'; s.veinsLost += 1;
           const scrap = v.value * ORE.SCRAP_FRAC;
-          s.haul += scrap; s.scrap += scrap;
+          s.addToHopper(Math.max(1, Math.round(v.def.units * ORE.SCRAP_FRAC)), scrap); s.scrap += scrap;
           out.push({ kind: 'lost', v, scrap });
           v.sprite.setTint(0x5a4a5a);
         }
@@ -96,14 +97,20 @@ export class Veins {
       if (v.state === 'stopped' && extracting && v.taken < 1) {
         const frac = Math.min(dt / v.def.secs, 1 - v.taken);
         const cr = v.value * frac;
-        v.taken += frac; v.credits += cr; s.haul += cr; s.ore += cr;
+        v.taken += frac; v.credits += cr; s.ore += cr;
+        s.addToHopper(v.def.units * frac, cr);
         // risk is purely how greedily you extract (no random tremors): faster the more you've taken
         v.inst += v.def.inst * (1 + ORE.ESCALATE * v.taken) * dt;
         if (!v.warned && v.inst >= ORE.WARN_AT && v.inst < ORE.COLLAPSE_AT) { v.warned = true; out.push({ kind: 'unstable', v }); }
         if (Math.random() < 0.5) this.glint.emitParticleAt(90 + (Math.random() - 0.5) * 50, v.y, 1);
         if (v.inst >= ORE.COLLAPSE_AT) {
-          const loss = v.credits * ORE.COLLAPSE_LOSS;
-          s.haul = Math.max(0, s.haul - loss); s.ore -= loss; v.credits -= loss;
+          // half that vein's ore: out of the hopper first, the rest is docked from the hold (Meridian's assay
+          // rejects ore from a collapsed seam), so greed still costs even with the stop-conveyor running
+          const want = v.credits * ORE.COLLAPSE_LOSS, fromHopper = s.takeFromHopper(want);
+          const fromHold = Math.min(s.holdCr, want - fromHopper);
+          s.holdCr -= fromHold;
+          const loss = fromHopper + fromHold;
+          s.ore -= loss; v.credits -= loss;
           s.damage(v.def.dmg); s.veinsCollapsed += 1;
           v.state = 'collapsed'; v.inst = ORE.COLLAPSE_AT;
           v.sprite.setTint(0x3a2a34).setAlpha(0.7);

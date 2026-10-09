@@ -60,12 +60,30 @@ Working draft v0.3 (2026-10-07). This version folds in all of Cletus's answers s
 
 ## 3. Run structure
 
-- **[C]** Runs are endless. Hull integrity is the lose condition and depth is the score.
+- **[C]** Runs are endless. **Drill integrity** is the lose condition and depth is the score (the ship has no integrity meter; see "The drill and the ship" below).
 - **[C]** The current mechanics stay: the helm, engine, drill, and tools stations on a 2x2 two-deck ship, plus heat, bit wear, boulders, hard rock, and a throttle that locks when nobody is at the helm.
 - **[C]** There's a break every 1000 m, and the interval is tunable.
 - **[C]** You can cash out at relays.
-- **[C]** Hull loss keeps 1/3 of the haul.
-- **[C]** Holt survives hull loss in an escape pod.
+- **[C]** Losing the drill keeps 1/3 of the ship's HOLD; the drill's HOPPER goes down with it.
+- **[C]** Holt survives drill loss because the ship **breaks away** (this replaced the escape pod).
+
+### [C] The drill and the ship: two machines (Kessa-4, v0.11)
+
+Holt's ship is the same box ship as before (2x2 decks, keel pod). The **DRILL** is a separate Meridian-leased boring unit (stencilled TB-6) clamped to the ship's roof: cutterhead and disc cutters, a shield with gripper pads, four thrust rams, a rear frame, the ore **HOPPER**, and a dock collar. Two folded clamp arms hold it, and two umbilicals (red power, blue coolant) plus a conveyor chute run between them. **The ship powers the drill.**
+
+- **Only the drill has integrity.** The old HULL meter is now **DRILL INTEGRITY** (HUD `DRILL`, relay `+N DRILL` repairs, the plating parts add max DRILL). Heat, a dead bit, rams, collapses and surge blowouts all damage the drill. When it hits 0 the run is lost. (Internally the field is still `hull`, with `integrity` aliases.)
+- **Hopper -> conveyor -> hold.** Everything you cut lands in the drill's capped **HOPPER** (120 units): cuttings (1 unit per metre, valued at the metre pay), vein ore (SMALL 10 / RICH 20 / FINE 24 units per vein) and scrap. A conveyor moves it continuously into the ship's **HOLD**, which is what you keep. Siphoned liquid goes straight to the ship's tank, and relays sell it into the hold.
+- **Power split.** The ship's reactor has a fixed output (100). The drill draws power in proportion to its real speed (95 at full speed); the conveyor gets the rest at 0.08 units/s per spare unit. Full speed: 0.4 u/s against ~10 u/s coming in, so the hopper fills in ~12 s. 50%: 4.2 u/s against 5 in (slow creep). ~45% is break-even. A full stop gives the conveyor everything: 8 u/s, so a full hopper empties in ~15 s. The HUD shows the split as a vertical bar beside the throttle (CNV green on top, DRL orange below) and as a horizontal bar under the HELM slider.
+- **Spill.** A full hopper **spills** new cuttings (lost, counted): `HOPPER FULL: SPILLING! EASE OFF` toast, `HOP SPILL!` flashing red in the top bar, a spill icon, ore spilling off the hopper lip, and floating `SPILL` pops. This is the new pacing pressure: flat-out driving earns fast but wastes ore unless you ease off or stop now and then.
+- **Relays** clamp in and auto-unload the hopper into the hold (`HOPPER UNLOADED: N U, +X CR TO HOLD`).
+- **Breakaway (drill loss).** The clamps release, the umbilicals snap, the ship backs off, flips and burns out up the bore, and the wrecked drill is left sparking. 2.4 s × ANIM_SCALE (1.2 s with `?anim=0`), skippable after the grace. Then the ascent shows the ship on its own.
+- **"The lost drill comes out of your paycheck."** You bank 1/3 of the HOLD (after the tank is sold into it). The other 2/3 is the **DRILL WRITE-OFF**, and whatever was still in the hopper is **HOPPER LOST W/ DRILL**. The game-over summary shows SHIP HOLD, ORE / LIQUID, the write-off, the lost hopper and the banked total. A cash-out moves the hopper into the hold first and banks it +10%.
+- **Vein collapse** loses half that vein's value: from the hopper first, the rest docked from the hold (the conveyor usually empties the hopper at a stop, so a hopper-only loss would be negligible).
+- **Interior:** DRL is now the **drill console**: its default readout is `HOPPER n/120  BELT x.x/S`, and a wall monitor shows the hopper level, belt motion and the conveyor's power share. The hopper, collar and conveyor chute are visible above the ship in the inside view.
+- **Parts:** the HULL slot is now **DRILL FRAME**. New depth-gated trade-offs: **BIG HOPPER** (DRILL FRAME, 650 cr, 1000 m): hopper 180, conveyor ×0.75. **HIGH-DRAW CUTTER** (drill head, 800 cr, 2500 m): +20% top speed, bit wear −20%, but draws 1.5× power, so the conveyor gets nothing at full speed.
+- **Tuning:** one `POWER` block in `src/config.js`: `REACTOR 100, DRILL_DRAW 95, DRAW_EXP 1, CONVEYOR_RATE 0.08, HOPPER_CAP 120, ORE_PER_M 1, SPILL_FX_S 0.5`.
+- **Save v5:** `rigsLost` became `drillsLost` (the dock stats read `DRILLS LOST (BILLED)`); older saves migrate silently and depth-reached parts unlock.
+- **Follow-up:** the space and dock shots of the cutscenes still show the old drill-nosed rig; the surface shots use the new drill unit.
 
 ### Between relays: ore veins and decision events (prototype on Kessa-4, after Cletus's "boring after relay 1" note)
 
@@ -84,9 +102,8 @@ The leg between relays used to be meter upkeep (vent, fix bit, patch). Two addit
 
 **[C] A full stop is safe: "I can just stop and everything relaxes."** At actual speed 0 (throttle at 0, a jam stall, or a surge shutdown; not counting a relay clamp-in):
 - No new events spawn, and the event timer pauses. When you move again, the next event is at least 4 s away.
-- Fires hold: no spread and no hull damage, though the room still needs EXTINGUISH before its station works.
 - A pending power surge pauses its countdown. The card stays up and reads `STOPPED: COUNTDOWN PAUSED`, and you can still pick either option. (We chose this over auto-resolving it as a shutdown because the decision stays visible and nothing happens behind your back.)
-- A jam builds no heat, there are no coolant leaks, and no hull damage ticks from overheating, a dead bit, or fire.
+- A jam builds no heat, there are no coolant leaks, and no drill damage ticks from overheating or a dead bit.
 - Heat bleeds off fast: 6/s extra on top of the passive 1.2/s.
 - Choices you make still cost: a vein collapse, or rocking a jammed bit.
 - Calm cues: `ALL STOP` in the bottom bar, an `ALL STOP: HOLDING` chip (or `STOPPED AT VEIN`), alert icons dimmed and no longer blinking, room `!` bubbles dimmed, the red hull light off, and rock dust settling in the bore for a couple of seconds. Everything fades back on throttle-up.
@@ -99,16 +116,16 @@ The leg between relays used to be meter upkeep (vent, fix bit, patch). Two addit
 - **Pumping:** hold **PUMP** (SIPHON panel: `TANK` and `PRESS` gauges). Liquid flows at 20 L/s into the tank, the pocket's liquid level visibly drops, and the hose shows flow. **PRESSURE** rises with sustained pumping (18/s × the type's factor, escalating +25% per second held) and falls 30/s when you let go. A warning toast shows at 75.
 - **Burst at 100:** the line bursts. 30% of what's left in the pocket is lost, the deck sprays, the pump locks for 3 s, and pressure drops to 40. **There's no hull damage:** it's a pure greed cost, consistent with "a full stop is safe; the only risk is your own gamble."
 - **Types:** SMALL (40 L, 60 cr, drains in 2 s with no burst risk), RICH (70 L, 150 cr; pumping straight through bursts at ~68 L, so take one breather), VOLATILE (rare, 50 L, 260 cr; pressure ×2.2, bursts after ~2 s, so pump in short pulses). Value scales with the segment pay. Rich and volatile get more common each leg. Pockets come every 160–260 m (×0.9 per leg) from 110 m on.
-- **Tank:** 100 L, about 2–3 small pockets. A full tank blocks pumping (`TANK FULL: SKIP IT`). **Relays buy the tank:** `SOLD n L LIQUID: +x CR` goes into the haul. On hull loss the tank counts into the haul before the 1/3 is kept. The haul split reads `DRILL n ORE n LIQ n` at relays, and the end screen adds an `INCL. LIQUID (N POCKETS)` row.
+- **Tank:** 100 L, about 2–3 small pockets. A full tank blocks pumping (`TANK FULL: SKIP IT`). **Relays buy the tank:** `SOLD n L LIQUID: +x CR` goes into the ship's hold. **[C]** The tank is on the ship, so on drill loss it's sold into the hold before the 1/3 is kept. The relay reads `CUT n ORE n LIQ n`, and the end screen has an `ORE nV / LIQUID nP` row.
 - **No overlaps:** pockets keep 25 m clear of vein stops and boulders (both ways), and stay out of relay approaches. Calm rules apply: pumping happens at a full stop, so events pause meanwhile.
 - **SIPHON slot (7th slot):** stock HAND PUMP (balanced, 100 L). **BULK TANK** (500 cr, unlocks at 500 m): 160 L tank, pumps 30% slower. **HIGH-FLOW PUMP** (650 cr, unlocks at 1500 m): pumps 60% faster, but pressure builds 70% faster. All tuning lives in `SIPHON` in `config.js`.
 
 **[P] Decision events** (time-based while you're moving; they pause at a full stop, see above):
-- **FIRE** (ENG / DRL / TLS): the station in that room is dead and the room only offers EXTINGUISH. Each burning room chips 0.5 hull/s, and after 14 s the fire spreads to a neighbouring room (it can reach the HELM, which kills the throttle). Put-out takes 1.4 s, plus a little more the longer it has burned. Choice: drop what you're doing, or let it burn while you finish the vein.
+- **[C] Fires removed** (v0.11). There is no fire event any more: no spawning, no EXTINGUISH, no fire visuals, no blocked stations, and `?event=fire` is a no-op. Leg 1 is jams only, with slightly longer gaps (36–52 s) so it isn't busier than before; the hopper/spill pacing fills the space.
 - **DRILL JAM**: the bit seizes and the rig stalls (heat climbs if the throttle stays up). Two fixes: **rock the throttle** at the HELM (0% → 60%+, 3 times, within 4 s each; fast, but +6 heat and −2 hull per swing) or **hold FREE BIT** at DRL (3.5 s, free).
-- **POWER SURGE** (new in leg 2; the first event after relay 1 is always this one): a 6 s prompt. **OVERCLOCK**: 10 s at ×1.4 speed and ×1.5 pay per metre, +25 heat and double heat rate. **SHUT DOWN**: the engine is off for 4 s and vents 35 heat. **Ignore it**: blowout, −15 hull, +40 heat.
-- Frequency: an event every 30–45 s in leg 1, 22–34 s in leg 2, then 16–26 s. Fire and jam in leg 1, all three from leg 2, at most two at once, none in a relay approach. A relay clamp-in clears them.
-- Readability: the alert icons (fire / surge / jam / hull / heat / bit / boulder / hard rock / ore / liquid) sit top-left. Room `!` bubbles go up for a fire, a jam, a vein stop at DRL, or an aligned pocket at SIP. Toasts sit under the top bar, and the surge card sits mid-screen with a countdown.
+- **POWER SURGE** (new in leg 2; the first event after relay 1 is always this one): a 6 s prompt. **OVERCLOCK**: 10 s at ×1.4 speed and ×1.5 pay per metre, +25 heat and double heat rate. **SHUT DOWN**: the engine is off for 4 s and vents 35 heat. **Ignore it**: blowout down the umbilical, −15 drill, +40 heat.
+- Frequency: an event every 36–52 s in leg 1, 24–36 s in leg 2, then 18–28 s. Jams only in leg 1, jam and surge from leg 2, at most two at once, none in a relay approach. A relay clamp-in clears them.
+- Readability: the alert icons (spill / surge / jam / drill / heat / bit / boulder / hard rock / ore / liquid) sit top-left. Room `!` bubbles go up for a jam, a vein stop at DRL, or an aligned pocket at SIP. Toasts sit under the top bar, and the surge card sits mid-screen with a countdown.
 - Gas pocket was considered and skipped; it overlaps the stop mechanic.
 
 **Open questions:** should the surge be decided at the ENG station (spatial) instead of anywhere?
@@ -138,10 +155,9 @@ Every 1000 m the contract calls for a **relay anchor**: a beacon bolted into the
 - **Haul** is the money earned *this run*. It's 1 credit per metre times the segment multiplier, plus finds and salvage.
 - **[P] Segment multiplier:** ×1.0 → ×1.5 → ×2.0 → ×2.5 and so on, rising at each relay you push past.
 - **Cash out at a relay [C]:** the rig is winched back to the station. **[P]** You keep the haul plus a **10% completion bonus**.
-- **Hull loss [C]:** Holt ejects in the escape pod and keeps **1/3 of the haul**.
-  - **[P]** The rig's crew cab *is* the escape pod, so his home survives.
-  - **[P]** The company recovers the wrecked drill section, refits it, and takes the other 2/3 as "recovery and refit." The rig comes back whole for the next contract.
-- **[C] Transitions (built after M2, retimed):** cutscenes of 4.6 s × `ANIM_SCALE` (currently 2, so about 9.2 s) plus a short concourse beat (boarding or stepping out), tappable to skip after a ~0.5 s grace. **[C] A 180° camera turn** bridges the run's drill-up view and the drill-down view outside. Descent: it turns as the rig sinks in after the bite. Ascent: it turns as the rig is winched out. A second, shorter turn ends on the concourse's docking-bay framing (rig drill-up, station below), and Holt steps out via the airlock lift. On the way back, the rig is winched out of the bore (or the pod launches), then a cut to space, where it rises to the station and the clamps engage. **The summary comes after docking**, shown in the content area above the station concourse. On contract start, the rig undocks, drops toward the planet, and the drill nose bites into the surface, landing in the run. They reuse the rig textures.
+- **Drill loss [C]:** the ship breaks away from the wrecked drill and burns home; Holt keeps **1/3 of the hold** and the hopper is lost with the drill.
+  - **[C]** The ship is Holt's and survives; the drill is Meridian's lease, and "the lost drill comes out of your paycheck" (the other 2/3, the DRILL WRITE-OFF). Meridian leases him a fresh drill for the next contract.
+- **[C] Transitions (built after M2, retimed):** cutscenes of 4.6 s × `ANIM_SCALE` (currently 2, so about 9.2 s) plus a short concourse beat (boarding or stepping out), tappable to skip after a ~0.5 s grace. **[C] A 180° camera turn** bridges the run's drill-up view and the drill-down view outside. Descent: it turns as the rig sinks in after the bite. Ascent: it turns as the rig is winched out. A second, shorter turn ends on the concourse's docking-bay framing (rig drill-up, station below), and Holt steps out via the airlock lift. On the way back, the rig is winched out of the bore (or, after a breakaway, the ship climbs out alone), then a cut to space, where it rises to the station and the clamps engage. **The summary comes after docking**, shown in the content area above the station concourse. On contract start, the rig undocks, drops toward the planet, and the drill nose bites into the surface, landing in the run. They reuse the rig textures.
 - Depth reached is the score either way.
 - **Always kept:** best depth per planet, codex finds (transmitted the moment you recover them), and unlocked parts and planets.
 
@@ -192,7 +208,7 @@ Every 1000 m the contract calls for a **relay anchor**: a beacon bolted into the
 **[P] Implications and rules:**
 - The stock is a few parts per slot (proposed: 2 per slot, so 12 items) drawn from the *unlocked* pool. Credits buy unlocks that widen the pool, and stock offers then come from that wider pool.
 - At least one non-stock option per slot whenever the pool allows, so no slot is ever a dead end.
-- The stock refreshes after every contract (cash-out or hull loss), so a bad run still turns the shop over.
+- The stock refreshes after every contract (cash-out or drill loss), so a bad run still turns the shop over.
 - **Reroll:** you can pay credits to reroll the stock. The cost doubles with each reroll during one dock (100 → 200 → 400) and resets when the stock refreshes after a contract. It's a release valve, not a way to shop for exact parts. *(M2 reading of "once per dock" plus "doubles": repeat rerolls are allowed but get expensive fast.)*
 - **Hold:** you can reserve 1 offered part across one refresh for a small fee, so you can save up for it. This is optional and can be cut if the shop feels fiddly.
 - Owned parts stay owned. Randomness only affects what you can *add*, never what you lose.

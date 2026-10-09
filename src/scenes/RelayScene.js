@@ -1,6 +1,7 @@
 // Relay break: the rig is clamped to a relay anchor. Heat + bit wear were reset for free.
 // Phase A: Ines's dispatch types in over static; pick 1 of 3 random relay supplies.
-// Phase B: buy hull with run earnings (cost rises each relay), then PUSH ON or CASH OUT.
+// Phase B: repair the DRILL from the ship's hold (cost rises each relay), then PUSH ON or CASH OUT.
+// (On arrival the relay crews emptied the drill's hopper into the hold and bought the siphon tank.)
 import { GAME_W, GAME_H, TUNING as T } from '../config.js';
 import { FONT_KEY } from '../systems/PixelFont.js';
 import { Button } from '../ui/Button.js';
@@ -96,11 +97,11 @@ export class RelayScene extends Phaser.Scene {
     const s = this.g.state, txt = this.txt;
     txt(8, 108, 'TOOK:', 6, GREY);
     txt(30, 108, this.picked.name, 6, GOLD);
-    txt(8, 122, 'HAUL', 6, GREY);
+    txt(8, 122, 'HOLD', 6, GREY);
     this.haulText = txt(172, 122, '', 6, GOLD).setOrigin(1, 0);
-    // haul breakdown: metres drilled vs ore from veins (scrap from lost veins counts with ore) vs liquid sold from the siphon tank
-    this.oreText = txt(30, 122, `DRILL ${Math.floor(s.drillPay)} ORE ${Math.floor(s.ore + s.scrap)} LIQ ${Math.floor(s.liquid)}`, 6, 0x9a8f6a);
-    txt(8, 134, 'HULL', 6, GREY);
+    // what went in: metres drilled vs ore from veins (scrap from lost veins counts with ore) vs liquid sold from the siphon tank
+    this.oreText = txt(30, 122, `CUT ${Math.floor(s.drillPay)} ORE ${Math.floor(s.ore + s.scrap)} LIQ ${Math.floor(s.liquid)}`, 6, 0x9a8f6a);
+    txt(8, 134, 'DRILL', 6, GREY);
     this.hullGfx = this.add.graphics();
     this.hullText = txt(172, 134, '', 6, 0xffffff).setOrigin(1, 0);
     this.costText = txt(8, 146, '', 6, GREY);
@@ -108,7 +109,7 @@ export class RelayScene extends Phaser.Scene {
     this.repMax = new Button(this, 92, 156, 80, 20, 'REPAIR MAX', { color: 0x2a4a3a, pressColor: 0x3f7a5a, onTap: () => this.repair(9999) });
     this.payLine = txt(GAME_W / 2, 186, `NEXT SEGMENT PAYS X${(s.payMult + T.PAY_MULT_STEP).toFixed(1)}`, 6, CYAN).setOrigin(0.5, 0);
     this.cashLine = txt(GAME_W / 2, 197, '', 6, GREEN).setOrigin(0.5, 0);
-    txt(GAME_W / 2, 208, 'LOSE THE RIG AND YOU KEEP 1/3', 6, 0x8a7f9a).setOrigin(0.5, 0);
+    txt(GAME_W / 2, 208, 'LOSE THE DRILL: KEEP 1/3 OF THE HOLD', 6, 0x8a7f9a).setOrigin(0.5, 0);
     this.suppliesText = txt(8, 222, '', 6, GREY);
     this.pushBtn = new Button(this, 8, 262, 80, 30, 'PUSH ON', { size: 6, color: 0x7a3320, pressColor: 0xb5532f, onTap: () => this.g.pushOn() });
     this.cashBtn = new Button(this, 92, 262, 80, 30, 'CASH OUT', { size: 6, color: 0x2f6a3a, pressColor: 0x48a058, onTap: () => this.g.cashOut() });
@@ -126,17 +127,17 @@ export class RelayScene extends Phaser.Scene {
   refresh() {
     const s = this.g.state, per = s.repairCostPerPoint;
     const missing = Math.ceil(s.maxHull - s.hull);
-    const affordable = Math.floor(s.haul / per);
-    this.haulText.setText(`${Math.floor(s.haul)} CR`);
+    const affordable = Math.floor(s.holdCr / per);
+    this.haulText.setText(`${Math.floor(s.holdCr)} CR`);
     this.hullText.setText(`${Math.ceil(s.hull)}/${s.maxHull}`);
     const g = this.hullGfx.clear(), w = 84, f = Math.max(0, Math.min(1, s.hull / s.maxHull));
-    g.fillStyle(0x221d2c, 1).fillRect(28, 134, w, 5).fillStyle(f < 0.35 ? RED : 0xc42b55, 1).fillRect(28, 134, Math.round(w * f), 5);
-    this.costText.setText(`HULL COSTS ${+per.toFixed(1)} CR/PT HERE${this.n > 1 ? '' : '. MORE LATER'}`);
+    g.fillStyle(0x221d2c, 1).fillRect(32, 134, w - 4, 5).fillStyle(f < 0.35 ? RED : 0xc42b55, 1).fillRect(32, 134, Math.round((w - 4) * f), 5);
+    this.costText.setText(`DRILL REPAIR ${+per.toFixed(1)} CR/PT${this.n > 1 ? '' : '. MORE LATER'}`);
     const n10 = Math.min(T.REPAIR_STEP, missing, affordable), nMax = Math.min(missing, affordable);
-    this.rep10.setLabel(n10 > 0 ? `+${n10} HULL: ${Math.ceil(n10 * per)}` : missing ? "CAN'T AFFORD" : 'HULL FULL').setEnabled(n10 > 0);
-    this.repMax.setLabel(nMax > 0 ? `MAX +${nMax}: ${Math.ceil(nMax * per)}` : missing ? "CAN'T AFFORD" : 'HULL FULL').setEnabled(nMax > 0);
+    this.rep10.setLabel(n10 > 0 ? `+${n10} DRILL: ${Math.ceil(n10 * per)}` : missing ? "CAN'T AFFORD" : 'DRILL FULL').setEnabled(n10 > 0);
+    this.repMax.setLabel(nMax > 0 ? `MAX +${nMax}: ${Math.ceil(nMax * per)}` : missing ? "CAN'T AFFORD" : 'DRILL FULL').setEnabled(nMax > 0);
     this.rep10.setDimmed(n10 <= 0); this.repMax.setDimmed(nMax <= 0);
-    this.cashLine.setText(`CASH OUT NOW: ${Math.floor(s.haul * (1 + T.CASHOUT_BONUS))} CR (+10%)`);
+    this.cashLine.setText(`CASH OUT NOW: ${Math.floor(s.holdCr * (1 + T.CASHOUT_BONUS))} CR (+10%)`);
     const lines = wrap('RUN SUPPLIES: ' + s.boosts.map((id) => BOOSTS.find((o) => o.id === id)?.name || id.toUpperCase()).join(', '), 41);
     this.suppliesText.setText(lines.slice(0, 4).join('\n'));
   }
