@@ -83,7 +83,7 @@ Holt's ship is **CORMORANT** (see 4.5; she replaced the old box ship). The **DRI
 - **Parts:** the HULL slot is now **DRILL FRAME**. New depth-gated trade-offs: **BIG HOPPER** (DRILL FRAME, 650 cr, 1000 m): hopper 180, conveyor ×0.75. **HIGH-DRAW CUTTER** (drill head, 800 cr, 2500 m): +20% top speed, bit wear −20%, but draws 1.5× power, so the conveyor gets nothing at full speed.
 - **Tuning:** one `POWER` block in `src/config.js`: `REACTOR 100, DRILL_DRAW 95, DRAW_EXP 1, CONVEYOR_RATE 0.08, HOPPER_CAP 120, ORE_PER_M 1, SPILL_FX_S 0.5`. Its ship numbers now come from the active ship's entry in `SHIPS` (CORMORANT's equal the old values).
 - **Save v5:** `rigsLost` became `drillsLost` (the dock stats read `DRILLS LOST (BILLED)`); older saves migrate silently and depth-reached parts unlock.
-- Every cutscene shot (surface, space, dock), the concourse bay, the rig bay and the title draw the same rig: the TB-6 with CORMORANT coupled behind (`src/systems/ShipArt.js`).
+- **[C] The drill is only seen attached ON THE JOB.** The TB-6 is Meridian's, not Holt's. It travels to the job site on its own (dropped from Meridian's freight cradle on the station truss), Cormorant docks onto it on the surface, and after a successful cash-out the ship unclamps cleanly and leaves it in the bore for Meridian to retrieve. At the station, Cormorant docks and sits in the bay alone. The coupled rig appears only in the run, the dock-on and bite of the descent, the opening of the clean exit, and the breakaway. The title card is key art of the rig at work. All of these draw from the same parts (`src/systems/ShipArt.js`: `rigParts`, `shipParts`, `drillParts`).
 
 ### Between relays: ore veins and decision events (prototype on Kessa-4, after Cletus's "boring after relay 1" note)
 
@@ -154,10 +154,31 @@ Every 1000 m the contract calls for a **relay anchor**: a beacon bolted into the
 
 - **Haul** is the money earned *this run*. It's 1 credit per metre times the segment multiplier, plus finds and salvage.
 - **[P] Segment multiplier:** ×1.0 → ×1.5 → ×2.0 → ×2.5 and so on, rising at each relay you push past.
-- **Cash out at a relay [C]:** the rig is winched back to the station. **[P]** You keep the haul plus a **10% completion bonus**.
+- **Cash out at a relay [C]:** Cormorant unclamps cleanly (no alarms, unlike the breakaway). The drill stays behind as Meridian's property for retrieval, and the ship flies home alone. **[P]** You keep the haul plus a **10% completion bonus**.
 - **Drill loss [C]:** the ship breaks away from the wrecked drill and burns home; Holt keeps **1/3 of the hold** and the hopper is lost with the drill.
   - **[C]** The ship is Holt's and survives; the drill is Meridian's lease, and "the lost drill comes out of your paycheck" (the other 2/3, the DRILL WRITE-OFF). Meridian leases him a fresh drill for the next contract.
-- **[C] Transitions (built after M2, retimed):** cutscenes of 4.6 s × `ANIM_SCALE` (currently 2, so about 9.2 s) plus a short concourse beat (boarding or stepping out), tappable to skip after a ~0.5 s grace. **[C] A 180° camera turn** bridges the run's drill-up view and the drill-down view outside. Descent: it turns as the rig sinks in after the bite. Ascent: it turns as the rig is winched out. A second, shorter turn ends on the concourse's docking-bay framing (rig drill-up, station below), and Holt steps out via the airlock lift. On the way back, the rig is winched out of the bore (or, after a breakaway, the ship climbs out alone), then a cut to space, where it rises to the station and the clamps engage. **The summary comes after docking**, shown in the content area above the station concourse. On contract start, the rig undocks, drops toward the planet, and the drill nose bites into the surface, landing in the run. They reuse the rig textures.
+- **[C] Transitions (built after M2, retimed; reworked so the drill is only attached on the job):** the ascent is 4.6 s and the descent 5.6 s, both × `ANIM_SCALE` (currently 2, so about 9.2 s and 11.2 s). Each is followed by a short concourse beat (boarding or stepping out) and can be tapped to skip after a ~0.5 s grace. **[C] A 180° camera turn** bridges the run's drill-up view and the drill-down view outside.
+  - **Descent (contract start), base ms (×2 at the current scale):**
+    - 0–800: opens on the bay framing (ship alone) and turns out to the station.
+    - 750: the station clamps release Cormorant.
+    - 900: **Meridian's freight cradle** (an oxblood drop rail off the truss, right of the port) lets go of the TB-6. It falls separately: an unpowered drop kept straight by little guidance-thruster puffs. Both shrink toward the planet.
+    - 1900: cut to the surface. The drill comes in alone, nose first, with a re-entry streak.
+    - 2500: it **smashes down** (dust plume, debris, a flash, screen shake, a crater rim, `DRILL DOWN`).
+    - 2650: Cormorant flies in and lines up over the collar.
+    - 3350: she backs down onto it on her retros.
+    - 3800: the clamps lock (`CLAMPS LOCKED`).
+    - 4000: the umbilicals connect and the drill powers up (its status light turns amber, then green).
+    - 4150: the bite. The rig sinks in.
+    - 4300: the camera turns into the run.
+    - 5600: control.
+  - The descent is +1.0 s base (+2.0 s at the current scale) over the old 4.6 s, for the smash and dock-on beat.
+  - **Ascent (cash-out), 4.6 s base:**
+    - 150: from the run view, the clamps and umbilicals swing open cleanly (`UNCLAMPED`, green, no alarms). The drill's light drops to standby.
+    - 600: Cormorant backs out of the bore alone on her retros while the camera turns. The TB-6 stays in the hole beside a blinking Meridian retrieval beacon (`TB-6 LEFT FOR MERIDIAN`).
+    - 2000: cut to space. The ship alone rises to the station.
+    - 3700: the clamps engage (`CLAMPED`).
+    - 3850: the second turn ends on the concourse's docking-bay framing (ship alone, station below). Holt rides the airlock lift down, and **the summary comes after docking**.
+  - **After a drill loss:** the in-run breakaway is unchanged, and the broken-away ship climbs out alone in its breakaway attitude.
 - Depth reached is the score either way.
 - **Always kept:** best depth per planet, codex finds (transmitted the moment you recover them), and unlocked parts and planets.
 
@@ -297,31 +318,37 @@ It suits careful players, and it's a trap on fast planets.
 - **Concourse strip, bottom (always visible, always tappable):** a side-view corridor anchored just above the bottom bar, with five signed spots, left to right:
   - **Contract board:** mission select, data-driven from `contracts.js`.
   - **Ines's window:** dispatch. Her latest message, the radio replay, and a story stub.
-  - **Airlock:** a lift up to the rig. It opens the rig bay.
+  - **Airlock:** a lift up to the ship. It opens the rig bay.
   - **Quartermaster:** the vendor.
   - **Holt's bunk and locker:** the log (stats) and the codex shelf (stub until M4).
-- **Content area, above:** by default, docking bay 3. The rig stands drill-up on the station roof, gripped by its hull end by two clamps over a docking collar. This is exactly how the ascent cutscene frames it after its closing turn, so the cutscene hands off with the rig in the same spot. When Holt reaches a spot, **that spot's panel fills the content area only**, so the concourse, with Holt and the highlighted sign, always shows where you are.
+- **Content area, above:** by default, docking bay 3. **Cormorant sits alone** on the station roof, gripped by her engine end by two clamps over a docking collar (no drill: the TB-6 is Meridian's). This is exactly how the ascent cutscene frames her after its closing turn, so the cutscene hands off with the ship in the same spot. When Holt reaches a spot, **that spot's panel fills the content area only**, so the concourse, with Holt and the highlighted sign, always shows where you are.
 - **Panels:** each has a header bar with the title, **X** (back to the bay view) and, on sub-panels, **<**. Anything longer than the area is paged: the Quartermaster shows 6 offers per page, locked parts 7, radio replay 2, contracts 2, and slot lists page if needed. Tap targets stay at least 14 base px tall, about 30 screen px.
 - **Bottom bar:** where Holt is or where he's walking. Short toasts replace that line for a moment. The old legend block under the concourse is gone.
 - **Walking:** tap a spot and Holt walks there. The open panel stays until he arrives, then swaps. Tapping the spot he's at closes to the bay view, or goes back to that spot's main panel from a sub-panel. Walking is fast (160 px/s, at most 0.9 s between any two spots) so it never feels like a chore.
 - **Summary after docking:** shown in the content area. Closing it, or tapping any concourse spot, dismisses it.
 - **Holt's kit:** it doesn't change concourse walking (that's a run stat).
 
-**[C] Rig bay (garage).** From the airlock. It fits the content area: the rig at 1x, drill up (the TB-6 with CORMORANT coupled behind it), the station clamps, the airlock door and Holt's locker below it, and a column of seven colour-keyed callouts (slot + fitted part) beside it. You tap the real part locations, or their callouts:
-- the TB-6 cutterhead → drill head
-- the TB-6 frame + hopper → drill frame
+**[C] Rig bay (garage).** You open it from the airlock, and it fits the content area. It shows **Cormorant alone** at 1x on her station clamps, with the airlock door and Holt's locker below. Beside her is a column of colour-keyed callouts (slot + fitted part). Tap a real part location, or its callout:
 - the cockpit pod → helm
 - the reactor dome + engine arc → engine
-- the left mandible (TOOLS is just inboard) → tools
+- the tool bay on the left flank → tools
 - the hose port + reel on the left flank → siphon
 - Holt's locker by the airlock → kit
 
-Callouts show what's fitted (one line each, so seven fit), the hotspots are thumb-sized (at least 32×24 base px, about 70×52 CSS px on a 390 px phone), and swapping only works while docked.
+**[C] Meridian drill yard.** The drill slots (drill head, drill frame) are on the TB-6, which is not on the ship off the job. So they live in a sub-panel: a **MERIDIAN YARD** window across the top of the rig bay shows the leased TB-6 small on its pad. Tapping the window, or the **DRILL YARD >** callout (which lists both fitted drill parts), opens **DRILL YARD**. There the TB-6 stands alone on its hazard-striped pad at 1x, with two hotspots and callouts:
+- the cutterhead → drill head
+- the frame, rams and hopper → drill frame
+
+A slot list's **<** returns to where you came from (the yard for drill slots, the rig bay for ship slots).
+
+Why a sub-panel: it keeps the ship-alone picture honest, keeps every slot one or two taps away, keeps all seven slots and their saves unchanged, and fits the fiction (you fit parts to Meridian's unit in their yard, and it's dropped to the job with them).
+
+The hotspots are thumb-sized (at least 32×22 base px, about 70×48 CSS px on a 390 px phone), and swapping only works while docked.
 
 **Transitions:**
 - **Contract start:** Holt walks to the airlock and rides up. The descent opens on the bay framing and turns out to the drill-down station view.
 - **Return:** the ascent ends on the bay framing. Holt rides the lift down, and the run summary opens in the content area.
-- **Pacing:** one multiplier, `ANIM_SCALE` (config), stretches every cutscene beat. It's currently 2 (about 9.2 s each) while Cletus evaluates the feel. The lift and skip grace stretch only modestly.
+- **Pacing:** one multiplier, `ANIM_SCALE` (config), stretches every cutscene beat. It's currently 2 (about 9.2 s ascent, 11.2 s descent) while Cletus evaluates the feel. The lift and skip grace stretch only modestly.
 
 **Later:** a survey office (planet licences, M3) can join the concourse as a sixth spot. The concourse can slowly gain personal clutter around the bunk as you progress. That's the melancholy home beat, and it shows progression without numbers.
 

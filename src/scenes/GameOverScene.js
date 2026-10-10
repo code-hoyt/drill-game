@@ -1,4 +1,4 @@
-// End-of-run screen: CASHED OUT (winched up with the hold + 10%) or DRILL LOST (the ship broke away
+// End-of-run screen: CASHED OUT (unclamped clean at a relay, flew home with the hold + 10%; the drill stays for Meridian) or DRILL LOST (the ship broke away
 // and burned home: the hopper went with the drill, and the drill write-off comes out of the paycheck, so
 // you keep 1/3 of the hold). Shows the accounting: hold, minus the write-off, hopper lost.
 import { GAME_W, GAME_H } from '../config.js';
@@ -33,7 +33,7 @@ export class GameOverScene extends Phaser.Scene {
       this.add.rectangle(0, 22, GAME_W, 180, 0x0d0b12, 1).setOrigin(0).setInteractive();
       this.add.rectangle(0, 22, GAME_W, 180).setOrigin(0).setStrokeStyle(1, cash ? 0x2f6a3a : 0x7a3320);
       t(C, 26, 12, cash ? 'CASHED OUT' : 'DRILL LOST', cash ? 0x8affa0 : 0xff4a4a);
-      t(C, 40, 6, cash ? 'WINCHED UP FROM THE RELAY' : 'SHIP BROKE AWAY. BURNED HOME', 0x9aa0b8);
+      t(C, 40, 6, cash ? 'UNCLAMPED CLEAN AT THE RELAY' : 'SHIP BROKE AWAY. BURNED HOME', 0x9aa0b8);
       t(C, 50, 18, `${depth}M`, 0xffffff);
       t(C, 70, 6, `BEST ${best}M  -  RELAYS ${relays}`, 0x4fd1c5);
       if (newBest) { const nb = t(C, 79, 6, 'NEW BEST!', 0xffd23f); this.tweens.add({ targets: nb, alpha: 0.2, duration: 300, yoyo: true, repeat: -1 }); }
@@ -50,7 +50,7 @@ export class GameOverScene extends Phaser.Scene {
       this.add.rectangle(0, 0, GAME_W, GAME_H, 0x000000, cash ? 0.85 : 0.72).setOrigin(0).setInteractive();
       this.add.rectangle(GAME_W / 2, 42 + 118, 164, 236, 0x0d0b12, 1).setStrokeStyle(1, cash ? 0x2f6a3a : 0x7a3320);
       t(C, 50, 12, cash ? 'CASHED OUT' : 'DRILL LOST', cash ? 0x8affa0 : 0xff4a4a);
-      t(C, 66, 6, cash ? 'WINCHED UP FROM THE RELAY' : 'SHIP BROKE AWAY. BURNED HOME', 0x9aa0b8);
+      t(C, 66, 6, cash ? 'UNCLAMPED CLEAN AT THE RELAY' : 'SHIP BROKE AWAY. BURNED HOME', 0x9aa0b8);
       t(C, 80, 18, `${depth}M`, 0xffffff);
       t(C, 102, 6, `BEST ${best}M  -  RELAYS ${relays}`, 0x4fd1c5);
       if (newBest) {

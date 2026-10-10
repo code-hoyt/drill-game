@@ -1,12 +1,13 @@
 // Home base (M2, redesigned): the station concourse. The concourse strip (five signed spots, Holt
 // walking) is anchored at the bottom of the screen and is always visible and tappable. Above it is the
-// content area: by default the docking bay with the rig standing drill-up on the station roof (the
-// framing the ascent cutscene ends on); when Holt reaches a spot, that spot's panel (DockUI) fills the
-// content area. The airlock (or the rig itself) opens the RIG BAY parts screen.
+// content area: by default the docking bay with CORMORANT standing on the station roof, ALONE (the framing
+// the ascent cutscene ends on; [C] the drill is only seen attached on the job); when Holt reaches a spot,
+// that spot's panel (DockUI) fills the content area. The airlock (or the ship itself) opens the RIG BAY
+// parts screen; the leased TB-6's slots live in its MERIDIAN DRILL YARD sub-panel.
 import { GAME_W, GAME_H, LAYOUT as L } from '../config.js';
 import { FONT_KEY } from '../systems/PixelFont.js';
 import { Button } from '../ui/Button.js';
-import { rigParts } from '../systems/ShipArt.js';
+import { shipParts, drillParts } from '../systems/ShipArt.js';
 import { loadSave, buyPart, equipPart, reroll, rerollCost, isUnlocked, ackUnlocks, progressOf } from '../systems/Save.js';
 import { SLOTS, PARTS, partById, partsForSlot, unlockText } from '../data/parts.js';
 import { CONTRACTS } from '../data/contracts.js';
@@ -27,7 +28,7 @@ function wrap(text, width) {
 // Screen, top to bottom: HUD 0..22 | CONTENT 22..202 (the docking bay, or the open panel) |
 // concourse strip 202..300 (always visible + tappable) | bottom bar 303..320 (where Holt is / toasts).
 export const CONCOURSE = {
-  RIG_Y: 142,           // rig origin (run world y 260): drill tip y 50, CORMORANT 118..180 (same framing the ascent ends on)
+  RIG_Y: 142,           // ship origin (run world y 260): CORMORANT 118..180, no drill (same framing the ascent ends on)
   ROOF_Y: 194,          // station roof under the rig's hull end (clamps + collar)
   WALL_TOP: 202,        // concourse ceiling = bottom of the content area
   FLOOR_Y: 294,         // Holt stands here
@@ -44,7 +45,7 @@ export const SPOTS = [
   { id: 'bunk',    x: 162, sign: ["HOLT'S", 'BUNK'],      tint: VIOLET, panel: 'stats', name: "HOLT'S BUNK" },
 ];
 /** Which concourse spot a panel belongs to (sub-panels included). */
-export const PANEL_SPOT = { board: 'board', ines: 'ines', bay: 'airlock', slot: 'airlock', stats: 'bunk', codex: 'bunk', vendor: 'qm', buy: 'qm', locked: 'qm' };
+export const PANEL_SPOT = { board: 'board', ines: 'ines', bay: 'airlock', yard: 'airlock', slot: 'airlock', stats: 'bunk', codex: 'bunk', vendor: 'qm', buy: 'qm', locked: 'qm' };
 
 export class DockScene extends Phaser.Scene {
   constructor() { super('Dock'); }
@@ -93,9 +94,10 @@ export class DockScene extends Phaser.Scene {
     g.fillStyle(0xfff2a8, 0.7).fillRect(149, 73, 1, 1);
     this.beacon = this.add.rectangle(57, 49, 2, 2, 0xff5a5a).setDepth(1);
     this.tweens.add({ targets: this.beacon, alpha: 0.1, duration: 900, yoyo: true, repeat: -1 });
-    // the rig, drill up, standing on the station roof by its hull end
+    // the ship ALONE, standing on the station roof by its engine end (the leased TB-6 is Meridian's: it is
+    // dropped to the job separately and left there for retrieval)
     this.rig = this.add.container(90, C.RIG_Y).setDepth(2);
-    this.rig.add(rigParts(this, 260).parts);   // TB-6 + CORMORANT, exactly as the run draws them
+    this.rig.add(shipParts(this, 260).parts);   // CORMORANT, exactly as the run draws it
     const s = this.add.graphics().setDepth(3);
     // station clamps gripping the ship's engine end + the docking collar over the airlock
     const sb = C.RIG_Y + (L.SHIP_BOTTOM - 260), cy = sb - 6;
@@ -111,8 +113,8 @@ export class DockScene extends Phaser.Scene {
     for (let x = 0; x < GAME_W; x += 8) s.fillStyle(0xffd23f, 0.55).fillRect(x, C.WALL_TOP - 2, 4, 1);
     this.add.bitmapText(4, C.ROOF_Y + 1, FONT_KEY, 'BAY 3', 6).setTint(0x8a90a8).setDepth(4);
     this.add.bitmapText(GAME_W - 4, C.ROOF_Y + 1, FONT_KEY, 'KESSA HIGH', 6).setOrigin(1, 0).setTint(0x8a90a8).setDepth(4);
-    // tapping the rig = go to the airlock (rig bay)
-    this.add.zone(44, C.RIG_Y - 90, 92, C.ROOF_Y - C.RIG_Y + 90).setOrigin(0).setDepth(30).setInteractive().on('pointerdown', () => this.goSpot('airlock'));
+    // tapping the ship = go to the airlock (rig bay)
+    this.add.zone(40, C.RIG_Y - 34, 100, C.ROOF_Y - C.RIG_Y + 34).setOrigin(0).setDepth(30).setInteractive().on('pointerdown', () => this.goSpot('airlock'));
   }
 
   buildConcourse() {
@@ -316,7 +318,7 @@ export class DockUIScene extends Phaser.Scene {
 
   statusLine() {
     const d = this.dock;
-    if (d.boarding) return d.lifting ? 'HOLT RIDES UP TO THE RIG' : 'HOLT HEADS FOR THE AIRLOCK';
+    if (d.boarding) return d.lifting ? 'HOLT RIDES UP TO THE SHIP' : 'HOLT HEADS FOR THE AIRLOCK';
     if (d.lifting) return 'HOLT STEPS OUT OF THE AIRLOCK';
     if (d.walk) return 'WALKING TO ' + d.spots[d.walk.to].name;
     return 'AT ' + (d.spots[d.at]?.name || 'THE CONCOURSE');
@@ -349,6 +351,7 @@ export class DockUIScene extends Phaser.Scene {
     if (kind === 'board') this.buildBoard();
     else if (kind === 'ines') this.buildInes();
     else if (kind === 'bay') this.buildBay();
+    else if (kind === 'yard') this.buildYard();
     else if (kind === 'slot') this.buildSlot(arg);
     else if (kind === 'stats') this.buildStats();
     else if (kind === 'codex') this.buildCodex();
@@ -463,18 +466,55 @@ export class DockUIScene extends Phaser.Scene {
     });
   }
 
-  // RIG BAY (garage): the rig's exterior, drill up, with a callout per slot. Tap a part on the rig (or
-  // its callout) to swap that slot. Each slot has its own colour on both the hotspot and the callout.
+  // Slot hotspot (pulsing corner brackets in the slot colour) over a part location on the art.
+  addHot(id, h) {
+    const add = (o) => { o.setDepth(303); this.menu.push(o); return o; };
+    const s = loadSave(), part = partById(s.loadout[id]);
+    const br = add(this.add.graphics());
+    br.lineStyle(1, h.c, 1);
+    const c = 4, x1 = h.x + 1.5, y1 = h.y + 1.5, x2 = h.x + h.w - 1.5, y2 = h.y + h.h - 1.5;
+    br.lineBetween(x1, y1, x1 + c, y1).lineBetween(x1, y1, x1, y1 + c).lineBetween(x2, y1, x2 - c, y1).lineBetween(x2, y1, x2, y1 + c)
+      .lineBetween(x1, y2, x1 + c, y2).lineBetween(x1, y2, x1, y2 - c).lineBetween(x2, y2, x2 - c, y2).lineBetween(x2, y2, x2, y2 - c);
+    br.fillStyle(h.c, 1).fillRect(x1 + 2, y1 + 2, 3, 3);   // colour key, matches the callout
+    this.tweens.add({ targets: br, alpha: 0.4, duration: 800, yoyo: true, repeat: -1 });
+    const open = h.open || (() => this.time.delayedCall(0, () => this.openMenu('slot', id)));
+    add(this.add.zone(h.x, h.y, h.w, h.h).setOrigin(0).setInteractive()).setDepth(330).on('pointerdown', open);
+    this.hot[id] = { x: h.x, y: h.y, w: h.w, h: h.h, part: part ? part.id : null };
+  }
+  // Callout in the right column: slot name (slot colour) + equipped part (green when not stock).
+  addTag(id, h, ty) {
+    const s = loadSave(), slot = SLOTS.find((x) => x.id === id), part = partById(s.loadout[id]);
+    const tx = 98, tw = 80, th = 22;
+    const b = this.addBtn(tx, ty, tw, th, '', 0x161a26, () => this.openMenu('slot', id));
+    this.addT(tx + 4, ty + 3, slot.name, 6, h.c);
+    this.addT(tx + 4, ty + 12, part.name, 6, part.stock ? 0xffffff : GREEN);
+    const r = this.add.rectangle(tx, ty, 3, th, h.c, 1).setOrigin(0).setDepth(303); this.menu.push(r);
+    this.tags[id] = { x: tx, y: ty, w: tw, h: th, btn: b };
+  }
+
+  // RIG BAY (garage): CORMORANT alone on its station clamps ([C] the drill is only attached on the job),
+  // a hotspot + callout per SHIP slot, and a window onto MERIDIAN'S DRILL YARD across the bay, where the
+  // leased TB-6 waits on its pad: its two slots (drill head, drill frame) are fitted there.
   buildBay() {
     this.buildPanel('RIG BAY', { tint: CYAN });
     const s = loadSave();
     const add = (o) => { o.setDepth(303); this.menu.push(o); return o; };
-    // the rig, drill up: TB-6 (cutter 42..55, frame + hopper 54..110) with CORMORANT coupled behind (110..172)
-    const CX = 50, CY = 134;                       // rig origin = run world (90, 260)
+    const CX = 50, CY = 134;                       // ship origin = run world (90, 260): hull 110..172
     const g = add(this.add.graphics());
     g.fillStyle(0x05060c, 1).fillRect(0, 40, 96, CONTENT.y + CONTENT.h - 41);
-    for (let i = 0; i < 24; i++) g.fillStyle(0xffffff, 0.3 + (i % 3) * 0.2).fillRect(3 + (i * 37) % 90, 42 + (i * 29) % 100, 1, 1);
-    for (const o of rigParts(this, 260).parts) { o.x += CX; o.y += CY; add(o); }
+    for (let i = 0; i < 24; i++) g.fillStyle(0xffffff, 0.3 + (i % 3) * 0.2).fillRect(3 + (i * 37) % 90, 104 + (i * 29) % 40, 1, 1);
+    // the drill-yard window (y 41..102): Meridian's pad across the bay, the TB-6 small on it
+    g.fillStyle(0x2a3044, 1).fillRect(3, 41, 90, 61).fillStyle(0x10131c, 1).fillRect(5, 49, 86, 51);
+    g.fillStyle(0x6a3434, 1).fillRect(3, 41, 90, 7);
+    g.fillStyle(0x3a3f55, 1).fillRect(16, 90, 48, 4);
+    for (let x = 16; x < 64; x += 6) g.fillStyle(0xffd23f, 0.8).fillRect(x, 94, 3, 2);
+    this.addT(48, 42, 'MERIDIAN YARD', 6, 0xe8dcc0, 0.5);
+    const YS = 0.5, YX = 40, YO = 90 + Math.round(24 * YS);   // drill origin: collar on the pad at y 90
+    for (const o of drillParts(this, 260).parts) { o.x = YX + o.x * YS; o.y = YO + o.y * YS; o.setScale(YS); add(o); }
+    this.addT(88, 51, 'TB-6', 6, GOLD, 1);
+    this.addT(88, 59, 'LEASED', 6, DIM, 1);
+    this.addT(88, 82, '>', 6, GOLD, 1);
+    for (const o of shipParts(this, 260).parts) { o.x += CX; o.y += CY; add(o); }
     const g2 = add(this.add.graphics());
     const deck = 182, sb = CY + (L.SHIP_BOTTOM - 260);   // station roof; the ship's engine end
     for (const x of [30, 66]) { g2.fillStyle(0x4b4f63, 1).fillRect(x, sb - 6, 4, deck - sb + 6); for (let y = sb - 6; y < deck; y += 2) g2.fillStyle(0xffd23f, 1).fillRect(x, y, 4, 1); }
@@ -487,38 +527,54 @@ export class DockUIScene extends Phaser.Scene {
     g2.fillStyle(0x2a3040, 1).fillRect(12, deck + 8, 8, 1).fillRect(12, deck + 11, 8, 1).fillRect(19, deck + 13, 1, 3);
     this.addT(79, deck + 5, 'TAP A', 6, GREY, 0.5);
     this.addT(79, deck + 12, 'PART', 6, GREY, 0.5);
-    // hotspots over the actual part locations (base px) + their callouts in the right column
+    // ship hotspots over the actual part locations (base px) + the drill-yard window
+    const openYard = () => this.time.delayedCall(0, () => this.openMenu('yard'));
     const H = {
-      drill:  { x: 8, y: 40, w: 84, h: 24, c: GOLD },       // the TB-6 cutterhead
-      hull:   { x: 8, y: 64, w: 84, h: 36, c: 0xff9a4a },   // the TB-6 frame + hopper (DRILL FRAME)
-      tools:  { x: 2, y: 112, w: 32, h: 24, c: GREEN },     // the left mandible (TOOLS is just inboard)
       helm:   { x: 64, y: 128, w: 32, h: 24, c: CYAN },     // the cockpit pod
-      siphon: { x: 2, y: 136, w: 32, h: 24, c: 0x4fe0c0 },  // the hose port + reel on the left flank
       engine: { x: 34, y: 156, w: 34, h: 24, c: RED },      // reactor dome + the engine arc
+      tools:  { x: 2, y: 112, w: 32, h: 24, c: GREEN },     // the tool bay on the left flank
+      siphon: { x: 2, y: 136, w: 32, h: 24, c: 0x4fe0c0 },  // the hose port + reel on the left flank
       kit:    { x: 0, y: 177, w: 32, h: 24, c: VIOLET },    // Holt's locker by the airlock
+      yard:   { x: 3, y: 41, w: 90, h: 61, c: GOLD, open: openYard },   // the window onto Meridian's yard
     };
-    const order = ['drill', 'helm', 'hull', 'engine', 'tools', 'siphon', 'kit'];
-    order.forEach((id, i) => {
-      const slot = SLOTS.find((x) => x.id === id), h = H[id], part = partById(s.loadout[id]);
-      const open = () => this.time.delayedCall(0, () => this.openMenu('slot', id));
-      // hotspot brackets (pulsing) in the slot colour
-      const br = add(this.add.graphics());
-      br.lineStyle(1, h.c, 1);
-      const c = 4, x1 = h.x + 1.5, y1 = h.y + 1.5, x2 = h.x + h.w - 1.5, y2 = h.y + h.h - 1.5;
-      br.lineBetween(x1, y1, x1 + c, y1).lineBetween(x1, y1, x1, y1 + c).lineBetween(x2, y1, x2 - c, y1).lineBetween(x2, y1, x2, y1 + c)
-        .lineBetween(x1, y2, x1 + c, y2).lineBetween(x1, y2, x1, y2 - c).lineBetween(x2, y2, x2 - c, y2).lineBetween(x2, y2, x2, y2 - c);
-      br.fillStyle(h.c, 1).fillRect(x1 + 2, y1 + 2, 3, 3);   // colour key, matches the callout
-      this.tweens.add({ targets: br, alpha: 0.4, duration: 800, yoyo: true, repeat: -1 });
-      add(this.add.zone(h.x, h.y, h.w, h.h).setOrigin(0).setInteractive()).setDepth(330).on('pointerdown', open);
-      this.hot[id] = { x: h.x, y: h.y, w: h.w, h: h.h, part: part.id };
-      // callout: slot name (slot colour) + equipped part (green when not stock)
-      const ty = 40 + i * 23, tx = 98, tw = 80, th = 22;   // 7 slots: one-line part names
-      const b = this.addBtn(tx, ty, tw, th, '', 0x161a26, () => this.openMenu('slot', id));
-      this.addT(tx + 4, ty + 3, slot.name, 6, h.c);
-      this.addT(tx + 4, ty + 12, part.name, 6, part.stock ? 0xffffff : GREEN);
-      add(this.add.rectangle(tx, ty, 3, th, h.c, 1).setOrigin(0));
-      this.tags[id] = { x: tx, y: ty, w: tw, h: th, btn: b };
-    });
+    ['helm', 'engine', 'tools', 'siphon', 'kit'].forEach((id, i) => { this.addHot(id, H[id]); this.addTag(id, H[id], 40 + i * 23); });
+    this.addHot('yard', H.yard);
+    // the yard callout: both drill slots at a glance, one tap away
+    const ty = 155, tx = 98, tw = 80, th = 45;
+    const b = this.addBtn(tx, ty, tw, th, '', 0x1e1a16, openYard);
+    this.addT(tx + 4, ty + 3, 'DRILL YARD  >', 6, GOLD);
+    for (const [k, i] of [['drill', 0], ['hull', 1]]) { const p = partById(s.loadout[k]); this.addT(tx + 4, ty + 13 + i * 9, p.name, 6, p.stock ? 0xffffff : GREEN); }
+    this.addT(tx + 4, ty + 34, 'TB-6 (MERIDIAN)', 6, DIM);
+    add(this.add.rectangle(tx, ty, 3, th, GOLD, 1).setOrigin(0));
+    this.tags.yard = { x: tx, y: ty, w: tw, h: th, btn: b };
+    this.btns.yard = b;
+  }
+
+  // MERIDIAN DRILL YARD: the leased TB-6 on its own pad, drill up, at 1x. Its two slots (drill head =
+  // the cutterhead; drill frame = frame, rams and hopper) are fitted here and dropped to the job with it.
+  buildYard() {
+    this.buildPanel('DRILL YARD', { back: () => this.openMenu('bay'), tint: GOLD });
+    const add = (o) => { o.setDepth(303); this.menu.push(o); return o; };
+    const CX = 50, CY = 144;                       // drill origin = run world (90, 260): tip y 52, collar 120
+    const g = add(this.add.graphics());
+    g.fillStyle(0x10131c, 1).fillRect(0, 40, 96, CONTENT.y + CONTENT.h - 41);
+    for (let x = 0; x < 96; x += 12) g.fillStyle(0x181c28, 1).fillRect(x, 40, 1, 84);
+    // the pad: hazard-striped, the drop cradle's jaws holding the collar
+    g.fillStyle(0x3a3f55, 1).fillRect(6, 120, 88, 5);
+    for (let x = 6; x < 94; x += 8) g.fillStyle(0xffd23f, 0.85).fillRect(x, 125, 4, 2);
+    g.fillStyle(0x6a3434, 1).fillRect(26, 118, 48, 3);
+    for (const o of drillParts(this, 260).parts) { o.x += CX; o.y += CY; add(o); }
+    g.fillStyle(0x1a2030, 1).fillRect(0, 128, 96, CONTENT.y + CONTENT.h - 129);
+    const notes = ["MERIDIAN'S TB-6, ON", 'LEASE. FITTED HERE,', 'DROPPED TO THE JOB', 'ON ITS OWN, LEFT FOR', 'RETRIEVAL AFTER A', 'CASH-OUT. LOSE IT,', 'PAY FOR IT.'];
+    notes.forEach((t, i) => this.addT(4, 132 + i * 9, t, 6, i < 6 ? GREY : 0xff9a4a));
+    const H = {
+      drill: { x: 6, y: 46, w: 88, h: 22, c: GOLD },        // the cutterhead
+      hull:  { x: 6, y: 68, w: 88, h: 50, c: 0xff9a4a },    // frame + rams + hopper (DRILL FRAME)
+    };
+    this.addHot('drill', H.drill); this.addTag('drill', H.drill, 40);
+    this.addHot('hull', H.hull); this.addTag('hull', H.hull, 63);
+    this.addT(138, 96, 'SHIP PARTS:', 6, DIM, 0.5);
+    this.addT(138, 104, '< RIG BAY', 6, CYAN, 0.5);
   }
 
   startContract(planet) {
@@ -529,7 +585,7 @@ export class DockUIScene extends Phaser.Scene {
   // one slot's swap list: owned parts with upside + downside (paged), notes on the last page
   buildSlot(slotId) {
     const slot = SLOTS.find((x) => x.id === slotId);
-    this.buildPanel(slot.name, { back: () => this.openMenu('bay') });
+    this.buildPanel(slot.name, { back: () => this.openMenu(slotId === 'drill' || slotId === 'hull' ? 'yard' : 'bay') });
     const save = loadSave();
     this.addT(8, 42, 'TAP A PART TO EQUIP IT', 6, GREY);
     const owned = partsForSlot(slotId).filter((p) => save.owned.includes(p.id));

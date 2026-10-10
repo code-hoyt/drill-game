@@ -242,12 +242,13 @@ export const EVENTS = {
 };
 
 // Transition animations. ONE knob: ANIM_SCALE multiplies every beat of the descent/ascent cutscenes
-// (tweens, turns, cuts, captions). Base timeline = 4.6 s each, so 2 = ~9.2 s. Human-scale beats on the
+// (tweens, turns, cuts, captions). Base timelines: ascent 4.6 s, descent 5.6 s (the drill drops on its own, smashes in, the ship docks onto it), so 2 = ~9.2 / ~11.2 s. Human-scale beats on the
 // concourse (the airlock lift) and the tap-to-skip grace only scale modestly (square / cube root).
 // Playtest override: ?animscale=1.5 (any value 0.25..4).
 export const ANIM_SCALE = 2;
 export const ANIM_TIMING = {
-  BASE_MS: 4600,           // cutscene length at SCALE 1
+  BASE_MS: 4600,           // ascent cutscene length at SCALE 1
+  BASE_DESCENT_MS: 5600,   // descent: +1 s for the drill-smash + dock-on beat ([C] the drill is only attached on the job)
   BASE_GRACE_MS: 400,      // taps ignored at the start of a cutscene (scaled by ANIM_SCALE^(1/3): 2 -> ~0.5 s)
   BASE_LIFT_MS: 550,       // airlock lift ride rig <-> concourse (scaled by ANIM_SCALE^(1/2): 2 -> ~0.78 s)
 };

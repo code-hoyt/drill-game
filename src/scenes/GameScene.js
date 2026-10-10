@@ -150,7 +150,7 @@ export class GameScene extends Phaser.Scene {
     this.toast(`SEGMENT ${s.relays + 1}: PAY X${s.payMult.toFixed(1)}`, 0x7fe0ff);
   }
 
-  /** Winch up from a relay: the hold (and anything still in the hopper) + 10%. */
+  /** Cash out at a relay (clean unclamp, the drill stays for Meridian): the hold (and anything still in the hopper) + 10%. */
   cashOut() {
     const s = this.state;
     s.transferHopper();
@@ -183,7 +183,7 @@ export class GameScene extends Phaser.Scene {
       this.leftRun = true;
       if (!ANIM) { this.scene.launch('GameOver', this.lastRun); return; }
       this.scene.stop('UI');
-      this.scene.start('Cutscene', { kind: 'ascent', vehicle: reason === 'cashout' ? 'rig' : 'ship', style: this.breakState ? this.breakState.style : undefined, summary: this.lastRun });
+      this.scene.start('Cutscene', { kind: 'ascent', vehicle: reason === 'cashout' ? 'clean' : 'ship', style: this.breakState ? this.breakState.style : undefined, summary: this.lastRun });
     };
     if (reason === 'cashout') {
       this.cameras.main.fadeOut(ANIM ? 800 : 700, 0, 0, 0);

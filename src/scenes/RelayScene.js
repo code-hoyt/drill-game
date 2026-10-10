@@ -114,7 +114,7 @@ export class RelayScene extends Phaser.Scene {
     this.pushBtn = new Button(this, 8, 262, 80, 30, 'PUSH ON', { size: 6, color: 0x7a3320, pressColor: 0xb5532f, onTap: () => this.g.pushOn() });
     this.cashBtn = new Button(this, 92, 262, 80, 30, 'CASH OUT', { size: 6, color: 0x2f6a3a, pressColor: 0x48a058, onTap: () => this.g.cashOut() });
     txt(48, 296, 'DEEPER, BETTER PAY', 6, 0x6a6278).setOrigin(0.5, 0);
-    txt(132, 296, 'WINCH UP, +10%', 6, 0x6a6278).setOrigin(0.5, 0);
+    txt(132, 296, 'FLY HOME, +10%', 6, 0x6a6278).setOrigin(0.5, 0);
     this.refresh();
   }
 

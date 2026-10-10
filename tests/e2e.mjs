@@ -394,7 +394,7 @@ for (const [spot, kind] of [['board', 'board'], ['ines', 'ines'], ['qm', 'vendor
   check(`${kind} panel open: the concourse is visible and tappable`, await concourseLive());
   prevKind = kind;
   if (spot === 'board') { check('contract board lists the data-driven contracts', await D('!!u.btns.contract_kessa4 && u.menu.some(t => t.text === "KESSA-4")')); await page.screenshot({ path: `${OUT}/19-contract-board.png` }); }
-  if (spot === 'ines') { check("Ines's window: latest message + radio replay + story stub", await D('u.menu.some(t => t.text === "LATEST") && u.menu.some(t => t.text && t.text.startsWith("WINCHING YOU UP")) && u.menu.some(t => t.text && t.text.startsWith("RELAY ONE IS LIVE")) && u.menu.some(t => t.text === "(STORY: LATER MILESTONE)")')); await page.screenshot({ path: `${OUT}/20-ines-window.png` }); }
+  if (spot === 'ines') { check("Ines's window: latest message + radio replay + story stub", await D('u.menu.some(t => t.text === "LATEST") && u.menu.some(t => t.text && t.text.startsWith("CLEAN UNCLAMP.")) && u.menu.some(t => t.text && t.text.startsWith("RELAY ONE IS LIVE")) && u.menu.some(t => t.text === "(STORY: LATER MILESTONE)")')); await page.screenshot({ path: `${OUT}/20-ines-window.png` }); }
   if (spot === 'bunk') {
     await page.screenshot({ path: `${OUT}/11-stats.png` });
     check("bunk: Holt's log shows runs, relays, credits earned, best", await D(`u.menu.some(t => t.text === "${sv1.totalEarned} CR") && u.menu.some(t => t.text === "2000M") && u.menu.some(t => t.text === "RELAYS REACHED")`));
@@ -423,23 +423,50 @@ await navTo('bunk', 'stats'); const longW = await lastWalk(); await closeMenu();
 check('longest walk (board -> bunk, 144 px) takes <= ~1 s', longW.from === 'board' && longW.to === 'bunk' && longW.ms <= 1050, JSON.stringify(longW));
 console.log('WALKS', JSON.stringify([...walks, longW]));
 check('tap the rig in the bay -> Holt walks to the airlock -> rig bay', await (async () => { await tap(90, 150); await page.waitForFunction(() => __drill.scene.getScene('DockUI').menuKind === 'bay', null, { timeout: 3000 }).catch(() => {}); return (await dockMenu()) === 'bay' && (await D('d.at')) === 'airlock'; })());
-// rig bay hotspots: each part location opens its slot
+// [C] the drill is only attached on the job: count the TB-6 images (drill unit / cutterhead) a scene draws, containers included
+const drillImgs = (key) => page.evaluate((k) => { const out = []; const walk = (o, ox, oy) => { if (!o.visible) return;
+    if (o.list) { o.list.forEach((c) => walk(c, ox + o.x, oy + o.y)); return; }
+    const t = o.texture && o.texture.key; if (t === 'drillunit' || (t && t.startsWith('cutter'))) out.push({ t, x: ox + o.x, y: oy + o.y, s: o.scaleX }); };
+  __drill.scene.getScene(k).children.list.forEach((o) => walk(o, 0, 0)); return out; }, key);
+check('concourse bay: CORMORANT sits docked ALONE (no TB-6 drawn anywhere on the Dock scene)', (await drillImgs('Dock')).length === 0 && (await D('d.rig.list.length === 1')), JSON.stringify(await drillImgs('Dock')));
+const bayDrill = await drillImgs('DockUI');
+check('rig bay: the ship alone on its clamps; the only TB-6 is the small one on Meridian\'s pad in the yard window (y < 102, half scale)', bayDrill.length === 2 && bayDrill.every((o) => o.y < 102 && o.s === 0.5), JSON.stringify(bayDrill));
+// rig bay hotspots: each ship part location opens its slot; the yard window opens the DRILL YARD
 const HOTS = await D('Object.fromEntries(Object.entries(u.hot).map(([k, h]) => [k, h]))');
-check('rig bay: 7 hotspots (drill, engine, hull, tools, helm, siphon pod, kit), each at least 32x24 base px (thumb-sized), none overlapping', Object.keys(HOTS).sort().join() === 'drill,engine,helm,hull,kit,siphon,tools'
-  && Object.values(HOTS).every((a) => Object.values(HOTS).every((b) => a === b || a.x + a.w <= b.x || b.x + b.w <= a.x || a.y + a.h <= b.y || b.y + b.h <= a.y)) && Object.values(HOTS).every((h) => h.w >= 32 && h.h >= 24), JSON.stringify(HOTS));
-check('rig bay shows the equipped part names next to the hotspots', await D('u.menu.some(t => t.text === "SURVEY BIT") && u.menu.some(t => t.text === "K-9 ENGINE") && u.menu.some(t => t.text === "WORK BOOTS") && u.menu.some(t => t.text === "BASIC CONSOLE")'));
-for (const slot of ['drill', 'helm', 'hull', 'engine', 'tools', 'kit']) {
+const noOverlap = (HS) => Object.values(HS).every((a) => Object.values(HS).every((b) => a === b || a.x + a.w <= b.x || b.x + b.w <= a.x || a.y + a.h <= b.y || b.y + b.h <= a.y));
+check('rig bay: 5 ship hotspots (helm, engine, tools, siphon, kit) + the DRILL YARD window, each at least 32x24 base px (thumb-sized), none overlapping', Object.keys(HOTS).sort().join() === 'engine,helm,kit,siphon,tools,yard'
+  && noOverlap(HOTS) && Object.values(HOTS).every((h) => h.w >= 32 && h.h >= 24), JSON.stringify(HOTS));
+check('rig bay shows the equipped part names (ship slots + both drill slots on the DRILL YARD callout)', await D('u.menu.some(t => t.text === "SURVEY BIT") && u.menu.some(t => t.text === "K-9 ENGINE") && u.menu.some(t => t.text === "WORK BOOTS") && u.menu.some(t => t.text === "BASIC CONSOLE") && u.menu.some(t => t.text === "DRILL YARD  >")'));
+for (const slot of ['helm', 'engine', 'tools', 'kit']) {
   const h = HOTS[slot];
   await tap(h.x + h.w / 2, h.y + h.h / 2); await wait(200);
   check(`rig bay: tap the ${slot} location -> ${slot} swap list`, (await dockMenu()) === 'slot' && (await D('u.menuArg')) === slot);
   await tapBtn('u.btns.back');
 }
 check('slot list BACK returns to the rig bay', (await dockMenu()) === 'bay');
+await tap(HOTS.yard.x + HOTS.yard.w / 2, HOTS.yard.y + HOTS.yard.h / 2); await wait(250);
+const YH = await D('Object.fromEntries(Object.entries(u.hot).map(([k, h]) => [k, h]))');
+const yardDrill = await drillImgs('DockUI');
+check('tap the yard window -> MERIDIAN DRILL YARD: the leased TB-6 alone on its pad at 1x, 2 hotspots (drill head, drill frame), thumb-sized, no overlap', (await dockMenu()) === 'yard' && Object.keys(YH).sort().join() === 'drill,hull'
+  && noOverlap(YH) && Object.values(YH).every((h) => h.w >= 32 && h.h >= 22) && yardDrill.length === 2 && yardDrill.every((o) => o.s === 1) && (await panelInBounds()).length === 0, JSON.stringify({ YH, yardDrill }));
+for (const slot of ['drill', 'hull']) {
+  const h = YH[slot];
+  await tap(h.x + h.w / 2, h.y + h.h / 2); await wait(200);
+  check(`drill yard: tap the ${slot} location -> ${slot} swap list, BACK returns to the yard`, (await dockMenu()) === 'slot' && (await D('u.menuArg')) === slot && (await (async () => { await tapBtn('u.btns.back'); return (await dockMenu()) === 'yard'; })()));
+}
+const YT = await D('Object.fromEntries(Object.entries(u.tags).map(([k, t]) => [k, { x: t.x, y: t.y, w: t.w, h: t.h }]))');
+check('drill yard: a callout per drill slot (>= 80x22), tappable', Object.keys(YT).sort().join() === 'drill,hull' && Object.values(YT).every((t) => t.w >= 80 && t.h >= 22)
+  && (await (async () => { await tap(YT.hull.x + 40, YT.hull.y + 11); await wait(200); const ok = (await dockMenu()) === 'slot' && (await D('u.menuArg')) === 'hull'; await tapBtn('u.btns.back'); return ok; })()), JSON.stringify(YT));
+await tapBtn('u.btns.back');
+check('drill yard < returns to the rig bay', (await dockMenu()) === 'bay');
 const TAGS = await D('Object.fromEntries(Object.entries(u.tags).map(([k, t]) => [k, { x: t.x, y: t.y, w: t.w, h: t.h }]))');
-check('rig bay: a callout per slot (equipped part) beside the rig, each tappable (>= 80x22), all 7 inside the content area', Object.keys(TAGS).length === 7 && Object.values(TAGS).every((t) => t.w >= 80 && t.h >= 22 && t.x >= 96 && t.y >= 38 && t.y + t.h <= 202)
+check('rig bay: a callout per ship slot + the DRILL YARD callout beside the ship, each tappable (>= 80x22), all 6 inside the content area', Object.keys(TAGS).sort().join() === 'engine,helm,kit,siphon,tools,yard' && Object.values(TAGS).every((t) => t.w >= 80 && t.h >= 22 && t.x >= 96 && t.y >= 38 && t.y + t.h <= 202)
   && (await D('u.menu.some(t => t.text === "HAND PUMP") && u.menu.some(t => t.text === "SIPHON")')), JSON.stringify(TAGS));
 for (const slot of ['engine', 'siphon', 'kit']) { const t = TAGS[slot]; await tap(t.x + t.w / 2, t.y + t.h / 2); await wait(200);
   check(`rig bay: tap the ${slot} callout -> ${slot} swap list`, (await dockMenu()) === 'slot' && (await D('u.menuArg')) === slot); await tapBtn('u.btns.back'); }
+await tap(TAGS.yard.x + TAGS.yard.w / 2, TAGS.yard.y + TAGS.yard.h / 2); await wait(200);
+check('rig bay: tap the DRILL YARD callout -> the yard', (await dockMenu()) === 'yard');
+await tapBtn('u.btns.back');
 await closeMenu();
 await navTo('qm', 'vendor');
 const vend = await D('({ kind: u.menuKind, offers: u.offerIds, page: u.vendorPage, pages: u.vendorPages, shown: Object.keys(u.btns.offers) })');
@@ -504,17 +531,20 @@ await closeMenu(); // vendor -> bay view
 check('X closes the Quartermaster', (await dockMenu()) === null);
 // rig bay -> tap the hull plating -> equip HEAVY PLATING
 const tapHot = async (slot) => { const h = await D(`u.hot.${slot}`); await tap(h.x + h.w / 2, h.y + h.h / 2); await wait(200); };
-await navTo('airlock', 'bay'); await tapHot('hull');
+await navTo('airlock', 'bay'); await tapHot('yard'); await tapHot('hull');
 check('slot swap list fits the content area', (await panelInBounds()).length === 0, (await panelInBounds()).join(' '));
 check('part swap screen lists owned hull parts with up/downsides', (await D('u.menuArg')) === 'hull' && (await D('!!(u.btns.parts.stockhull && u.btns.parts.plating) && u.menu.some(t => t.text === "+ +40 MAX DRILL") && u.menu.some(t => t.text === "- ACCEL + BRAKING -35%")')));
 await tapBtn('u.btns.parts.plating');
 await page.screenshot({ path: `${OUT}/10-part-swap.png` });
 check('tap a part card -> equipped', (await page.evaluate(() => JSON.parse(localStorage.getItem('drill.save')).loadout.hull)) === 'plating' && (await D('u.menu.some(t => t.text === "EQUIPPED")')));
 await tapBtn('u.btns.back');
-check('back in the rig bay: the hull tag now reads HEAVY PLATING', (await dockMenu()) === 'bay' && (await D('u.hot.hull.part')) === 'plating' && (await D('u.menu.some(t => t.text === "HEAVY PLATING")')));
+check('back in the drill yard: the frame tag now reads HEAVY PLATING', (await dockMenu()) === 'yard' && (await D('u.hot.hull.part')) === 'plating' && (await D('u.menu.some(t => t.text === "HEAVY PLATING")')));
 await tapHot('drill'); await tapBtn('u.btns.parts.widecut');
-check('tap the drill nose -> drill head swapped to WIDE-CUT', (await page.evaluate(() => JSON.parse(localStorage.getItem('drill.save')).loadout.drill)) === 'widecut');
+check('drill yard: tap the cutterhead -> drill head swapped to WIDE-CUT (drill parts stay fittable)', (await page.evaluate(() => JSON.parse(localStorage.getItem('drill.save')).loadout.drill)) === 'widecut');
 await tapBtn('u.btns.back');
+await page.screenshot({ path: `${OUT}/44-drill-yard.png` });
+await tapBtn('u.btns.back');
+check('rig bay: the DRILL YARD callout shows the new drill parts', (await dockMenu()) === 'bay' && (await D('u.menu.some(t => t.text === "HEAVY PLATING") && u.menu.some(t => t.text === "WIDE-CUT BIT")')));
 await page.screenshot({ path: `${OUT}/21-rig-bay.png` });
 await closeMenu(); await wait(1800);
 await page.screenshot({ path: `${OUT}/08-concourse.png` });
@@ -587,7 +617,7 @@ const ANIM_OK = (ms, exp) => ms >= exp * 0.95 && ms <= exp * 1.1 + 300;
 await page.goto(BASE + '?wipe=1&noevents=1'); await wait(1500);
 const CFG = await page.evaluate(() => window.__drillAnimCfg);
 const CONF_SCALE = await page.evaluate(async () => (await import(new URL('src/config.js', location.href).href)).ANIM_SCALE);
-check('animation speed is one config multiplier: ANIM_SCALE 2 -> 9.2 s cutscenes, ~0.5 s grace, ~0.78 s lift', CONF_SCALE === 2 && CFG.scale === 2 && CFG.cutsceneMs === 9200 && CFG.graceMs >= 450 && CFG.graceMs <= 550 && CFG.liftMs >= 700 && CFG.liftMs <= 850, JSON.stringify(CFG));
+check('animation speed is one config multiplier: ANIM_SCALE 2 -> 9.2 s ascent / 11.2 s descent (drill-smash beat), ~0.5 s grace, ~0.78 s lift', CONF_SCALE === 2 && CFG.scale === 2 && CFG.cutsceneMs === 9200 && CFG.descentMs === 11200 && CFG.graceMs >= 450 && CFG.graceMs <= 550 && CFG.liftMs >= 700 && CFG.liftMs <= 850, JSON.stringify(CFG));
 await tap(90, 160); await wait(800);
 await D('(u.openMenu("locked"), true)'); await wait(200);
 check('fresh save: 16 parts locked (both SIPHON + both power-split parts depth-gated), one alternative per other slot open', (await D('u.lockedRows.length')) === 16);
@@ -600,14 +630,28 @@ const camState = () => page.evaluate(() => { const c = __drill.scene.getScene('C
   return { active: __drill.scene.isActive('Cutscene'), rot: m.rotation, zoom: m.zoom, uiRot: c.uiCam ? c.uiCam.rotation : null, surface: c.surface && c.surface.visible }; });
 await startContract();
 check('ACCEPT CONTRACT: Holt walks to the airlock and rides the lift up, then the descent plays', await page.evaluate(() => __drill.scene.isActive('Cutscene') && __drill.scene.getScene('Cutscene').kind === 'descent' && !__drill.scene.isActive('Game') && !__drill.scene.isActive('Dock')));
-// the bite turn: sample the camera while the rig sinks in
+// sample the whole descent every frame: the bite turn, plus [C] the drill travelling + landing on its own
 const turnSeen = await page.evaluate(() => new Promise((res) => { let maxR = 0, uiMax = 0, zMax = 0; const c = __drill.scene.getScene('Cutscene');
-  const tick = () => { if (!__drill.scene.isActive('Cutscene')) return res({ maxR, uiMax, zMax }); const m = c.cameras.main;
-    if (c.surface.visible) { maxR = Math.max(maxR, m.rotation); zMax = Math.max(zMax, m.zoom); } uiMax = Math.max(uiMax, Math.abs(c.uiCam.rotation)); requestAnimationFrame(tick); }; tick(); }));
+  const o = { atStart: null, sepMax: 0, bothFalling: 0, shipBeforeImpact: 0, impactFrames: 0, preDockGap: 0, docked: null };
+  const tick = () => { if (!__drill.scene.isActive('Cutscene')) return res({ maxR, uiMax, zMax, ...o, beats: c.beats }); const m = c.cameras.main;
+    if (o.atStart === null) o.atStart = { shipDocked: !!c.spaceVehicle, drillInCradle: !!c.spaceDrill && Math.abs(c.spaceDrill.x - c.spaceVehicle.x) > 50 };
+    if (c.space.visible && c.beats.drillRelease && c.spaceDrill && c.spaceVehicle) { o.sepMax = Math.max(o.sepMax, Math.abs(c.spaceDrill.x - c.spaceVehicle.x)); if (c.spaceDrill.y > 80 && c.spaceVehicle.y > 80) o.bothFalling++; }
+    if (c.surface.visible && c.drill) {
+      if (!c.impacted && c.ship.visible) o.shipBeforeImpact++;
+      if (c.impacted) o.impactFrames++;
+      if (c.beats.shipIn && !c.beats.clampsLocked) o.preDockGap = Math.max(o.preDockGap, c.drill.y - c.ship.y);
+      if (c.beats.bite && !o.docked) o.docked = { dy: c.ship.y - c.drill.y, dx: c.ship.x - c.drill.x, clamps: c.shipClamps.alpha, light: c.drillLight.fillColor, game: __drill.scene.isActive('Game') };
+      maxR = Math.max(maxR, m.rotation); zMax = Math.max(zMax, m.zoom); }
+    uiMax = Math.max(uiMax, Math.abs(c.uiCam.rotation)); requestAnimationFrame(tick); }; tick(); }));
 await page.waitForFunction(() => __drill.scene.isActive('Game'), null, { timeout: 16000 }).catch(() => {});
 let al = (await animLog()).at(-1);
 check('boarding beat (board -> airlock walk + lift) took ~1.2 s (<= 1.7 s)', al.boardMs > 800 && al.boardMs <= 1700, `boardMs=${al.boardMs}`);
-check('descent ends in the run in ~9.2 s (2x), not skipped', await page.evaluate(() => __drill.scene.isActive('Game') && __drill.scene.isActive('UI') && !__drill.scene.isActive('Cutscene')) && al.kind === 'descent' && !al.skipped && al.expectMs === 9200 && ANIM_OK(al.ms, 9200), JSON.stringify(al));
+check('descent ends in the run in ~11.2 s (2x), not skipped', await page.evaluate(() => __drill.scene.isActive('Game') && __drill.scene.isActive('UI') && !__drill.scene.isActive('Cutscene')) && al.kind === 'descent' && !al.skipped && al.expectMs === 11200 && ANIM_OK(al.ms, 11200), JSON.stringify(al));
+const B = turnSeen.beats;
+check('[C] launch: the ship leaves the station ALONE and Meridian\'s cradle drops the TB-6 separately (both falling, apart)', turnSeen.atStart.shipDocked && turnSeen.atStart.drillInCradle && B.undock > 0 && B.drillRelease > B.undock && turnSeen.sepMax > 20 && turnSeen.bothFalling > 3, JSON.stringify({ at: turnSeen.atStart, sep: turnSeen.sepMax, both: turnSeen.bothFalling, B }));
+check('[C] arrival: the drill smashes down FIRST (no ship on the surface until after the impact), then Cormorant flies in', B.impact > B.surface && turnSeen.shipBeforeImpact === 0 && turnSeen.impactFrames > 10 && B.shipIn > B.impact, JSON.stringify(B));
+check('[C] dock-on before control: fly in -> back down onto the collar -> clamps lock -> umbilicals live / power up -> bite, all inside the cutscene', B.shipIn < B.backDown && B.backDown < B.clampsLocked && B.clampsLocked < B.powerUp && B.powerUp < B.bite && B.bite < al.ms && turnSeen.preDockGap > 30
+  && turnSeen.docked && turnSeen.docked.dy === 0 && turnSeen.docked.dx === 0 && turnSeen.docked.clamps > 0.99 && turnSeen.docked.light === 0x8affa0 && !turnSeen.docked.game, JSON.stringify({ B, gap: turnSeen.preDockGap, docked: turnSeen.docked }));
 check('descent: camera turns 180 deg at the surface (drill down -> run drill up) with a gentle zoom; UI camera never turns', turnSeen.maxR > 3.1 && turnSeen.zMax > 1.05 && turnSeen.zMax < 1.3 && turnSeen.uiMax === 0, JSON.stringify(turnSeen));
 check('run HUD/camera are not left rotated', await G('g.cameras.main.rotation === 0 && ui.cameras.main.rotation === 0'));
 await wait(300);
@@ -617,12 +661,28 @@ await R('r.skipTyping()'); await wait(200); await tap(90, 137); await wait(700);
 await tap(132, 277);   // CASH OUT
 await page.waitForFunction(() => __drill.scene.isActive('Cutscene'), null, { timeout: 4000 }).catch(() => {});
 const startCam = await camState();
-check('cash out -> ascent cutscene with the rig, opening on the run\'s drill-up view (camera at 180 deg)', await page.evaluate(() => __drill.scene.getScene('Cutscene').kind === 'ascent' && __drill.scene.getScene('Cutscene').vehicle === 'rig' && !__drill.scene.isActive('Game'))
+check('cash out -> ascent cutscene (clean unclamp), opening on the run\'s drill-up view (camera at 180 deg)', await page.evaluate(() => __drill.scene.getScene('Cutscene').kind === 'ascent' && __drill.scene.getScene('Cutscene').vehicle === 'clean' && !__drill.scene.isActive('Game'))
   && startCam.surface && Math.abs(startCam.rot - Math.PI) < 0.35, JSON.stringify(startCam));
+// sample the ascent: the clamps open cleanly, the drill stays put in the bore, only the ship goes to space
+const asc = await page.evaluate(() => new Promise((res) => { const c = __drill.scene.getScene('Cutscene'); const y0 = c.drill.y;
+  const o = { drillMoved: 0, clampsAtOut: null, shipAtUnclamp: null, spaceDrill: 0, spaceFrames: 0, red: 0, caps: new Set() };
+  const isDrill = (x) => x.texture && (x.texture.key === 'drillunit' || x.texture.key.startsWith('cutter'));
+  const tick = () => { if (!__drill.scene.isActive('Cutscene')) return res({ ...o, caps: [...o.caps], beats: c.beats, y0 });
+    if (c.drill.y !== y0) o.drillMoved++;
+    if (c.beats.unclamp && o.shipAtUnclamp === null) o.shipAtUnclamp = c.ship.y;
+    if (c.beats.shipOut && o.clampsAtOut === null) o.clampsAtOut = c.shipClamps.alpha;
+    if (c.space.visible) { o.spaceFrames++; if (c.space.list.some((x) => x.visible && (isDrill(x) || (x.list && x.list.some(isDrill))))) o.spaceDrill++; }
+    c.children.list.filter((t) => t.type === 'BitmapText' && t.text).forEach((t) => o.caps.add(t.text));
+    if (c.cameras.main.flashEffect && c.cameras.main.flashEffect.isRunning && c.cameras.main.flashEffect.red > 200 && c.cameras.main.flashEffect.green < 100) o.red++;
+    requestAnimationFrame(tick); }; tick(); }));
+check('[C] clean exit: the clamps open (no alarms) before the ship moves; the TB-6 stays put in the bore for Meridian', asc.beats.unclamp < asc.beats.shipOut && asc.clampsAtOut < 0.05 && asc.shipAtUnclamp === asc.y0 && asc.drillMoved === 0
+  && asc.caps.includes('UNCLAMPED') && asc.caps.includes('TB-6 LEFT FOR MERIDIAN') && !asc.caps.some((t) => /BREAK|ALARM|LOST/.test(t)) && asc.red === 0, JSON.stringify(asc));
+check('[C] clean exit: Cormorant flies out and docks at the station ALONE (no drill in any space frame)', asc.spaceFrames > 20 && asc.spaceDrill === 0 && asc.beats.docked > asc.beats.space, JSON.stringify(asc));
 // (untimed beat after the cutscene: Holt rides the airlock lift down; grab the frame)
 await freezeWhen(() => __drill.scene.isActive('Dock') && __drill.scene.getScene('Dock').lifting && __drill.scene.getScene('Dock').holt.y > 236 && __drill.scene.getScene('Dock').holt.y < 280, '24-holt-steps-out.png', 'Dock');
 await page.waitForFunction(() => __drill.scene.isActive('GameOver'), null, { timeout: 16000 }).catch(() => {});
 al = (await animLog()).at(-1);
+check('[C] docked at the station: the ship alone in the bay (no TB-6 on the Dock scene)', (await drillImgs('Dock')).length === 0);
 check('ascent ends on the concourse: Holt rode the lift down, summary in the content area, cutscene ~9.2 s (2x)', await page.evaluate(() => __drill.scene.isActive('Dock') && __drill.scene.isActive('GameOver') && !__drill.scene.isActive('Cutscene') && __drill.scene.getScene('GameOver').scene.settings.data.reason === 'cashout') && al.kind === 'ascent' && !al.skipped && ANIM_OK(al.ms, 9200)
   && (await D('d.holt.visible && d.holt.y === 294 && !d.lifting && d.at === "airlock"')), JSON.stringify(al));
 const sumB = await page.evaluate(() => { const g = __drill.scene.getScene('GameOver'); const bs = g.children.list.filter(o => o.getBounds).map(o => o.getBounds()); return { top: Math.min(...bs.map(b => b.y)), bottom: Math.max(...bs.map(b => b.bottom)), inDock: g.inDock }; });
@@ -669,15 +729,20 @@ check('summary up + tap CONTRACT BOARD on the concourse -> summary dismissed, Ho
 // frames for Cletus (screenshots stall the renderer, so these runs aren't timed; mid-turn frames are paused)
 await D('(u.closeMenu(), true)');
 await startContract();
-await freezeWhen(() => { const c = __drill.scene.getScene('Cutscene'); return c.rig && c.rig.y > 95 && !c.spin; }, '15-descent.png');
+await freezeWhen(() => { const c = __drill.scene.getScene('Cutscene'); return c.space.visible && c.beats.drillRelease && c.spaceDrill.y > 90 && c.spaceVehicle.y > 90; }, '13-launch.png');
+await freezeWhen(() => { const c = __drill.scene.getScene('Cutscene'); return c.impacted && performance.now() - c.t0 > c.beats.impact + 120; }, '45-drill-impact.png');
+await freezeWhen(() => { const c = __drill.scene.getScene('Cutscene'); return c.beats.shipIn && c.ship.y > 50 && !c.beats.backDown; }, '15-descent.png');
+await freezeWhen(() => { const c = __drill.scene.getScene('Cutscene'); return c.beats.backDown && !c.beats.clampsLocked && c.drill.y - c.ship.y < 14; }, '14-docking.png');
+await freezeWhen(() => { const c = __drill.scene.getScene('Cutscene'); return c.beats.powerUp && !c.beats.bite; }, '14b-clamped-power-up.png');
 await freezeWhen(() => { const c = __drill.scene.getScene('Cutscene'); const r = c.cameras.main.rotation; return c.surface.visible && c.spin && r > 1.3 && r < 1.9; }, '17-descent-rotation.png');
 await page.waitForFunction(() => __drill.scene.isActive('Game'), null, { timeout: 16000 }).catch(() => {});
 await wait(300);
 await G('(s.haul = 400, g.cashOut(), true)');
 await page.waitForFunction(() => __drill.scene.isActive('Cutscene'), null, { timeout: 4000 }).catch(() => {});
+await freezeWhen(() => { const c = __drill.scene.getScene('Cutscene'); return c.beats.unclamp && c.shipClamps.alpha < 0.5 && !c.beats.shipOut; }, '46-clean-unclamp.png');
 await freezeWhen(() => { const c = __drill.scene.getScene('Cutscene'); const r = c.cameras.main.rotation; return c.surface.visible && r > 1.3 && r < 1.9; }, '18-ascent-rotation.png');
-await freezeWhen(() => { const c = __drill.scene.getScene('Cutscene'); return c.surface.visible && c.cameras.main.rotation === 0 && c.vehicleSprite.y < 200; }, '13-launch.png');
-await freezeWhen(() => { const c = __drill.scene.getScene('Cutscene'); return c.clampL && c.clampL.x > 78 && c.cameras.main.rotation === 0; }, '14-docking.png');
+await freezeWhen(() => { const c = __drill.scene.getScene('Cutscene'); return c.surface.visible && c.cameras.main.rotation === 0 && c.vehicleSprite.y < 190; }, '46b-clean-exit-surface.png');
+await freezeWhen(() => { const c = __drill.scene.getScene('Cutscene'); return c.clampL && c.clampL.x > 78 && c.cameras.main.rotation === 0; }, '47-ship-docks-alone.png');
 await freezeWhen(() => { const c = __drill.scene.getScene('Cutscene'); return c.clampedText && c.cameras.main.rotation > 3.13 && c.cameras.main.zoom > 2.2; }, '23-docking-end-frame.png');
 await page.waitForFunction(() => __drill.scene.isActive('GameOver'), null, { timeout: 16000 }).catch(() => {});
 check('screenshot runs also end docked with the summary', await page.evaluate(() => __drill.scene.isActive('Dock') && __drill.scene.isActive('GameOver')));
@@ -689,7 +754,7 @@ await tap(90, 160); await wait(800);
 await startContract();
 await page.waitForFunction(() => __drill.scene.isActive('Game'), null, { timeout: 12000 }).catch(() => {});
 al = (await animLog()).at(-1);
-check('ANIM_SCALE override 1 -> descent ~4.6 s, grace 400 ms, lift 550 ms', CFG1.scale === 1 && CFG1.graceMs === 400 && CFG1.liftMs === 550 && al.expectMs === 4600 && !al.skipped && ANIM_OK(al.ms, 4600), JSON.stringify({ CFG1, al }));
+check('ANIM_SCALE override 1 -> descent ~5.6 s, grace 400 ms, lift 550 ms', CFG1.scale === 1 && CFG1.graceMs === 400 && CFG1.liftMs === 550 && al.expectMs === 5600 && !al.skipped && ANIM_OK(al.ms, 5600), JSON.stringify({ CFG1, al }));
 
 // ---- ore veins ([C]) + decision events ([P]) ----------------------------------------------------
 const CONF = await page.evaluate(async () => { const c = await import(new URL('src/config.js', location.href).href); return { ORE: c.ORE, EV: c.EVENTS, CALMC: c.CALM, PWR: c.POWER, LAY: c.LAYOUT }; });
